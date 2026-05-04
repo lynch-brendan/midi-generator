@@ -180,7 +180,11 @@
       transition: color 0.15s, border-color 0.15s;
       white-space: nowrap;
       text-decoration: none;
+      cursor: grab;
     }
+
+    a.download:active { cursor: grabbing; }
+    a.download.dragging { opacity: 0.5; border-color: #888; }
 
     button.more-like {
       background: none;
@@ -285,8 +289,8 @@
           ${v.wav_url
             ? `<audio controls src="${v.wav_url}"></audio>`
             : `<span style="color:#555;font-size:0.8rem">No audio</span>`}
-          <a class="download" href="${v.midi_url}" download>↓ MIDI</a>
-          ${v.wav_url ? `<a class="download" href="${v.wav_url}" download>↓ WAV</a>` : ""}
+          <a class="download" href="${v.midi_url}" download draggable="true" data-mime="audio/midi">⠿ MIDI</a>
+          ${v.wav_url ? `<a class="download" href="${v.wav_url}" download draggable="true" data-mime="audio/wav">⠿ WAV</a>` : ""}
           <button class="more-like">More like this</button>
         </div>
       `;
@@ -373,6 +377,21 @@
 
     document.getElementById("prompt").addEventListener("keydown", e => {
       if (e.key === "Enter") generate();
+    });
+
+    document.addEventListener("dragstart", e => {
+      const link = e.target.closest("a.download[draggable]");
+      if (!link) return;
+      const url = new URL(link.href, location.href).href;
+      const filename = url.split("/").pop();
+      const mime = link.dataset.mime;
+      e.dataTransfer.setData("DownloadURL", `${mime}:${filename}:${url}`);
+      link.classList.add("dragging");
+    });
+
+    document.addEventListener("dragend", e => {
+      const link = e.target.closest("a.download[draggable]");
+      if (link) link.classList.remove("dragging");
     });
   </script>
 
