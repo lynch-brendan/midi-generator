@@ -2,3 +2,8 @@ anthropic>=0.40.0
 fastapi>=0.111.0
 uvicorn>=0.30.0
 python-multipart>=0.0.9
+sqlalchemy>=2.0
+psycopg2-binary
+boto3
+python-jose[cryptography]
+httpx

@@ -12,11 +12,301 @@
       background: #0a0a0a;
       color: #f0f0f0;
       min-height: 100vh;
+    }
+
+    /* -----------------------------------------------------------------------
+       Header bar
+    ----------------------------------------------------------------------- */
+
+    .top-bar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: #0a0a0a;
+      border-bottom: 1px solid #1e1e1e;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 28px;
+      height: 56px;
+    }
+
+    .top-bar-title {
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+    }
+
+    .top-bar-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .btn-signin {
+      background: #f0f0f0;
+      color: #0a0a0a;
+      border: none;
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-signin:hover { opacity: 0.85; }
+
+    .btn-signin svg { flex-shrink: 0; }
+
+    .user-pill {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .user-avatar {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      object-fit: cover;
+      background: #333;
+    }
+
+    .user-avatar-placeholder {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: #2a2a2a;
+      border: 1px solid #444;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      color: #888;
+      flex-shrink: 0;
+    }
+
+    .user-name {
+      font-size: 0.85rem;
+      color: #ccc;
+    }
+
+    .btn-signout {
+      background: none;
+      border: 1px solid #333;
+      border-radius: 7px;
+      padding: 6px 12px;
+      color: #888;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+
+    .btn-signout:hover { color: #f0f0f0; border-color: #555; }
+
+    /* -----------------------------------------------------------------------
+       Layout: main content + right library panel
+    ----------------------------------------------------------------------- */
+
+    .page-layout {
+      display: flex;
+      align-items: flex-start;
+      gap: 0;
+    }
+
+    .main-content {
+      flex: 1;
+      min-width: 0;
       display: flex;
       flex-direction: column;
       align-items: center;
       padding: 60px 20px 120px;
     }
+
+    /* -----------------------------------------------------------------------
+       Library panel (right sidebar)
+    ----------------------------------------------------------------------- */
+
+    .library-panel {
+      width: 320px;
+      flex-shrink: 0;
+      border-left: 1px solid #1e1e1e;
+      min-height: calc(100vh - 56px);
+      padding: 24px 20px;
+      display: none; /* shown via JS when logged in */
+    }
+
+    .library-panel.visible { display: block; }
+
+    .library-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+
+    .library-title {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #ccc;
+    }
+
+    .btn-new-folder {
+      background: none;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 5px 10px;
+      color: #888;
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+
+    .btn-new-folder:hover { color: #f0f0f0; border-color: #555; }
+
+    .folder-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .folder-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 9px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.1s;
+      border: 1px solid transparent;
+    }
+
+    .folder-item:hover { background: #141414; border-color: #222; }
+    .folder-item.active { background: #141414; border-color: #2a2a2a; }
+
+    .folder-item-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .folder-icon { color: #555; font-size: 0.9rem; flex-shrink: 0; }
+
+    .folder-name {
+      font-size: 0.85rem;
+      color: #ccc;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .folder-count {
+      font-size: 0.72rem;
+      color: #555;
+      background: #1a1a1a;
+      border-radius: 10px;
+      padding: 1px 6px;
+      flex-shrink: 0;
+    }
+
+    .btn-folder-delete {
+      background: none;
+      border: none;
+      color: #444;
+      cursor: pointer;
+      font-size: 0.8rem;
+      padding: 2px 4px;
+      border-radius: 4px;
+      transition: color 0.15s;
+      flex-shrink: 0;
+      line-height: 1;
+    }
+
+    .btn-folder-delete:hover { color: #e05; }
+
+    /* Files list within an open folder */
+    .folder-files {
+      margin-top: 8px;
+      margin-left: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .saved-file-item {
+      background: #111;
+      border: 1px solid #1e1e1e;
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+
+    .saved-file-name {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: #ddd;
+      margin-bottom: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .saved-file-prompt {
+      font-size: 0.72rem;
+      color: #555;
+      margin-bottom: 8px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .saved-file-actions {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .saved-file-actions a {
+      color: #666;
+      font-size: 0.72rem;
+      border: 1px solid #2a2a2a;
+      border-radius: 5px;
+      padding: 3px 8px;
+      text-decoration: none;
+      transition: color 0.15s, border-color 0.15s;
+      white-space: nowrap;
+    }
+
+    .saved-file-actions a:hover { color: #f0f0f0; border-color: #555; }
+
+    .btn-file-delete {
+      margin-left: auto;
+      background: none;
+      border: none;
+      color: #333;
+      cursor: pointer;
+      font-size: 0.75rem;
+      padding: 3px 6px;
+      border-radius: 4px;
+      transition: color 0.15s;
+    }
+
+    .btn-file-delete:hover { color: #e05; }
+
+    .library-empty {
+      color: #444;
+      font-size: 0.82rem;
+      text-align: center;
+      padding: 32px 0;
+    }
+
+    /* -----------------------------------------------------------------------
+       Heading / subtitle (centre column)
+    ----------------------------------------------------------------------- */
 
     h1 {
       font-size: 2rem;
@@ -88,7 +378,10 @@
       animation: pulse 1.4s ease-in-out infinite;
     }
 
-    /* Groups */
+    /* -----------------------------------------------------------------------
+       Sessions / groups
+    ----------------------------------------------------------------------- */
+
     #sessions {
       width: 100%;
       max-width: 640px;
@@ -134,7 +427,10 @@
       border-left: 1px solid #222;
     }
 
-    /* Cards */
+    /* -----------------------------------------------------------------------
+       Cards
+    ----------------------------------------------------------------------- */
+
     .card {
       background: #141414;
       border: 1px solid #222;
@@ -163,15 +459,17 @@
       display: flex;
       gap: 10px;
       align-items: center;
+      flex-wrap: wrap;
     }
 
     audio {
       flex: 1;
+      min-width: 140px;
       height: 36px;
       filter: invert(1) hue-rotate(180deg);
     }
 
-    a.download, button.more-like {
+    a.download, button.more-like, button.save-file {
       color: #888;
       font-size: 0.8rem;
       border: 1px solid #333;
@@ -180,20 +478,114 @@
       transition: color 0.15s, border-color 0.15s;
       white-space: nowrap;
       text-decoration: none;
+      cursor: pointer;
+    }
+
+    a.download {
       cursor: grab;
     }
 
     a.download:active { cursor: grabbing; }
     a.download.dragging { opacity: 0.5; border-color: #888; }
 
-    button.more-like {
+    button.more-like, button.save-file {
       background: none;
-      cursor: pointer;
     }
 
-    a.download:hover, button.more-like:hover { color: #f0f0f0; border-color: #555; }
+    a.download:hover, button.more-like:hover, button.save-file:hover {
+      color: #f0f0f0;
+      border-color: #555;
+    }
 
-    /* Examples */
+    button.save-file { display: none; }
+    button.save-file.visible { display: inline-block; }
+
+    /* -----------------------------------------------------------------------
+       Save popover
+    ----------------------------------------------------------------------- */
+
+    .save-popover {
+      position: fixed;
+      z-index: 200;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 10px;
+      padding: 12px;
+      min-width: 220px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+    }
+
+    .save-popover-title {
+      font-size: 0.75rem;
+      color: #666;
+      margin-bottom: 10px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #2a2a2a;
+    }
+
+    .popover-folder-list {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      max-height: 200px;
+      overflow-y: auto;
+      margin-bottom: 8px;
+    }
+
+    .popover-folder-option {
+      padding: 7px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.83rem;
+      color: #ccc;
+      transition: background 0.1s;
+    }
+
+    .popover-folder-option:hover { background: #242424; }
+
+    .popover-folder-option.no-folder { color: #666; font-style: italic; }
+
+    .popover-new-folder {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid #2a2a2a;
+    }
+
+    .popover-new-folder input {
+      flex: 1;
+      background: #111;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 6px 10px;
+      color: #f0f0f0;
+      font-size: 0.8rem;
+      outline: none;
+    }
+
+    .popover-new-folder input:focus { border-color: #555; }
+    .popover-new-folder input::placeholder { color: #444; }
+
+    .popover-new-folder button {
+      background: #f0f0f0;
+      color: #0a0a0a;
+      border: none;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      white-space: nowrap;
+    }
+
+    .popover-new-folder button:hover { opacity: 0.85; }
+
+    /* -----------------------------------------------------------------------
+       Examples
+    ----------------------------------------------------------------------- */
+
     .examples {
       margin-top: 48px;
       display: flex;
@@ -215,37 +607,459 @@
     }
 
     .example:hover { color: #f0f0f0; border-color: #444; }
+
+    /* -----------------------------------------------------------------------
+       Mobile: stack library below content
+    ----------------------------------------------------------------------- */
+
+    @media (max-width: 860px) {
+      .library-panel {
+        width: 100%;
+        border-left: none;
+        border-top: 1px solid #1e1e1e;
+        min-height: unset;
+        padding: 20px 20px 40px;
+      }
+
+      .page-layout {
+        flex-direction: column;
+      }
+    }
+
+    /* -----------------------------------------------------------------------
+       New folder name input (inline library)
+    ----------------------------------------------------------------------- */
+
+    .new-folder-inline {
+      display: flex;
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    .new-folder-inline input {
+      flex: 1;
+      background: #111;
+      border: 1px solid #333;
+      border-radius: 7px;
+      padding: 7px 10px;
+      color: #f0f0f0;
+      font-size: 0.8rem;
+      outline: none;
+    }
+
+    .new-folder-inline input:focus { border-color: #555; }
+    .new-folder-inline input::placeholder { color: #444; }
+
+    .new-folder-inline button {
+      background: #f0f0f0;
+      color: #0a0a0a;
+      border: none;
+      border-radius: 7px;
+      padding: 7px 10px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+
+    .new-folder-inline button:hover { opacity: 0.85; }
+
+    .new-folder-inline-row { display: none; }
+    .new-folder-inline-row.visible { display: flex; }
   </style>
 </head>
 <body>
 
-  <h1>MIDI Generator</h1>
-  <p class="subtitle">Describe a musical idea. Get 5 variations back.</p>
-
-  <div class="input-row">
-    <input type="text" id="prompt" placeholder='e.g. "jazzy piano riff in D minor"' />
-    <button class="generate" id="generateBtn" onclick="generate()">Generate</button>
+  <!-- =====================================================================
+       Top bar
+  ====================================================================== -->
+  <div class="top-bar">
+    <span class="top-bar-title">MIDI Generator</span>
+    <div class="top-bar-right" id="authArea">
+      <!-- Populated by JS -->
+    </div>
   </div>
 
-  <p class="status" id="status"></p>
+  <!-- =====================================================================
+       Page layout: main centre + library right panel
+  ====================================================================== -->
+  <div class="page-layout">
 
-  <div id="sessions"></div>
+    <!-- Main content -->
+    <div class="main-content">
 
-  <div class="examples">
-    <span class="example" onclick="useExample(this)">jazzy piano riff in D minor</span>
-    <span class="example" onclick="useExample(this)">triumphant trumpet fanfare</span>
-    <span class="example" onclick="useExample(this)">daft punk style bassline</span>
-    <span class="example" onclick="useExample(this)">sad cello melody</span>
-    <span class="example" onclick="useExample(this)">aggressive metal riff in E</span>
-    <span class="example" onclick="useExample(this)">lo-fi hip hop chord progression</span>
+      <h1>MIDI Generator</h1>
+      <p class="subtitle">Describe a musical idea. Get 5 variations back.</p>
+
+      <div class="input-row">
+        <input type="text" id="prompt" placeholder='e.g. "jazzy piano riff in D minor"' />
+        <button class="generate" id="generateBtn" onclick="generate()">Generate</button>
+      </div>
+
+      <p class="status" id="status"></p>
+
+      <div id="sessions"></div>
+
+      <div class="examples">
+        <span class="example" onclick="useExample(this)">jazzy piano riff in D minor</span>
+        <span class="example" onclick="useExample(this)">triumphant trumpet fanfare</span>
+        <span class="example" onclick="useExample(this)">daft punk style bassline</span>
+        <span class="example" onclick="useExample(this)">sad cello melody</span>
+        <span class="example" onclick="useExample(this)">aggressive metal riff in E</span>
+        <span class="example" onclick="useExample(this)">lo-fi hip hop chord progression</span>
+      </div>
+
+    </div><!-- /.main-content -->
+
+    <!-- Library panel -->
+    <div class="library-panel" id="libraryPanel">
+      <div class="library-header">
+        <span class="library-title">My Library</span>
+        <button class="btn-new-folder" id="btnNewFolder" onclick="toggleNewFolderRow()">+ New folder</button>
+      </div>
+
+      <!-- Inline new-folder row -->
+      <div class="new-folder-inline-row" id="newFolderInlineRow">
+        <div class="new-folder-inline">
+          <input type="text" id="newFolderNameInput" placeholder="Folder name" />
+          <button onclick="submitNewFolder()">Create</button>
+        </div>
+      </div>
+
+      <div class="folder-list" id="folderList">
+        <!-- Populated by JS -->
+      </div>
+
+      <p class="library-empty" id="libraryEmpty" style="display:none">No folders yet. Create one to start saving files.</p>
+    </div><!-- /.library-panel -->
+
+  </div><!-- /.page-layout -->
+
+  <!-- Save popover (appended to body, positioned absolutely) -->
+  <div class="save-popover" id="savePopover" style="display:none">
+    <div class="save-popover-title">Save to folder</div>
+    <div class="popover-folder-list" id="popoverFolderList"></div>
+    <div class="popover-new-folder">
+      <input type="text" id="popoverNewFolderInput" placeholder="New folder…" />
+      <button onclick="popoverCreateFolder()">Create</button>
+    </div>
   </div>
 
   <script>
+    // ==========================================================================
+    // State
+    // ==========================================================================
+    let currentUser = null;
+    let folders = []; // [{id, name, file_count}]
+    let openFolderId = null; // currently expanded folder in library
+    let activeSaveContext = null; // {name, prompt, midi_url, wav_url}
+    let abortController = null;
+
+    // ==========================================================================
+    // Auth
+    // ==========================================================================
+
+    async function initAuth() {
+      try {
+        const res = await fetch("/auth/me");
+        const data = await res.json();
+        currentUser = data.user || null;
+      } catch (_) {
+        currentUser = null;
+      }
+      renderAuthArea();
+      if (currentUser) {
+        document.getElementById("libraryPanel").classList.add("visible");
+        await refreshFolders();
+      }
+    }
+
+    function renderAuthArea() {
+      const area = document.getElementById("authArea");
+      if (!currentUser) {
+        area.innerHTML = `
+          <button class="btn-signin" onclick="location.href='/auth/google'">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M15.68 8.18c0-.57-.05-1.12-.14-1.64H8v3.1h4.3a3.67 3.67 0 0 1-1.6 2.42v2h2.58c1.51-1.39 2.4-3.44 2.4-5.88z" fill="#4285F4"/>
+              <path d="M8 16c2.16 0 3.97-.72 5.3-1.94l-2.58-2a4.8 4.8 0 0 1-7.15-2.52H.96v2.07A8 8 0 0 0 8 16z" fill="#34A853"/>
+              <path d="M3.57 9.54A4.8 4.8 0 0 1 3.32 8c0-.54.09-1.06.25-1.54V4.39H.96A8 8 0 0 0 0 8c0 1.29.31 2.51.96 3.61l2.61-2.07z" fill="#FBBC05"/>
+              <path d="M8 3.18c1.22 0 2.31.42 3.17 1.24l2.37-2.37A8 8 0 0 0 8 0 8 8 0 0 0 .96 4.39l2.61 2.07A4.77 4.77 0 0 1 8 3.18z" fill="#EA4335"/>
+            </svg>
+            Sign in with Google
+          </button>`;
+      } else {
+        const initial = (currentUser.name || currentUser.email || "?")[0].toUpperCase();
+        const avatarHtml = currentUser.picture
+          ? `<img class="user-avatar" src="${escHtml(currentUser.picture)}" alt="" />`
+          : `<div class="user-avatar-placeholder">${escHtml(initial)}</div>`;
+        area.innerHTML = `
+          <div class="user-pill">
+            ${avatarHtml}
+            <span class="user-name">${escHtml(currentUser.name || currentUser.email)}</span>
+          </div>
+          <button class="btn-signout" onclick="signOut()">Sign out</button>`;
+      }
+    }
+
+    async function signOut() {
+      await fetch("/auth/logout", { method: "POST" });
+      currentUser = null;
+      renderAuthArea();
+      document.getElementById("libraryPanel").classList.remove("visible");
+      // Hide all save buttons
+      document.querySelectorAll("button.save-file").forEach(b => b.classList.remove("visible"));
+    }
+
+    // ==========================================================================
+    // Folders / library
+    // ==========================================================================
+
+    async function refreshFolders() {
+      if (!currentUser) return;
+      try {
+        const res = await fetch("/api/folders");
+        if (!res.ok) return;
+        folders = await res.json();
+      } catch (_) {
+        folders = [];
+      }
+      renderFolderList();
+    }
+
+    function renderFolderList() {
+      const list = document.getElementById("folderList");
+      const emptyMsg = document.getElementById("libraryEmpty");
+
+      if (folders.length === 0) {
+        list.innerHTML = "";
+        emptyMsg.style.display = "block";
+        return;
+      }
+      emptyMsg.style.display = "none";
+
+      list.innerHTML = "";
+      for (const folder of folders) {
+        const item = document.createElement("div");
+        item.className = "folder-item" + (openFolderId === folder.id ? " active" : "");
+        item.dataset.folderId = folder.id;
+        item.innerHTML = `
+          <div class="folder-item-left" onclick="toggleFolder('${escAttr(folder.id)}')">
+            <span class="folder-icon">&#x1F4C1;</span>
+            <span class="folder-name">${escHtml(folder.name)}</span>
+          </div>
+          <span class="folder-count">${folder.file_count}</span>
+          <button class="btn-folder-delete" title="Delete folder" onclick="deleteFolder('${escAttr(folder.id)}', event)">&#x2715;</button>`;
+        list.appendChild(item);
+
+        if (openFolderId === folder.id) {
+          const filesContainer = document.createElement("div");
+          filesContainer.className = "folder-files";
+          filesContainer.id = `folder-files-${folder.id}`;
+          list.appendChild(filesContainer);
+          loadFolderFiles(folder.id, filesContainer);
+        }
+      }
+    }
+
+    async function toggleFolder(folderId) {
+      if (openFolderId === folderId) {
+        openFolderId = null;
+      } else {
+        openFolderId = folderId;
+      }
+      renderFolderList();
+    }
+
+    async function loadFolderFiles(folderId, container) {
+      container.innerHTML = `<p style="color:#444;font-size:0.78rem;padding:8px 12px">Loading…</p>`;
+      try {
+        const res = await fetch(`/api/saved?folder_id=${encodeURIComponent(folderId)}`);
+        if (!res.ok) throw new Error("Failed to load");
+        const files = await res.json();
+        if (files.length === 0) {
+          container.innerHTML = `<p style="color:#444;font-size:0.78rem;padding:8px 12px">No files saved here.</p>`;
+          return;
+        }
+        container.innerHTML = "";
+        for (const f of files) {
+          const el = document.createElement("div");
+          el.className = "saved-file-item";
+          el.innerHTML = `
+            <div class="saved-file-name">${escHtml(f.name)}</div>
+            <div class="saved-file-prompt">${escHtml(f.prompt)}</div>
+            <div class="saved-file-actions">
+              <a href="${escHtml(f.midi_url)}" download>⠿ MIDI</a>
+              ${f.wav_url ? `<a href="${escHtml(f.wav_url)}" download>⠿ WAV</a>` : ""}
+              ${f.wav_url ? `<a href="${escHtml(f.wav_url)}">&#9654; Play</a>` : ""}
+              <button class="btn-file-delete" title="Delete" onclick="deleteFile('${escAttr(f.id)}', '${escAttr(folderId)}')">&#x2715;</button>
+            </div>`;
+          container.appendChild(el);
+        }
+      } catch (_) {
+        container.innerHTML = `<p style="color:#e05;font-size:0.78rem;padding:8px 12px">Failed to load files.</p>`;
+      }
+    }
+
+    function toggleNewFolderRow() {
+      const row = document.getElementById("newFolderInlineRow");
+      row.classList.toggle("visible");
+      if (row.classList.contains("visible")) {
+        document.getElementById("newFolderNameInput").focus();
+      }
+    }
+
+    async function submitNewFolder() {
+      const input = document.getElementById("newFolderNameInput");
+      const name = input.value.trim();
+      if (!name) return;
+      try {
+        const res = await fetch("/api/folders", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        });
+        if (!res.ok) return;
+        input.value = "";
+        document.getElementById("newFolderInlineRow").classList.remove("visible");
+        await refreshFolders();
+      } catch (_) {}
+    }
+
+    async function deleteFolder(folderId, event) {
+      event.stopPropagation();
+      if (!confirm("Delete this folder and all its saved files?")) return;
+      try {
+        await fetch(`/api/folders/${encodeURIComponent(folderId)}`, { method: "DELETE" });
+        if (openFolderId === folderId) openFolderId = null;
+        await refreshFolders();
+      } catch (_) {}
+    }
+
+    async function deleteFile(fileId, folderId) {
+      if (!confirm("Remove this saved file?")) return;
+      try {
+        await fetch(`/api/saved/${encodeURIComponent(fileId)}`, { method: "DELETE" });
+        await refreshFolders(); // re-renders counts + open folder
+      } catch (_) {}
+    }
+
+    // ==========================================================================
+    // Save popover
+    // ==========================================================================
+
+    let popoverCloseListener = null;
+
+    function openSavePopover(button, variation) {
+      activeSaveContext = variation;
+      const popover = document.getElementById("savePopover");
+      const rect = button.getBoundingClientRect();
+
+      // Position below the button
+      popover.style.display = "block";
+      popover.style.top = (rect.bottom + window.scrollY + 6) + "px";
+      const left = Math.min(rect.left + window.scrollX, window.innerWidth - 240);
+      popover.style.left = Math.max(8, left) + "px";
+
+      renderPopoverFolders();
+      document.getElementById("popoverNewFolderInput").value = "";
+
+      // Close on outside click
+      if (popoverCloseListener) document.removeEventListener("click", popoverCloseListener);
+      popoverCloseListener = (e) => {
+        if (!popover.contains(e.target) && e.target !== button) {
+          closeSavePopover();
+        }
+      };
+      setTimeout(() => document.addEventListener("click", popoverCloseListener), 0);
+    }
+
+    function closeSavePopover() {
+      document.getElementById("savePopover").style.display = "none";
+      activeSaveContext = null;
+      if (popoverCloseListener) {
+        document.removeEventListener("click", popoverCloseListener);
+        popoverCloseListener = null;
+      }
+    }
+
+    function renderPopoverFolders() {
+      const list = document.getElementById("popoverFolderList");
+      list.innerHTML = "";
+
+      // "No folder" option
+      const noFolder = document.createElement("div");
+      noFolder.className = "popover-folder-option no-folder";
+      noFolder.textContent = "No folder (unsorted)";
+      noFolder.onclick = () => saveFileToFolder(null);
+      list.appendChild(noFolder);
+
+      for (const folder of folders) {
+        const opt = document.createElement("div");
+        opt.className = "popover-folder-option";
+        opt.textContent = folder.name;
+        opt.onclick = () => saveFileToFolder(folder.id);
+        list.appendChild(opt);
+      }
+    }
+
+    async function popoverCreateFolder() {
+      const input = document.getElementById("popoverNewFolderInput");
+      const name = input.value.trim();
+      if (!name) return;
+      try {
+        const res = await fetch("/api/folders", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        });
+        if (!res.ok) return;
+        const newFolder = await res.json();
+        input.value = "";
+        await refreshFolders();
+        renderPopoverFolders();
+        // Immediately save to newly created folder
+        saveFileToFolder(newFolder.id);
+      } catch (_) {}
+    }
+
+    async function saveFileToFolder(folderId) {
+      if (!activeSaveContext) return;
+      const context = activeSaveContext;
+      closeSavePopover();
+
+      try {
+        const body = {
+          name: context.name,
+          prompt: context.prompt,
+          midi_url: context.midi_url,
+          wav_url: context.wav_url || null,
+          folder_id: folderId || null,
+        };
+        const res = await fetch("/api/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          alert("Save failed: " + (err.detail || "Unknown error"));
+          return;
+        }
+        // Refresh library so counts update; open the target folder
+        openFolderId = folderId;
+        await refreshFolders();
+      } catch (_) {
+        alert("Save failed. Please try again.");
+      }
+    }
+
+    // ==========================================================================
+    // Generation
+    // ==========================================================================
+
     function useExample(el) {
       document.getElementById("prompt").value = el.textContent;
     }
-
-    let abortController = null;
 
     function morelike(name, character, tempo, parentGroup) {
       const basePrompt = parentGroup.dataset.basePrompt;
@@ -261,7 +1075,7 @@
       group.dataset.basePrompt = basePrompt;
       group.innerHTML = `
         <div class="group-header">
-          <span class="group-prompt">${prompt}</span>
+          <span class="group-prompt">${escHtml(prompt)}</span>
           <span class="group-meta"></span>
           <span class="group-status loading">Generating…</span>
         </div>
@@ -277,26 +1091,44 @@
     }
 
     function addVariationCard(v, group) {
+      const prompt = group.dataset.basePrompt || "";
       const card = document.createElement("div");
       card.className = "card";
+
+      const saveVisible = currentUser ? "visible" : "";
+
       card.innerHTML = `
         <div class="card-header">
-          <span class="card-name">${v.name}</span>
+          <span class="card-name">${escHtml(v.name)}</span>
           <span class="card-tempo">${v.tempo} BPM · ${v.note_count} notes</span>
         </div>
-        <p class="card-character">${v.character}</p>
+        <p class="card-character">${escHtml(v.character)}</p>
         <div class="card-actions">
           ${v.wav_url
-            ? `<audio controls src="${v.wav_url}"></audio>`
+            ? `<audio controls src="${escHtml(v.wav_url)}"></audio>`
             : `<span style="color:#555;font-size:0.8rem">No audio</span>`}
-          <a class="download" href="${v.midi_url}" download draggable="true" data-mime="audio/midi">⠿ MIDI</a>
-          ${v.wav_url ? `<a class="download" href="${v.wav_url}" download draggable="true" data-mime="audio/wav">⠿ WAV</a>` : ""}
+          <a class="download" href="${escHtml(v.midi_url)}" download draggable="true" data-mime="audio/midi">⠿ MIDI</a>
+          ${v.wav_url ? `<a class="download" href="${escHtml(v.wav_url)}" download draggable="true" data-mime="audio/wav">⠿ WAV</a>` : ""}
           <button class="more-like">More like this</button>
+          <button class="save-file ${saveVisible}" data-name="${escAttr(v.name)}" data-prompt="${escAttr(prompt)}" data-midi="${escAttr(v.midi_url)}" data-wav="${escAttr(v.wav_url || "")}">Save</button>
         </div>
       `;
+
       card.querySelector(".more-like").addEventListener("click", () =>
         morelike(v.name, v.character, v.tempo, group)
       );
+
+      card.querySelector(".save-file").addEventListener("click", function (e) {
+        e.stopPropagation();
+        if (!currentUser) return;
+        openSavePopover(this, {
+          name: this.dataset.name,
+          prompt: this.dataset.prompt,
+          midi_url: this.dataset.midi,
+          wav_url: this.dataset.wav || null,
+        });
+      });
+
       group.appendChild(card);
     }
 
@@ -375,8 +1207,46 @@
       }
     }
 
+    // ==========================================================================
+    // Utility
+    // ==========================================================================
+
+    function escHtml(str) {
+      if (!str) return "";
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function escAttr(str) {
+      if (!str) return "";
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    // ==========================================================================
+    // Event listeners
+    // ==========================================================================
+
     document.getElementById("prompt").addEventListener("keydown", e => {
       if (e.key === "Enter") generate();
+    });
+
+    document.getElementById("newFolderNameInput").addEventListener("keydown", e => {
+      if (e.key === "Enter") submitNewFolder();
+      if (e.key === "Escape") {
+        document.getElementById("newFolderInlineRow").classList.remove("visible");
+      }
+    });
+
+    document.getElementById("popoverNewFolderInput").addEventListener("keydown", e => {
+      if (e.key === "Enter") popoverCreateFolder();
+      if (e.key === "Escape") closeSavePopover();
     });
 
     document.addEventListener("dragstart", e => {
@@ -393,6 +1263,11 @@
       const link = e.target.closest("a.download[draggable]");
       if (link) link.classList.remove("dragging");
     });
+
+    // ==========================================================================
+    // Bootstrap
+    // ==========================================================================
+    initAuth();
   </script>
 
 </body>
