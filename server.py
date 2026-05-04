@@ -7,6 +7,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from collections import defaultdict
 from datetime import date
+import os
 import re
 
 # {ip: {date: count}}
@@ -76,10 +77,12 @@ async def generate(req: GenerateRequest, request: Request):
         raise HTTPException(status_code=400, detail="Prompt is required")
 
     ip = request.headers.get("x-forwarded-for", request.client.host).split(",")[0].strip()
-    today = date.today()
-    if _rate_counts[ip][today] >= DAILY_LIMIT:
-        raise HTTPException(status_code=429, detail=f"Limit of {DAILY_LIMIT} generations per day reached. Come back tomorrow!")
-    _rate_counts[ip][today] += 1
+    admin_ips = {x.strip() for x in os.environ.get("ADMIN_IPS", "").split(",") if x.strip()}
+    if ip not in admin_ips:
+        today = date.today()
+        if _rate_counts[ip][today] >= DAILY_LIMIT:
+            raise HTTPException(status_code=429, detail=f"Limit of {DAILY_LIMIT} generations per day reached. Come back tomorrow!")
+        _rate_counts[ip][today] += 1
 
     slug = slugify(req.prompt)
     gm_patch = 0
