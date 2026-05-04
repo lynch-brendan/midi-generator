@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MIDI Generator</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0a0a0a;
+      color: #f0f0f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 60px 20px 120px;
+    }
+
+    h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      margin-bottom: 8px;
+    }
+
+    .subtitle {
+      color: #888;
+      margin-bottom: 48px;
+      font-size: 0.95rem;
+    }
+
+    .input-row {
+      display: flex;
+      gap: 12px;
+      width: 100%;
+      max-width: 640px;
+      margin-bottom: 48px;
+    }
+
+    input[type="text"] {
+      flex: 1;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 10px;
+      padding: 14px 18px;
+      color: #f0f0f0;
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    input[type="text"]:focus { border-color: #555; }
+    input[type="text"]::placeholder { color: #555; }
+
+    button.generate {
+      background: #f0f0f0;
+      color: #0a0a0a;
+      border: none;
+      border-radius: 10px;
+      padding: 14px 24px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      white-space: nowrap;
+    }
+
+    button.generate:hover { opacity: 0.85; }
+    button.generate:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .status {
+      color: #888;
+      font-size: 0.9rem;
+      margin-bottom: 32px;
+      min-height: 20px;
+    }
+
+    .error { color: #e05; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    .group-status.loading {
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+
+    /* Groups */
+    #sessions {
+      width: 100%;
+      max-width: 640px;
+      display: flex;
+      flex-direction: column;
+      gap: 48px;
+    }
+
+    .group {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .group-header {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #1e1e1e;
+    }
+
+    .group-prompt {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #aaa;
+      flex: 1;
+    }
+
+    .group-meta {
+      font-size: 0.78rem;
+      color: #555;
+    }
+
+    .group-status {
+      font-size: 0.8rem;
+      color: #666;
+    }
+
+    .group.is-child {
+      margin-left: 24px;
+      padding-left: 16px;
+      border-left: 1px solid #222;
+    }
+
+    /* Cards */
+    .card {
+      background: #141414;
+      border: 1px solid #222;
+      border-radius: 14px;
+      padding: 20px 24px;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+
+    .card-name { font-weight: 600; font-size: 1rem; }
+    .card-tempo { color: #666; font-size: 0.8rem; }
+
+    .card-character {
+      color: #888;
+      font-size: 0.85rem;
+      line-height: 1.5;
+      margin-bottom: 16px;
+    }
+
+    .card-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    audio {
+      flex: 1;
+      height: 36px;
+      filter: invert(1) hue-rotate(180deg);
+    }
+
+    a.download, button.more-like {
+      color: #888;
+      font-size: 0.8rem;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 6px 12px;
+      transition: color 0.15s, border-color 0.15s;
+      white-space: nowrap;
+      text-decoration: none;
+    }
+
+    button.more-like {
+      background: none;
+      cursor: pointer;
+    }
+
+    a.download:hover, button.more-like:hover { color: #f0f0f0; border-color: #555; }
+
+    /* Examples */
+    .examples {
+      margin-top: 48px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+      max-width: 640px;
+    }
+
+    .example {
+      background: #141414;
+      border: 1px solid #222;
+      border-radius: 20px;
+      padding: 6px 14px;
+      font-size: 0.8rem;
+      color: #888;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+
+    .example:hover { color: #f0f0f0; border-color: #444; }
+  </style>
+</head>
+<body>
+
+  <h1>MIDI Generator</h1>
+  <p class="subtitle">Describe a musical idea. Get 5 variations back.</p>
+
+  <div class="input-row">
+    <input type="text" id="prompt" placeholder='e.g. "jazzy piano riff in D minor"' />
+    <button class="generate" id="generateBtn" onclick="generate()">Generate</button>
+  </div>
+
+  <p class="status" id="status"></p>
+
+  <div id="sessions"></div>
+
+  <div class="examples">
+    <span class="example" onclick="useExample(this)">jazzy piano riff in D minor</span>
+    <span class="example" onclick="useExample(this)">triumphant trumpet fanfare</span>
+    <span class="example" onclick="useExample(this)">daft punk style bassline</span>
+    <span class="example" onclick="useExample(this)">sad cello melody</span>
+    <span class="example" onclick="useExample(this)">aggressive metal riff in E</span>
+    <span class="example" onclick="useExample(this)">lo-fi hip hop chord progression</span>
+  </div>
+
+  <script>
+    function useExample(el) {
+      document.getElementById("prompt").value = el.textContent;
+    }
+
+    let abortController = null;
+
+    function morelike(name, character, tempo, parentGroup) {
+      const basePrompt = parentGroup.dataset.basePrompt;
+      const refined = `${basePrompt} — more like: "${name}", ${tempo} BPM, ${character}`;
+      document.getElementById("prompt").value = refined;
+      if (abortController) abortController.abort();
+      generate(parentGroup, basePrompt);
+    }
+
+    function createGroup(prompt, basePrompt, isChild, afterEl) {
+      const group = document.createElement("div");
+      group.className = "group" + (isChild ? " is-child" : "");
+      group.dataset.basePrompt = basePrompt;
+      group.innerHTML = `
+        <div class="group-header">
+          <span class="group-prompt">${prompt}</span>
+          <span class="group-meta"></span>
+          <span class="group-status loading">Generating…</span>
+        </div>
+      `;
+
+      const sessions = document.getElementById("sessions");
+      if (afterEl) {
+        afterEl.insertAdjacentElement("afterend", group);
+      } else {
+        sessions.prepend(group);
+      }
+      return group;
+    }
+
+    function addVariationCard(v, group) {
+      const card = document.createElement("div");
+      card.className = "card";
+      card.innerHTML = `
+        <div class="card-header">
+          <span class="card-name">${v.name}</span>
+          <span class="card-tempo">${v.tempo} BPM · ${v.note_count} notes</span>
+        </div>
+        <p class="card-character">${v.character}</p>
+        <div class="card-actions">
+          ${v.wav_url
+            ? `<audio controls src="${v.wav_url}"></audio>`
+            : `<span style="color:#555;font-size:0.8rem">No audio</span>`}
+          <a class="download" href="${v.midi_url}" download>↓ MIDI</a>
+          ${v.wav_url ? `<a class="download" href="${v.wav_url}" download>↓ WAV</a>` : ""}
+          <button class="more-like">More like this</button>
+        </div>
+      `;
+      card.querySelector(".more-like").addEventListener("click", () =>
+        morelike(v.name, v.character, v.tempo, group)
+      );
+      group.appendChild(card);
+    }
+
+    async function generate(insertAfter, basePrompt) {
+      const prompt = document.getElementById("prompt").value.trim();
+      if (!prompt) return;
+
+      const btn = document.getElementById("generateBtn");
+      const status = document.getElementById("status");
+
+      btn.disabled = true;
+      status.textContent = "";
+
+      const group = createGroup(prompt, basePrompt || prompt, !!insertAfter, insertAfter || null);
+      const groupStatus = group.querySelector(".group-status");
+      const groupMeta = group.querySelector(".group-meta");
+
+      abortController = new AbortController();
+
+      try {
+        const res = await fetch("/api/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt }),
+          signal: abortController.signal,
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.detail || "Generation failed");
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n\n");
+          buffer = lines.pop();
+
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            const event = JSON.parse(line.slice(6));
+
+            if (event.type === "meta") {
+              groupMeta.textContent = `${event.instrument} · ${event.key}`;
+            } else if (event.type === "variation") {
+              addVariationCard(event, group);
+              const count = group.querySelectorAll(".card").length;
+              if (count < 5) {
+                groupStatus.textContent = `${count} of 5…`;
+              } else {
+                groupStatus.textContent = "";
+                groupStatus.classList.remove("loading");
+              }
+            } else if (event.type === "done") {
+              groupStatus.textContent = "";
+              groupStatus.classList.remove("loading");
+            } else if (event.type === "error") {
+              throw new Error(event.message);
+            }
+          }
+        }
+      } catch (err) {
+        if (err.name !== "AbortError") {
+          groupStatus.textContent = err.message;
+          groupStatus.style.color = "#e05";
+        }
+      } finally {
+        abortController = null;
+        btn.disabled = false;
+      }
+    }
+
+    document.getElementById("prompt").addEventListener("keydown", e => {
+      if (e.key === "Enter") generate();
+    });
+  </script>
+
+</body>
+</html>

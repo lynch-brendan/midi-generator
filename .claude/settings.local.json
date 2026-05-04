@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(chmod +x /Users/brendanlynch/midi-generator/setup.sh)",
+      "Bash(chmod +x /Users/brendanlynch/midi-generator/generate.py)",
+      "Bash(python3 *)",
+      "Read(//Users/brendanlynch/**)",
+      "Bash(ANTHROPIC_API_KEY=$\\(cat ~/.anthropic_api_key || echo \"\"\\) python3 generate.py \"triumphant trumpet fanfare\")",
+      "Bash(fluidsynth --version)",
+      "Bash(/opt/homebrew/bin/fluidsynth -ni ~/midi-generator/soundfonts/GeneralUser.sf2 ~/midi-generator/output/jazzy-piano-riff-in-d-minor/01-the-bold-statement.mid -F /tmp/test_output.wav -r 44100)",
+      "Bash(echo \"exit: $?\")",
+      "Read(//tmp/**)",
+      "Bash(xxd ~/midi-generator/soundfonts/GeneralUser.sf2)",
+      "Bash(brew search *)",
+      "Bash(curl -L --progress-bar -o ~/midi-generator/soundfonts/GeneralUser.sf2 \"https://github.com/FluidSynth/fluidsynth/raw/master/sf2/VintageDreamsWaves-v2.sf2\")",
+      "Bash(/opt/homebrew/bin/fluidsynth -ni -q -F /tmp/test_output.wav -r 44100 ~/midi-generator/soundfonts/GeneralUser.sf2 ~/midi-generator/output/jazzy-piano-riff-in-d-minor/01-the-bold-statement.mid)",
+      "Bash(.venv/bin/pip install *)",
+      "Bash(.venv/bin/python3 -c \"import fastapi, uvicorn; print\\('ok'\\)\")",
+      "Bash(curl -L --progress-bar -o ~/midi-generator/soundfonts/GeneralUser.sf2 \"https://keymusician01.s3.amazonaws.com/GeneralUser_GS.sf2\")",
+      "Bash(curl -L -o ~/midi-generator/soundfonts/GeneralUser.sf2 \"https://github.com/musescore/MuseScore/raw/4.x/share/sound/GeneralUser%20GS%20v1.471.sf2\")",
+      "Bash(/opt/homebrew/bin/fluidsynth -ni -q -F /tmp/test_cello.wav -r 44100 ~/midi-generator/soundfonts/GeneralUser.sf2 ~/midi-generator/output/sad-cello-melody/01-the-grief-unbound.mid)",
+      "Bash(.venv/bin/python3 -c ' *)",
+      "Bash(.venv/bin/python3 -c *)"
+    ]
+  }
+}
