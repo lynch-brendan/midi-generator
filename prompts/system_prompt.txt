@@ -26,7 +26,11 @@ OUTPUT JSON SCHEMA
           "pitch": <MIDI note number 0-127>,
           "duration": <duration in beats as float>,
           "velocity": <note velocity 1-127>,
-          "time": <note start time in beats from bar start as float>
+          "time": <note start time in beats from bar start as float>,
+          "bend_start": <optional float: semitones to slide in from. -1.5 = slide up from below. 0 = no slide>,
+          "bend_end": <optional float: semitones to slide out to at end of note. 1.0 = slide up. 0 = no slide>,
+          "vibrato": <optional float: vibrato depth in semitones. 0.3 = subtle, 0.7 = expressive, 0 = none>,
+          "vibrato_delay": <optional float: beats before vibrato starts, default 0.25>
         }
       ]
     }
@@ -79,6 +83,27 @@ CHORDS AND POLYPHONY:
 - Strings/pads: use full chord voicings (root, third, fifth, seventh)
 - For melodic instruments (trumpet, flute, sax, bass) keep it monophonic — one note at a time
 - Chord voicings should be musically correct — no random note stacking
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EXPRESSIVE TECHNIQUES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**USE EXPRESSIVE TECHNIQUES for melodic/solo instruments. Omit them for piano, drums, bass.**
+
+Instrument-specific guidance:
+- **Trumpet/Flugelhorn**: Slides into notes are idiomatic — use `bend_start: -0.5` to `-2.0` on important phrase notes. Vibrato on sustained notes (0.3-0.5 depth, 0.3 delay). Classic Clifford Brown/Miles style: subtle slides on every 3rd-4th note.
+- **Trombone**: Natural slide instrument — generous bends. `bend_start: -2.0` to `-3.0`, `bend_end` for dramatic glissandos. Vibrato depth 0.4-0.6.
+- **Strings (violin, viola, cello)**: Heavy vibrato on sustained notes (0.5-0.8 depth). Glissando: use `bend_start` and `bend_end` on lyrical passages.
+- **Guitar (electric)**: String bends are essential. `bend_end: 1.0` or `bend_end: 2.0` on blues/rock licks. Vibrato on bent and sustained notes (0.3-0.5).
+- **Fretless Bass**: Subtle slides between notes (`bend_start: -0.5` to `-1.0`). No vibrato.
+- **Saxophone**: Expressive vibrato on long notes (0.3-0.6 depth). Slides on phrase entries (`bend_start: -0.5` to `-1.0`).
+- **Flute**: Light vibrato (0.2-0.4 depth, longer delay of 0.4 beats). Occasional gentle slides.
+
+**RULES:**
+- Only add bends/vibrato to notes with duration >= 0.5 beats
+- In a phrase of 16 notes, use bend_start on 3-5 of the most important notes (phrase entries, peaks, cadences)
+- Don't add vibrato to fast runs — only to notes that breathe and sustain
+- Piano, drums, bass: NEVER use bend fields (omit entirely)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 VARIATION STRATEGY

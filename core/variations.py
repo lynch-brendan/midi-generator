@@ -27,6 +27,9 @@ def extract_variation_info(variation: Dict[str, Any]) -> VariationInfo:
     )
 
 
+_EXPRESSIVE_FIELDS = ("bend_start", "bend_end", "vibrato", "vibrato_delay")
+
+
 def validate_variation(variation: Dict[str, Any]) -> List[str]:
     """Return a list of warning strings for a variation. Empty = valid."""
     warnings = []
@@ -53,6 +56,8 @@ def validate_variation(variation: Dict[str, Any]) -> List[str]:
         if time < 0:
             warnings.append(f"note {i}: time {time} must be >= 0")
 
+        # bend_start / bend_end / vibrato / vibrato_delay are optional floats — no range check needed
+
     return warnings
 
 
@@ -61,10 +66,15 @@ def sanitize_variation(variation: Dict[str, Any]) -> Dict[str, Any]:
     notes = variation.get("notes", [])
     clean_notes = []
     for note in notes:
-        clean_notes.append({
+        clean = {
             "pitch": max(0, min(127, int(note.get("pitch", 60)))),
             "velocity": max(1, min(127, int(note.get("velocity", 80)))),
             "duration": max(0.01, float(note.get("duration", 0.5))),
             "time": max(0.0, float(note.get("time", 0.0))),
-        })
+        }
+        # Pass through optional expressive fields only if present in the original note
+        for field in _EXPRESSIVE_FIELDS:
+            if field in note:
+                clean[field] = note[field]
+        clean_notes.append(clean)
     return {**variation, "notes": clean_notes}
