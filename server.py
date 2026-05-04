@@ -1,11 +1,17 @@
 import sys
 import json
 from pathlib import Path
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from collections import defaultdict
+from datetime import date
 import re
+
+# {ip: {date: count}}
+_rate_counts: dict = defaultdict(lambda: defaultdict(int))
+DAILY_LIMIT = 5
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -65,9 +71,15 @@ def _process_variation(var: dict, gm_patch: int, slug: str, is_drums: bool = Fal
 
 
 @app.post("/api/generate")
-async def generate(req: GenerateRequest):
+async def generate(req: GenerateRequest, request: Request):
     if not req.prompt.strip():
         raise HTTPException(status_code=400, detail="Prompt is required")
+
+    ip = request.headers.get("x-forwarded-for", request.client.host).split(",")[0].strip()
+    today = date.today()
+    if _rate_counts[ip][today] >= DAILY_LIMIT:
+        raise HTTPException(status_code=429, detail=f"Limit of {DAILY_LIMIT} generations per day reached. Come back tomorrow!")
+    _rate_counts[ip][today] += 1
 
     slug = slugify(req.prompt)
     gm_patch = 0
