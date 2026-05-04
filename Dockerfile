@@ -14,6 +14,4 @@ COPY . .
 RUN mkdir -p soundfonts output && \
     cp GeneralUser-GS/GeneralUser.sf2 soundfonts/GeneralUser.sf2
 
-ENV PORT=8000
-
-CMD uvicorn server:app --host 0.0.0.0 --port ${PORT}
+CMD uvicorn server:app --host 0.0.0.0 --port ${PORT:-8080}
