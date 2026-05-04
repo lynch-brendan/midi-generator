@@ -2,7 +2,6 @@ FROM python:3.11-slim
 
 RUN apt-get update && apt-get install -y \
     fluidsynth \
-    curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -12,11 +11,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN mkdir -p soundfonts && \
-    curl -L -o soundfonts/GeneralUser.sf2 \
-    "https://archive.org/download/generaluser-gs-soundfont/GeneralUser_GS_v1.471.sf2"
-
-RUN mkdir -p output
+RUN mkdir -p soundfonts output && \
+    cp GeneralUser-GS/GeneralUser.sf2 soundfonts/GeneralUser.sf2
 
 ENV PORT=8000
 
