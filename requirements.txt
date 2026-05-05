@@ -7,3 +7,4 @@ psycopg2-binary
 boto3
 python-jose[cryptography]
 httpx
+stripe>=5.0.0

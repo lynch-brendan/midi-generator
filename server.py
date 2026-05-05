@@ -6,14 +6,21 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse, RedirectResponse, JSONResponse
 from pydantic import BaseModel
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 import os
 import re
 from typing import Optional
 
-# {ip: {date: count}}
+# {ip: {date: count}} — used for anonymous users only
 _rate_counts: dict = defaultdict(lambda: defaultdict(int))
-DAILY_LIMIT = 5
+ANON_DAILY_LIMIT = 3
+
+# Configurable generation limits (env-overridable)
+FREE_LIFETIME_LIMIT = int(os.environ.get("FREE_LIFETIME_LIMIT", "10"))
+CREATOR_MONTHLY_LIMIT = int(os.environ.get("CREATOR_MONTHLY_LIMIT", "300"))
+PRO_MONTHLY_LIMIT = int(os.environ.get("PRO_MONTHLY_LIMIT", "1000"))
+
+APP_URL = os.environ.get("APP_URL", "http://localhost:8000")
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -71,6 +78,83 @@ def _url_to_local_path(url: str) -> Optional[Path]:
     return OUTPUT_DIR / rel
 
 
+def _stripe_enabled() -> bool:
+    return bool(os.environ.get("STRIPE_SECRET_KEY", ""))
+
+
+def _check_and_increment_generation(user, db, ip: str) -> None:
+    """Check rate/quota limits and increment the counter.
+
+    Raises HTTPException 402 when a limit is reached.
+    Raises HTTPException 429 for anonymous IP-based rate limiting.
+    """
+    # Anonymous path — IP-based daily limit (existing behaviour)
+    if user is None or not _stripe_enabled():
+        if user is None:
+            today = date.today()
+            admin_ips = {x.strip() for x in os.environ.get("ADMIN_IPS", "").split(",") if x.strip()}
+            if ip not in admin_ips:
+                if _rate_counts[ip][today] >= ANON_DAILY_LIMIT:
+                    raise HTTPException(
+                        status_code=429,
+                        detail=f"Limit of {ANON_DAILY_LIMIT} generations per day reached. Sign in for more!"
+                    )
+                _rate_counts[ip][today] += 1
+        return  # logged-in but Stripe disabled — no quota enforcement
+
+    # Reset monthly counter if the reset date has passed
+    now = datetime.now(timezone.utc)
+    if user.monthly_reset_date and now >= user.monthly_reset_date:
+        user.monthly_generations = 0
+        user.monthly_reset_date = now + timedelta(days=30)
+
+    plan = user.subscription_plan
+    status = user.subscription_status
+    is_active = status == "active"
+
+    if plan == "pro" and is_active:
+        if user.monthly_generations >= PRO_MONTHLY_LIMIT:
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "code": "limit_reached",
+                    "plan": "pro",
+                    "limit": PRO_MONTHLY_LIMIT,
+                    "upgrade_url": "/api/stripe/checkout/pro",
+                }
+            )
+        user.monthly_generations = (user.monthly_generations or 0) + 1
+
+    elif plan == "creator" and is_active:
+        if user.monthly_generations >= CREATOR_MONTHLY_LIMIT:
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "code": "limit_reached",
+                    "plan": "creator",
+                    "limit": CREATOR_MONTHLY_LIMIT,
+                    "upgrade_url": "/api/stripe/checkout/pro",
+                }
+            )
+        user.monthly_generations = (user.monthly_generations or 0) + 1
+
+    else:
+        # Free tier
+        if (user.lifetime_generations or 0) >= FREE_LIFETIME_LIMIT:
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "code": "limit_reached",
+                    "plan": "free",
+                    "limit": FREE_LIFETIME_LIMIT,
+                    "upgrade_url": "/api/stripe/checkout/creator",
+                }
+            )
+        user.lifetime_generations = (user.lifetime_generations or 0) + 1
+
+    db.commit()
+
+
 # ---------------------------------------------------------------------------
 # Pydantic models
 # ---------------------------------------------------------------------------
@@ -126,17 +210,23 @@ def _process_variation(var: dict, gm_patch: int, slug: str, is_drums: bool = Fal
 
 
 @app.post("/api/generate")
-async def generate(req: GenerateRequest, request: Request):
+async def generate(req: GenerateRequest, request: Request, db=Depends(get_db)):
     if not req.prompt.strip():
         raise HTTPException(status_code=400, detail="Prompt is required")
 
     ip = request.headers.get("x-forwarded-for", request.client.host).split(",")[0].strip()
-    admin_ips = {x.strip() for x in os.environ.get("ADMIN_IPS", "").split(",") if x.strip()}
-    if ip not in admin_ips:
-        today = date.today()
-        if _rate_counts[ip][today] >= DAILY_LIMIT:
-            raise HTTPException(status_code=429, detail=f"Limit of {DAILY_LIMIT} generations per day reached. Come back tomorrow!")
-        _rate_counts[ip][today] += 1
+    user = get_current_user(request, db) if db is not None else None
+
+    # Check admin bypass only for anonymous / old path
+    if user is None:
+        admin_ips = {x.strip() for x in os.environ.get("ADMIN_IPS", "").split(",") if x.strip()}
+        if ip in admin_ips:
+            # Skip all rate limiting for admins
+            pass
+        else:
+            _check_and_increment_generation(user, db, ip)
+    else:
+        _check_and_increment_generation(user, db, ip)
 
     slug = slugify(req.prompt)
     gm_patch = 0
@@ -237,6 +327,184 @@ async def auth_me(request: Request, db=Depends(get_db)):
             "picture": user.picture,
         }
     })
+
+
+# ---------------------------------------------------------------------------
+# Stripe routes
+# ---------------------------------------------------------------------------
+
+@app.post("/api/stripe/checkout/{plan}")
+async def stripe_checkout(plan: str, request: Request, db=Depends(get_db)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not _stripe_enabled():
+        raise HTTPException(status_code=503, detail="Stripe not configured")
+    if plan not in ("creator", "pro"):
+        raise HTTPException(status_code=400, detail="Invalid plan. Must be 'creator' or 'pro'.")
+
+    user = get_current_user(request, db)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    from core.stripe_client import create_checkout_session, create_customer
+
+    # Ensure the Stripe customer record exists and is persisted
+    if not user.stripe_customer_id:
+        customer_id = create_customer(user)
+        if customer_id:
+            user.stripe_customer_id = customer_id
+            db.commit()
+
+    success_url = APP_URL.rstrip("/") + "/?subscribed=1"
+    cancel_url = APP_URL.rstrip("/") + "/"
+
+    url = create_checkout_session(user, plan, success_url, cancel_url)
+    if url is None:
+        raise HTTPException(status_code=500, detail="Failed to create checkout session. Check price IDs.")
+
+    return JSONResponse({"url": url})
+
+
+@app.post("/api/stripe/webhook")
+async def stripe_webhook(request: Request, db=Depends(get_db)):
+    """Stripe webhook — must read raw body for signature verification."""
+    raw_body = await request.body()
+    sig_header = request.headers.get("stripe-signature", "")
+    webhook_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+
+    stripe_mod = None
+    if _stripe_enabled():
+        from core.stripe_client import get_stripe_client
+        stripe_mod = get_stripe_client()
+
+    if stripe_mod is None:
+        raise HTTPException(status_code=503, detail="Stripe not configured")
+
+    try:
+        event = stripe_mod.Webhook.construct_event(raw_body, sig_header, webhook_secret)
+    except stripe_mod.error.SignatureVerificationError:
+        raise HTTPException(status_code=400, detail="Invalid webhook signature")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Webhook error: {exc}")
+
+    event_type = event["type"]
+    data_obj = event["data"]["object"]
+
+    creator_price_id = os.environ.get("STRIPE_CREATOR_PRICE_ID", "")
+    pro_price_id = os.environ.get("STRIPE_PRO_PRICE_ID", "")
+
+    def _get_user_by_customer(customer_id: str):
+        if db is None:
+            return None
+        return db.query(User).filter(User.stripe_customer_id == customer_id).first()
+
+    def _plan_from_subscription(subscription) -> Optional[str]:
+        """Determine plan name from subscription's price items."""
+        try:
+            for item in subscription["items"]["data"]:
+                pid = item["price"]["id"]
+                if pid == pro_price_id:
+                    return "pro"
+                if pid == creator_price_id:
+                    return "creator"
+        except (KeyError, TypeError):
+            pass
+        return None
+
+    if event_type in ("customer.subscription.created", "customer.subscription.updated"):
+        customer_id = data_obj.get("customer")
+        user = _get_user_by_customer(customer_id)
+        if user and db:
+            plan = _plan_from_subscription(data_obj)
+            user.stripe_subscription_id = data_obj["id"]
+            user.subscription_plan = plan
+            user.subscription_status = data_obj.get("status")
+            db.commit()
+
+    elif event_type == "customer.subscription.deleted":
+        customer_id = data_obj.get("customer")
+        user = _get_user_by_customer(customer_id)
+        if user and db:
+            user.subscription_plan = None
+            user.subscription_status = "canceled"
+            db.commit()
+
+    elif event_type == "invoice.payment_succeeded":
+        customer_id = data_obj.get("customer")
+        user = _get_user_by_customer(customer_id)
+        if user and db:
+            now = datetime.now(timezone.utc)
+            user.monthly_generations = 0
+            user.monthly_reset_date = now + timedelta(days=30)
+            db.commit()
+
+    return JSONResponse({"received": True})
+
+
+@app.get("/api/stripe/status")
+async def stripe_status(request: Request, db=Depends(get_db)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    user = get_current_user(request, db)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    plan = user.subscription_plan
+    status = user.subscription_status
+    is_active = status == "active"
+
+    if plan == "pro" and is_active:
+        used = user.monthly_generations or 0
+        remaining = max(0, PRO_MONTHLY_LIMIT - used)
+        limit = PRO_MONTHLY_LIMIT
+        period = "monthly"
+    elif plan == "creator" and is_active:
+        used = user.monthly_generations or 0
+        remaining = max(0, CREATOR_MONTHLY_LIMIT - used)
+        limit = CREATOR_MONTHLY_LIMIT
+        period = "monthly"
+    else:
+        used = user.lifetime_generations or 0
+        remaining = max(0, FREE_LIFETIME_LIMIT - used)
+        limit = FREE_LIFETIME_LIMIT
+        period = "lifetime"
+        plan = "free"
+        status = None
+
+    return JSONResponse({
+        "plan": plan,
+        "status": status,
+        "used": used,
+        "limit": limit,
+        "remaining": remaining,
+        "period": period,
+        "stripe_enabled": _stripe_enabled(),
+    })
+
+
+@app.post("/api/stripe/cancel")
+async def stripe_cancel(request: Request, db=Depends(get_db)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not _stripe_enabled():
+        raise HTTPException(status_code=503, detail="Stripe not configured")
+
+    user = get_current_user(request, db)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    if not user.stripe_subscription_id:
+        raise HTTPException(status_code=400, detail="No active subscription to cancel")
+
+    from core.stripe_client import cancel_subscription
+    ok = cancel_subscription(user.stripe_subscription_id)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Failed to cancel subscription")
+
+    user.subscription_status = "canceled"
+    db.commit()
+    return JSONResponse({"ok": True, "message": "Subscription will cancel at period end."})
 
 
 # ---------------------------------------------------------------------------

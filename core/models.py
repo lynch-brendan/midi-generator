@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, DateTime, ForeignKey, Text
+from sqlalchemy import Column, String, DateTime, ForeignKey, Integer, Text
 from sqlalchemy.orm import relationship
 from core.db import Base
 
@@ -22,6 +22,17 @@ class User(Base):
     name = Column(String, nullable=False)
     picture = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), default=_now, nullable=False)
+
+    # Stripe / subscription fields
+    stripe_customer_id = Column(String, nullable=True)
+    stripe_subscription_id = Column(String, nullable=True)
+    subscription_plan = Column(String, nullable=True)      # "creator" | "pro" | None
+    subscription_status = Column(String, nullable=True)    # "active" | "canceled" | "past_due" | …
+
+    # Usage tracking
+    lifetime_generations = Column(Integer, default=0, nullable=False)
+    monthly_generations = Column(Integer, default=0, nullable=False)
+    monthly_reset_date = Column(DateTime(timezone=True), nullable=True)
 
     folders = relationship("Folder", back_populates="user", cascade="all, delete-orphan")
     saved_files = relationship("SavedFile", back_populates="user", cascade="all, delete-orphan")

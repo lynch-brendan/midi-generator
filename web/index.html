@@ -666,6 +666,136 @@
 
     .new-folder-inline-row { display: none; }
     .new-folder-inline-row.visible { display: flex; }
+
+    /* -----------------------------------------------------------------------
+       Usage indicator (below generate button)
+    ----------------------------------------------------------------------- */
+
+    .usage-indicator {
+      font-size: 0.78rem;
+      color: #555;
+      text-align: center;
+      margin-top: -36px;
+      margin-bottom: 36px;
+    }
+
+    .usage-indicator.warn { color: #c07020; }
+    .usage-indicator.danger { color: #e05; }
+
+    /* -----------------------------------------------------------------------
+       Upgrade modal
+    ----------------------------------------------------------------------- */
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      z-index: 500;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .modal-overlay.hidden { display: none; }
+
+    .modal-box {
+      background: #141414;
+      border: 1px solid #2a2a2a;
+      border-radius: 16px;
+      padding: 36px 32px;
+      max-width: 440px;
+      width: 100%;
+      position: relative;
+    }
+
+    .modal-close {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      background: none;
+      border: none;
+      color: #555;
+      font-size: 1.1rem;
+      cursor: pointer;
+      line-height: 1;
+      padding: 4px 6px;
+      border-radius: 6px;
+      transition: color 0.15s;
+    }
+
+    .modal-close:hover { color: #f0f0f0; }
+
+    .modal-heading {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .modal-pitch {
+      color: #888;
+      font-size: 0.9rem;
+      margin-bottom: 28px;
+      line-height: 1.5;
+    }
+
+    .modal-plans {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .plan-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      background: #1e1e1e;
+      border: 1px solid #333;
+      border-radius: 10px;
+      padding: 14px 18px;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      text-align: left;
+      width: 100%;
+    }
+
+    .plan-btn:hover { background: #242424; border-color: #555; }
+
+    .plan-btn-name {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #f0f0f0;
+    }
+
+    .plan-btn-detail {
+      font-size: 0.78rem;
+      color: #777;
+      margin-top: 2px;
+    }
+
+    /* -----------------------------------------------------------------------
+       Success toast
+    ----------------------------------------------------------------------- */
+
+    .toast {
+      position: fixed;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1a2a1a;
+      border: 1px solid #2a5a2a;
+      border-radius: 10px;
+      padding: 12px 20px;
+      color: #6ddb6d;
+      font-size: 0.88rem;
+      font-weight: 500;
+      z-index: 600;
+      white-space: nowrap;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+      transition: opacity 0.4s;
+    }
+
+    .toast.hidden { display: none; }
   </style>
 </head>
 <body>
@@ -695,6 +825,8 @@
         <input type="text" id="prompt" placeholder='e.g. "jazzy piano riff in D minor"' />
         <button class="generate" id="generateBtn" onclick="generate()">Generate</button>
       </div>
+
+      <p class="usage-indicator" id="usageIndicator"></p>
 
       <p class="status" id="status"></p>
 
@@ -735,6 +867,28 @@
 
   </div><!-- /.page-layout -->
 
+  <!-- Upgrade modal -->
+  <div class="modal-overlay hidden" id="upgradeModal" onclick="handleModalOverlayClick(event)">
+    <div class="modal-box">
+      <button class="modal-close" onclick="closeUpgradeModal()" title="Close">&times;</button>
+      <div class="modal-heading">You've used your free generations</div>
+      <p class="modal-pitch">Upgrade to keep creating unlimited MIDI patterns.</p>
+      <div class="modal-plans">
+        <button class="plan-btn" onclick="startCheckout('creator')">
+          <span class="plan-btn-name">Creator &mdash; $12/mo</span>
+          <span class="plan-btn-detail">300 generations per month</span>
+        </button>
+        <button class="plan-btn" onclick="startCheckout('pro')">
+          <span class="plan-btn-name">Pro &mdash; $20/mo</span>
+          <span class="plan-btn-detail">Unlimited generations (1 000/month cap)</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Success toast -->
+  <div class="toast hidden" id="successToast"></div>
+
   <!-- Save popover (appended to body, positioned absolutely) -->
   <div class="save-popover" id="savePopover" style="display:none">
     <div class="save-popover-title">Save to folder</div>
@@ -754,6 +908,7 @@
     let openFolderId = null; // currently expanded folder in library
     let activeSaveContext = null; // {name, prompt, midi_url, wav_url}
     let abortController = null;
+    let usageInfo = null; // last known {plan, used, limit, remaining, period}
 
     // ==========================================================================
     // Auth
@@ -770,8 +925,9 @@
       renderAuthArea();
       if (currentUser) {
         document.getElementById("libraryPanel").classList.add("visible");
-        await refreshFolders();
+        await Promise.all([refreshFolders(), refreshUsage()]);
       }
+      checkSubscribedParam();
     }
 
     function renderAuthArea() {
@@ -1132,6 +1288,103 @@
       group.appendChild(card);
     }
 
+    // ==========================================================================
+    // Usage / Stripe
+    // ==========================================================================
+
+    async function refreshUsage() {
+      if (!currentUser) {
+        renderUsageIndicator(null);
+        return;
+      }
+      try {
+        const res = await fetch("/api/stripe/status");
+        if (!res.ok) {
+          renderUsageIndicator(null);
+          return;
+        }
+        usageInfo = await res.json();
+        renderUsageIndicator(usageInfo);
+      } catch (_) {
+        renderUsageIndicator(null);
+      }
+    }
+
+    function renderUsageIndicator(info) {
+      const el = document.getElementById("usageIndicator");
+      if (!info) {
+        el.textContent = "";
+        el.className = "usage-indicator";
+        return;
+      }
+
+      const { plan, used, limit, remaining, period } = info;
+
+      if (plan === "pro") {
+        el.textContent = `Pro plan · ${used} / ${limit} generations this month`;
+      } else if (plan === "creator") {
+        el.textContent = `Creator plan · ${used} / ${limit} generations this month`;
+      } else {
+        // free
+        el.textContent = `${remaining} free generation${remaining === 1 ? "" : "s"} remaining (lifetime)`;
+      }
+
+      el.className = "usage-indicator" + (remaining === 0 ? " danger" : remaining <= 3 ? " warn" : "");
+    }
+
+    function openUpgradeModal() {
+      document.getElementById("upgradeModal").classList.remove("hidden");
+    }
+
+    function closeUpgradeModal() {
+      document.getElementById("upgradeModal").classList.add("hidden");
+    }
+
+    function handleModalOverlayClick(e) {
+      if (e.target === document.getElementById("upgradeModal")) {
+        closeUpgradeModal();
+      }
+    }
+
+    async function startCheckout(plan) {
+      try {
+        const res = await fetch(`/api/stripe/checkout/${plan}`, { method: "POST" });
+        if (!res.ok) {
+          const err = await res.json();
+          alert("Checkout error: " + (err.detail || "Unknown error"));
+          return;
+        }
+        const data = await res.json();
+        window.location.href = data.url;
+      } catch (_) {
+        alert("Could not start checkout. Please try again.");
+      }
+    }
+
+    function checkSubscribedParam() {
+      const params = new URLSearchParams(window.location.search);
+      if (params.has("subscribed")) {
+        const plan = (usageInfo && usageInfo.plan !== "free") ? usageInfo.plan : "Creator/Pro";
+        showToast(`Welcome to ${plan.charAt(0).toUpperCase() + plan.slice(1)}! Your subscription is active.`);
+        // Clean the URL
+        const clean = window.location.pathname;
+        window.history.replaceState({}, "", clean);
+      }
+    }
+
+    function showToast(message, durationMs = 5000) {
+      const toast = document.getElementById("successToast");
+      toast.textContent = message;
+      toast.classList.remove("hidden");
+      setTimeout(() => {
+        toast.style.opacity = "0";
+        setTimeout(() => {
+          toast.classList.add("hidden");
+          toast.style.opacity = "";
+        }, 400);
+      }, durationMs);
+    }
+
     async function generate(insertAfter, basePrompt) {
       const prompt = document.getElementById("prompt").value.trim();
       if (!prompt) return;
@@ -1158,6 +1411,14 @@
 
         if (!res.ok) {
           const err = await res.json();
+          // 402 = limit reached — show upgrade modal
+          if (res.status === 402 && err.detail && err.detail.code === "limit_reached") {
+            group.remove();
+            openUpgradeModal();
+            btn.disabled = false;
+            abortController = null;
+            return;
+          }
           throw new Error(err.detail || "Generation failed");
         }
 
@@ -1204,6 +1465,8 @@
       } finally {
         abortController = null;
         btn.disabled = false;
+        // Refresh usage counter after each generation attempt
+        if (currentUser) refreshUsage();
       }
     }
 
