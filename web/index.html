@@ -3,38 +3,54 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>MIDI Generator</title>
+  <title>Muse</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+    :root {
+      --bg:        #F7F4EF;
+      --bg-card:   #F0EBE3;
+      --bg-input:  #FFFFFF;
+      --border:    #DDD7CE;
+      --border-soft: #E8E3DC;
+      --text:      #1C1814;
+      --text-muted:#8A8278;
+      --text-dim:  #B0A99F;
+      --accent:    #2C2420;
+      --accent-fg: #F7F4EF;
+      --red:       #B84040;
+    }
+
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #0a0a0a;
-      color: #f0f0f0;
+      background: var(--bg);
+      color: var(--text);
       min-height: 100vh;
     }
 
     /* -----------------------------------------------------------------------
-       Header bar
+       Top bar
     ----------------------------------------------------------------------- */
 
     .top-bar {
       position: sticky;
       top: 0;
       z-index: 100;
-      background: #0a0a0a;
-      border-bottom: 1px solid #1e1e1e;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border-soft);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0 28px;
+      padding: 0 32px;
       height: 56px;
     }
 
     .top-bar-title {
-      font-size: 1rem;
-      font-weight: 700;
-      letter-spacing: -0.3px;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 1.15rem;
+      font-weight: 400;
+      letter-spacing: 0.08em;
+      color: var(--text);
     }
 
     .top-bar-right {
@@ -44,13 +60,13 @@
     }
 
     .btn-signin {
-      background: #f0f0f0;
-      color: #0a0a0a;
+      background: var(--accent);
+      color: var(--accent-fg);
       border: none;
       border-radius: 8px;
       padding: 8px 16px;
-      font-size: 0.85rem;
-      font-weight: 600;
+      font-size: 0.82rem;
+      font-weight: 500;
       cursor: pointer;
       transition: opacity 0.15s;
       display: flex;
@@ -58,8 +74,7 @@
       gap: 8px;
     }
 
-    .btn-signin:hover { opacity: 0.85; }
-
+    .btn-signin:hover { opacity: 0.8; }
     .btn-signin svg { flex-shrink: 0; }
 
     .user-pill {
@@ -69,53 +84,52 @@
     }
 
     .user-avatar {
-      width: 30px;
-      height: 30px;
+      width: 28px;
+      height: 28px;
       border-radius: 50%;
       object-fit: cover;
-      background: #333;
+      background: var(--border);
     }
 
     .user-avatar-placeholder {
-      width: 30px;
-      height: 30px;
+      width: 28px;
+      height: 28px;
       border-radius: 50%;
-      background: #2a2a2a;
-      border: 1px solid #444;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 0.75rem;
-      color: #888;
+      font-size: 0.7rem;
+      color: var(--text-muted);
       flex-shrink: 0;
     }
 
     .user-name {
-      font-size: 0.85rem;
-      color: #ccc;
+      font-size: 0.82rem;
+      color: var(--text-muted);
     }
 
     .btn-signout {
       background: none;
-      border: 1px solid #333;
+      border: 1px solid var(--border);
       border-radius: 7px;
       padding: 6px 12px;
-      color: #888;
-      font-size: 0.8rem;
+      color: var(--text-dim);
+      font-size: 0.78rem;
       cursor: pointer;
       transition: color 0.15s, border-color 0.15s;
     }
 
-    .btn-signout:hover { color: #f0f0f0; border-color: #555; }
+    .btn-signout:hover { color: var(--text); border-color: var(--text-muted); }
 
     /* -----------------------------------------------------------------------
-       Layout: main content + right library panel
+       Layout
     ----------------------------------------------------------------------- */
 
     .page-layout {
       display: flex;
       align-items: flex-start;
-      gap: 0;
     }
 
     .main-content {
@@ -124,20 +138,291 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 60px 20px 120px;
+      padding: 80px 24px 140px;
     }
 
     /* -----------------------------------------------------------------------
-       Library panel (right sidebar)
+       Hero heading
+    ----------------------------------------------------------------------- */
+
+    .hero {
+      text-align: center;
+      margin-bottom: 52px;
+    }
+
+    .hero h1 {
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 3.2rem;
+      font-weight: 400;
+      letter-spacing: 0.06em;
+      color: var(--text);
+      margin-bottom: 14px;
+    }
+
+    .hero .subtitle {
+      font-size: 0.95rem;
+      color: var(--text-muted);
+      font-weight: 400;
+      letter-spacing: 0.01em;
+    }
+
+    /* -----------------------------------------------------------------------
+       Input
+    ----------------------------------------------------------------------- */
+
+    .input-row {
+      display: flex;
+      gap: 10px;
+      width: 100%;
+      max-width: 580px;
+      margin-bottom: 16px;
+    }
+
+    input[type="text"] {
+      flex: 1;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 18px;
+      color: var(--text);
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+
+    input[type="text"]:focus {
+      border-color: var(--text-muted);
+      box-shadow: 0 1px 6px rgba(0,0,0,0.08);
+    }
+
+    input[type="text"]::placeholder { color: var(--text-dim); }
+
+    button.generate {
+      background: var(--accent);
+      color: var(--accent-fg);
+      border: none;
+      border-radius: 10px;
+      padding: 14px 24px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      white-space: nowrap;
+      letter-spacing: 0.02em;
+    }
+
+    button.generate:hover { opacity: 0.8; }
+    button.generate:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    /* -----------------------------------------------------------------------
+       Usage indicator
+    ----------------------------------------------------------------------- */
+
+    .usage-indicator {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      text-align: center;
+      margin-bottom: 40px;
+    }
+
+    .usage-indicator.warn { color: #B07030; }
+    .usage-indicator.danger { color: var(--red); }
+
+    .status {
+      color: var(--text-muted);
+      font-size: 0.88rem;
+      margin-bottom: 32px;
+      min-height: 20px;
+    }
+
+    .error { color: var(--red); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.35; }
+    }
+
+    .group-status.loading {
+      animation: pulse 1.6s ease-in-out infinite;
+    }
+
+    /* -----------------------------------------------------------------------
+       Examples
+    ----------------------------------------------------------------------- */
+
+    .examples {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      justify-content: center;
+      max-width: 580px;
+      margin-bottom: 64px;
+    }
+
+    .example {
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 5px 14px;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s, background 0.15s;
+    }
+
+    .example:hover {
+      color: var(--text);
+      border-color: var(--text-muted);
+      background: var(--bg-card);
+    }
+
+    /* -----------------------------------------------------------------------
+       Sessions / groups
+    ----------------------------------------------------------------------- */
+
+    #sessions {
+      width: 100%;
+      max-width: 580px;
+      display: flex;
+      flex-direction: column;
+      gap: 56px;
+    }
+
+    .group {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      animation: fadeUp 0.4s ease both;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .group-header {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--border-soft);
+    }
+
+    .group-prompt {
+      font-size: 0.82rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      flex: 1;
+      letter-spacing: 0.01em;
+    }
+
+    .group-meta {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+    }
+
+    .group-status {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+    }
+
+    .group.is-child {
+      margin-left: 20px;
+      padding-left: 16px;
+      border-left: 1px solid var(--border-soft);
+    }
+
+    /* -----------------------------------------------------------------------
+       Cards
+    ----------------------------------------------------------------------- */
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-soft);
+      border-radius: 14px;
+      padding: 20px 22px;
+      transition: border-color 0.15s;
+    }
+
+    .card:hover { border-color: var(--border); }
+
+    .card-header {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      margin-bottom: 5px;
+    }
+
+    .card-name {
+      font-weight: 600;
+      font-size: 0.95rem;
+      color: var(--text);
+    }
+
+    .card-tempo {
+      color: var(--text-dim);
+      font-size: 0.75rem;
+    }
+
+    .card-character {
+      color: var(--text-muted);
+      font-size: 0.83rem;
+      line-height: 1.55;
+      margin-bottom: 16px;
+    }
+
+    .card-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    audio {
+      flex: 1;
+      min-width: 140px;
+      height: 34px;
+      opacity: 0.75;
+    }
+
+    a.download, button.more-like, button.save-file {
+      color: var(--text-muted);
+      font-size: 0.76rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 5px 11px;
+      transition: color 0.15s, border-color 0.15s, background 0.15s;
+      white-space: nowrap;
+      text-decoration: none;
+      cursor: pointer;
+      background: transparent;
+    }
+
+    a.download { cursor: grab; }
+    a.download:active { cursor: grabbing; }
+    a.download.dragging { opacity: 0.4; border-color: var(--text-muted); }
+
+    a.download:hover, button.more-like:hover, button.save-file:hover {
+      color: var(--text);
+      border-color: var(--text-muted);
+      background: var(--bg-input);
+    }
+
+    button.save-file { display: none; }
+    button.save-file.visible { display: inline-block; }
+
+    /* -----------------------------------------------------------------------
+       Library panel
     ----------------------------------------------------------------------- */
 
     .library-panel {
-      width: 320px;
+      width: 300px;
       flex-shrink: 0;
-      border-left: 1px solid #1e1e1e;
+      border-left: 1px solid var(--border-soft);
       min-height: calc(100vh - 56px);
-      padding: 24px 20px;
-      display: none; /* shown via JS when logged in */
+      padding: 28px 20px;
+      display: none;
     }
 
     .library-panel.visible { display: block; }
@@ -150,65 +435,68 @@
     }
 
     .library-title {
-      font-size: 0.9rem;
+      font-size: 0.8rem;
       font-weight: 600;
-      color: #ccc;
+      color: var(--text-muted);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
     }
 
     .btn-new-folder {
       background: none;
-      border: 1px solid #333;
+      border: 1px solid var(--border);
       border-radius: 6px;
-      padding: 5px 10px;
-      color: #888;
-      font-size: 0.75rem;
+      padding: 4px 10px;
+      color: var(--text-dim);
+      font-size: 0.73rem;
       cursor: pointer;
       transition: color 0.15s, border-color 0.15s;
     }
 
-    .btn-new-folder:hover { color: #f0f0f0; border-color: #555; }
+    .btn-new-folder:hover { color: var(--text); border-color: var(--text-muted); }
 
     .folder-list {
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: 3px;
     }
 
     .folder-item {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 9px 12px;
+      padding: 8px 10px;
       border-radius: 8px;
       cursor: pointer;
       transition: background 0.1s;
       border: 1px solid transparent;
     }
 
-    .folder-item:hover { background: #141414; border-color: #222; }
-    .folder-item.active { background: #141414; border-color: #2a2a2a; }
+    .folder-item:hover { background: var(--bg-card); border-color: var(--border-soft); }
+    .folder-item.active { background: var(--bg-card); border-color: var(--border); }
 
     .folder-item-left {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 7px;
       min-width: 0;
     }
 
-    .folder-icon { color: #555; font-size: 0.9rem; flex-shrink: 0; }
+    .folder-icon { color: var(--text-dim); font-size: 0.85rem; flex-shrink: 0; }
 
     .folder-name {
-      font-size: 0.85rem;
-      color: #ccc;
+      font-size: 0.82rem;
+      color: var(--text-muted);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
     .folder-count {
-      font-size: 0.72rem;
-      color: #555;
-      background: #1a1a1a;
+      font-size: 0.68rem;
+      color: var(--text-dim);
+      background: var(--bg);
+      border: 1px solid var(--border-soft);
       border-radius: 10px;
       padding: 1px 6px;
       flex-shrink: 0;
@@ -217,9 +505,9 @@
     .btn-folder-delete {
       background: none;
       border: none;
-      color: #444;
+      color: var(--border);
       cursor: pointer;
-      font-size: 0.8rem;
+      font-size: 0.76rem;
       padding: 2px 4px;
       border-radius: 4px;
       transition: color 0.15s;
@@ -227,37 +515,36 @@
       line-height: 1;
     }
 
-    .btn-folder-delete:hover { color: #e05; }
+    .btn-folder-delete:hover { color: var(--red); }
 
-    /* Files list within an open folder */
     .folder-files {
-      margin-top: 8px;
-      margin-left: 8px;
+      margin-top: 6px;
+      margin-left: 6px;
       display: flex;
       flex-direction: column;
       gap: 6px;
     }
 
     .saved-file-item {
-      background: #111;
-      border: 1px solid #1e1e1e;
+      background: var(--bg);
+      border: 1px solid var(--border-soft);
       border-radius: 8px;
       padding: 10px 12px;
     }
 
     .saved-file-name {
-      font-size: 0.82rem;
+      font-size: 0.8rem;
       font-weight: 600;
-      color: #ddd;
-      margin-bottom: 4px;
+      color: var(--text);
+      margin-bottom: 3px;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
     .saved-file-prompt {
-      font-size: 0.72rem;
-      color: #555;
+      font-size: 0.7rem;
+      color: var(--text-dim);
       margin-bottom: 8px;
       white-space: nowrap;
       overflow: hidden;
@@ -266,368 +553,46 @@
 
     .saved-file-actions {
       display: flex;
-      gap: 6px;
+      gap: 5px;
       align-items: center;
     }
 
     .saved-file-actions a {
-      color: #666;
-      font-size: 0.72rem;
-      border: 1px solid #2a2a2a;
+      color: var(--text-dim);
+      font-size: 0.7rem;
+      border: 1px solid var(--border-soft);
       border-radius: 5px;
-      padding: 3px 8px;
+      padding: 3px 7px;
       text-decoration: none;
       transition: color 0.15s, border-color 0.15s;
       white-space: nowrap;
     }
 
-    .saved-file-actions a:hover { color: #f0f0f0; border-color: #555; }
+    .saved-file-actions a:hover { color: var(--text); border-color: var(--text-muted); }
 
     .btn-file-delete {
       margin-left: auto;
       background: none;
       border: none;
-      color: #333;
+      color: var(--border);
       cursor: pointer;
-      font-size: 0.75rem;
-      padding: 3px 6px;
+      font-size: 0.72rem;
+      padding: 3px 5px;
       border-radius: 4px;
       transition: color 0.15s;
     }
 
-    .btn-file-delete:hover { color: #e05; }
+    .btn-file-delete:hover { color: var(--red); }
 
     .library-empty {
-      color: #444;
-      font-size: 0.82rem;
-      text-align: center;
-      padding: 32px 0;
-    }
-
-    /* -----------------------------------------------------------------------
-       Heading / subtitle (centre column)
-    ----------------------------------------------------------------------- */
-
-    h1 {
-      font-size: 2rem;
-      font-weight: 700;
-      letter-spacing: -0.5px;
-      margin-bottom: 8px;
-    }
-
-    .subtitle {
-      color: #888;
-      margin-bottom: 48px;
-      font-size: 0.95rem;
-    }
-
-    .input-row {
-      display: flex;
-      gap: 12px;
-      width: 100%;
-      max-width: 640px;
-      margin-bottom: 48px;
-    }
-
-    input[type="text"] {
-      flex: 1;
-      background: #1a1a1a;
-      border: 1px solid #333;
-      border-radius: 10px;
-      padding: 14px 18px;
-      color: #f0f0f0;
-      font-size: 1rem;
-      outline: none;
-      transition: border-color 0.15s;
-    }
-
-    input[type="text"]:focus { border-color: #555; }
-    input[type="text"]::placeholder { color: #555; }
-
-    button.generate {
-      background: #f0f0f0;
-      color: #0a0a0a;
-      border: none;
-      border-radius: 10px;
-      padding: 14px 24px;
-      font-size: 1rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: opacity 0.15s;
-      white-space: nowrap;
-    }
-
-    button.generate:hover { opacity: 0.85; }
-    button.generate:disabled { opacity: 0.4; cursor: not-allowed; }
-
-    .status {
-      color: #888;
-      font-size: 0.9rem;
-      margin-bottom: 32px;
-      min-height: 20px;
-    }
-
-    .error { color: #e05; }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.3; }
-    }
-
-    .group-status.loading {
-      animation: pulse 1.4s ease-in-out infinite;
-    }
-
-    /* -----------------------------------------------------------------------
-       Sessions / groups
-    ----------------------------------------------------------------------- */
-
-    #sessions {
-      width: 100%;
-      max-width: 640px;
-      display: flex;
-      flex-direction: column;
-      gap: 48px;
-    }
-
-    .group {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-    }
-
-    .group-header {
-      display: flex;
-      align-items: baseline;
-      gap: 10px;
-      padding-bottom: 12px;
-      border-bottom: 1px solid #1e1e1e;
-    }
-
-    .group-prompt {
-      font-size: 0.85rem;
-      font-weight: 600;
-      color: #aaa;
-      flex: 1;
-    }
-
-    .group-meta {
+      color: var(--text-dim);
       font-size: 0.78rem;
-      color: #555;
-    }
-
-    .group-status {
-      font-size: 0.8rem;
-      color: #666;
-    }
-
-    .group.is-child {
-      margin-left: 24px;
-      padding-left: 16px;
-      border-left: 1px solid #222;
+      text-align: center;
+      padding: 28px 0;
     }
 
     /* -----------------------------------------------------------------------
-       Cards
-    ----------------------------------------------------------------------- */
-
-    .card {
-      background: #141414;
-      border: 1px solid #222;
-      border-radius: 14px;
-      padding: 20px 24px;
-    }
-
-    .card-header {
-      display: flex;
-      align-items: baseline;
-      gap: 10px;
-      margin-bottom: 6px;
-    }
-
-    .card-name { font-weight: 600; font-size: 1rem; }
-    .card-tempo { color: #666; font-size: 0.8rem; }
-
-    .card-character {
-      color: #888;
-      font-size: 0.85rem;
-      line-height: 1.5;
-      margin-bottom: 16px;
-    }
-
-    .card-actions {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-
-    audio {
-      flex: 1;
-      min-width: 140px;
-      height: 36px;
-      filter: invert(1) hue-rotate(180deg);
-    }
-
-    a.download, button.more-like, button.save-file {
-      color: #888;
-      font-size: 0.8rem;
-      border: 1px solid #333;
-      border-radius: 6px;
-      padding: 6px 12px;
-      transition: color 0.15s, border-color 0.15s;
-      white-space: nowrap;
-      text-decoration: none;
-      cursor: pointer;
-    }
-
-    a.download {
-      cursor: grab;
-    }
-
-    a.download:active { cursor: grabbing; }
-    a.download.dragging { opacity: 0.5; border-color: #888; }
-
-    button.more-like, button.save-file {
-      background: none;
-    }
-
-    a.download:hover, button.more-like:hover, button.save-file:hover {
-      color: #f0f0f0;
-      border-color: #555;
-    }
-
-    button.save-file { display: none; }
-    button.save-file.visible { display: inline-block; }
-
-    /* -----------------------------------------------------------------------
-       Save popover
-    ----------------------------------------------------------------------- */
-
-    .save-popover {
-      position: fixed;
-      z-index: 200;
-      background: #1a1a1a;
-      border: 1px solid #333;
-      border-radius: 10px;
-      padding: 12px;
-      min-width: 220px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
-    }
-
-    .save-popover-title {
-      font-size: 0.75rem;
-      color: #666;
-      margin-bottom: 10px;
-      padding-bottom: 8px;
-      border-bottom: 1px solid #2a2a2a;
-    }
-
-    .popover-folder-list {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      max-height: 200px;
-      overflow-y: auto;
-      margin-bottom: 8px;
-    }
-
-    .popover-folder-option {
-      padding: 7px 10px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 0.83rem;
-      color: #ccc;
-      transition: background 0.1s;
-    }
-
-    .popover-folder-option:hover { background: #242424; }
-
-    .popover-folder-option.no-folder { color: #666; font-style: italic; }
-
-    .popover-new-folder {
-      display: flex;
-      gap: 6px;
-      margin-top: 8px;
-      padding-top: 8px;
-      border-top: 1px solid #2a2a2a;
-    }
-
-    .popover-new-folder input {
-      flex: 1;
-      background: #111;
-      border: 1px solid #333;
-      border-radius: 6px;
-      padding: 6px 10px;
-      color: #f0f0f0;
-      font-size: 0.8rem;
-      outline: none;
-    }
-
-    .popover-new-folder input:focus { border-color: #555; }
-    .popover-new-folder input::placeholder { color: #444; }
-
-    .popover-new-folder button {
-      background: #f0f0f0;
-      color: #0a0a0a;
-      border: none;
-      border-radius: 6px;
-      padding: 6px 10px;
-      font-size: 0.8rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: opacity 0.15s;
-      white-space: nowrap;
-    }
-
-    .popover-new-folder button:hover { opacity: 0.85; }
-
-    /* -----------------------------------------------------------------------
-       Examples
-    ----------------------------------------------------------------------- */
-
-    .examples {
-      margin-top: 48px;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      justify-content: center;
-      max-width: 640px;
-    }
-
-    .example {
-      background: #141414;
-      border: 1px solid #222;
-      border-radius: 20px;
-      padding: 6px 14px;
-      font-size: 0.8rem;
-      color: #888;
-      cursor: pointer;
-      transition: color 0.15s, border-color 0.15s;
-    }
-
-    .example:hover { color: #f0f0f0; border-color: #444; }
-
-    /* -----------------------------------------------------------------------
-       Mobile: stack library below content
-    ----------------------------------------------------------------------- */
-
-    @media (max-width: 860px) {
-      .library-panel {
-        width: 100%;
-        border-left: none;
-        border-top: 1px solid #1e1e1e;
-        min-height: unset;
-        padding: 20px 20px 40px;
-      }
-
-      .page-layout {
-        flex-direction: column;
-      }
-    }
-
-    /* -----------------------------------------------------------------------
-       New folder name input (inline library)
+       New folder inline
     ----------------------------------------------------------------------- */
 
     .new-folder-inline {
@@ -638,75 +603,142 @@
 
     .new-folder-inline input {
       flex: 1;
-      background: #111;
-      border: 1px solid #333;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
       border-radius: 7px;
       padding: 7px 10px;
-      color: #f0f0f0;
-      font-size: 0.8rem;
+      color: var(--text);
+      font-size: 0.78rem;
       outline: none;
     }
 
-    .new-folder-inline input:focus { border-color: #555; }
-    .new-folder-inline input::placeholder { color: #444; }
+    .new-folder-inline input:focus { border-color: var(--text-muted); }
+    .new-folder-inline input::placeholder { color: var(--text-dim); }
 
     .new-folder-inline button {
-      background: #f0f0f0;
-      color: #0a0a0a;
+      background: var(--accent);
+      color: var(--accent-fg);
       border: none;
       border-radius: 7px;
-      padding: 7px 10px;
-      font-size: 0.8rem;
-      font-weight: 600;
+      padding: 7px 12px;
+      font-size: 0.78rem;
+      font-weight: 500;
       cursor: pointer;
       transition: opacity 0.15s;
     }
 
-    .new-folder-inline button:hover { opacity: 0.85; }
+    .new-folder-inline button:hover { opacity: 0.8; }
 
     .new-folder-inline-row { display: none; }
     .new-folder-inline-row.visible { display: flex; }
 
     /* -----------------------------------------------------------------------
-       Usage indicator (below generate button)
+       Save popover
     ----------------------------------------------------------------------- */
 
-    .usage-indicator {
-      font-size: 0.78rem;
-      color: #555;
-      text-align: center;
-      margin-top: -36px;
-      margin-bottom: 36px;
+    .save-popover {
+      position: fixed;
+      z-index: 200;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px;
+      min-width: 210px;
+      box-shadow: 0 8px 28px rgba(0,0,0,0.1);
     }
 
-    .usage-indicator.warn { color: #c07020; }
-    .usage-indicator.danger { color: #e05; }
+    .save-popover-title {
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border-soft);
+    }
+
+    .popover-folder-list {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      max-height: 200px;
+      overflow-y: auto;
+      margin-bottom: 8px;
+    }
+
+    .popover-folder-option {
+      padding: 7px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      transition: background 0.1s;
+    }
+
+    .popover-folder-option:hover { background: var(--bg-card); }
+    .popover-folder-option.no-folder { color: var(--text-dim); font-style: italic; }
+
+    .popover-new-folder {
+      display: flex;
+      gap: 6px;
+      margin-top: 6px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border-soft);
+    }
+
+    .popover-new-folder input {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 10px;
+      color: var(--text);
+      font-size: 0.78rem;
+      outline: none;
+    }
+
+    .popover-new-folder input:focus { border-color: var(--text-muted); }
+    .popover-new-folder input::placeholder { color: var(--text-dim); }
+
+    .popover-new-folder button {
+      background: var(--accent);
+      color: var(--accent-fg);
+      border: none;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 0.78rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+
+    .popover-new-folder button:hover { opacity: 0.8; }
 
     /* -----------------------------------------------------------------------
-       Upgrade modal
+       Modals
     ----------------------------------------------------------------------- */
 
     .modal-overlay {
       position: fixed;
       inset: 0;
-      background: rgba(0, 0, 0, 0.75);
+      background: rgba(28, 24, 20, 0.45);
       z-index: 500;
       display: flex;
       align-items: center;
       justify-content: center;
       padding: 20px;
+      backdrop-filter: blur(2px);
     }
 
     .modal-overlay.hidden { display: none; }
 
     .modal-box {
-      background: #141414;
-      border: 1px solid #2a2a2a;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
       border-radius: 16px;
       padding: 36px 32px;
-      max-width: 440px;
+      max-width: 420px;
       width: 100%;
       position: relative;
+      box-shadow: 0 16px 48px rgba(0,0,0,0.12);
     }
 
     .modal-close {
@@ -715,8 +747,8 @@
       right: 16px;
       background: none;
       border: none;
-      color: #555;
-      font-size: 1.1rem;
+      color: var(--text-dim);
+      font-size: 1rem;
       cursor: pointer;
       line-height: 1;
       padding: 4px 6px;
@@ -724,33 +756,35 @@
       transition: color 0.15s;
     }
 
-    .modal-close:hover { color: #f0f0f0; }
+    .modal-close:hover { color: var(--text); }
 
     .modal-heading {
-      font-size: 1.25rem;
-      font-weight: 700;
+      font-family: Georgia, serif;
+      font-size: 1.2rem;
+      font-weight: 400;
       margin-bottom: 8px;
+      color: var(--text);
     }
 
     .modal-pitch {
-      color: #888;
-      font-size: 0.9rem;
+      color: var(--text-muted);
+      font-size: 0.88rem;
       margin-bottom: 28px;
-      line-height: 1.5;
+      line-height: 1.55;
     }
 
     .modal-plans {
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 10px;
     }
 
     .plan-btn {
       display: flex;
       flex-direction: column;
       align-items: flex-start;
-      background: #1e1e1e;
-      border: 1px solid #333;
+      background: var(--bg);
+      border: 1px solid var(--border);
       border-radius: 10px;
       padding: 14px 18px;
       cursor: pointer;
@@ -759,22 +793,22 @@
       width: 100%;
     }
 
-    .plan-btn:hover { background: #242424; border-color: #555; }
+    .plan-btn:hover { background: var(--bg-card); border-color: var(--text-muted); }
 
     .plan-btn-name {
-      font-size: 0.95rem;
+      font-size: 0.9rem;
       font-weight: 600;
-      color: #f0f0f0;
+      color: var(--text);
     }
 
     .plan-btn-detail {
-      font-size: 0.78rem;
-      color: #777;
+      font-size: 0.75rem;
+      color: var(--text-muted);
       margin-top: 2px;
     }
 
     /* -----------------------------------------------------------------------
-       Success toast
+       Toast
     ----------------------------------------------------------------------- */
 
     .toast {
@@ -782,44 +816,56 @@
       bottom: 28px;
       left: 50%;
       transform: translateX(-50%);
-      background: #1a2a1a;
-      border: 1px solid #2a5a2a;
+      background: #EFF6EE;
+      border: 1px solid #B4D8B0;
       border-radius: 10px;
       padding: 12px 20px;
-      color: #6ddb6d;
-      font-size: 0.88rem;
+      color: #3A7035;
+      font-size: 0.85rem;
       font-weight: 500;
       z-index: 600;
       white-space: nowrap;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
       transition: opacity 0.4s;
     }
 
     .toast.hidden { display: none; }
+
+    /* -----------------------------------------------------------------------
+       Mobile
+    ----------------------------------------------------------------------- */
+
+    @media (max-width: 860px) {
+      .library-panel {
+        width: 100%;
+        border-left: none;
+        border-top: 1px solid var(--border-soft);
+        min-height: unset;
+        padding: 20px 20px 40px;
+      }
+
+      .page-layout { flex-direction: column; }
+      .hero h1 { font-size: 2.4rem; }
+    }
   </style>
 </head>
 <body>
 
-  <!-- =====================================================================
-       Top bar
-  ====================================================================== -->
+  <!-- Top bar -->
   <div class="top-bar">
-    <span class="top-bar-title">MIDI Generator</span>
-    <div class="top-bar-right" id="authArea">
-      <!-- Populated by JS -->
-    </div>
+    <span class="top-bar-title">Muse</span>
+    <div class="top-bar-right" id="authArea"></div>
   </div>
 
-  <!-- =====================================================================
-       Page layout: main centre + library right panel
-  ====================================================================== -->
+  <!-- Page layout -->
   <div class="page-layout">
 
-    <!-- Main content -->
     <div class="main-content">
 
-      <h1>MIDI Generator</h1>
-      <p class="subtitle">Describe a musical idea. Get 5 variations back.</p>
+      <div class="hero">
+        <h1>Muse</h1>
+        <p class="subtitle">Describe a musical idea. Get five variations back.</p>
+      </div>
 
       <div class="input-row">
         <input type="text" id="prompt" placeholder='e.g. "jazzy piano riff in D minor"' />
@@ -828,10 +874,6 @@
 
       <p class="usage-indicator" id="usageIndicator"></p>
 
-      <p class="status" id="status"></p>
-
-      <div id="sessions"></div>
-
       <div class="examples">
         <span class="example" onclick="useExample(this)">jazzy piano riff in D minor</span>
         <span class="example" onclick="useExample(this)">triumphant trumpet fanfare</span>
@@ -839,18 +881,23 @@
         <span class="example" onclick="useExample(this)">sad cello melody</span>
         <span class="example" onclick="useExample(this)">aggressive metal riff in E</span>
         <span class="example" onclick="useExample(this)">lo-fi hip hop chord progression</span>
+        <span class="example" onclick="useExample(this)">boom bap drum beat</span>
+        <span class="example" onclick="useExample(this)">moody synth arp</span>
       </div>
 
-    </div><!-- /.main-content -->
+      <p class="status" id="status"></p>
+
+      <div id="sessions"></div>
+
+    </div>
 
     <!-- Library panel -->
     <div class="library-panel" id="libraryPanel">
       <div class="library-header">
-        <span class="library-title">My Library</span>
-        <button class="btn-new-folder" id="btnNewFolder" onclick="toggleNewFolderRow()">+ New folder</button>
+        <span class="library-title">Library</span>
+        <button class="btn-new-folder" id="btnNewFolder" onclick="toggleNewFolderRow()">+ Folder</button>
       </div>
 
-      <!-- Inline new-folder row -->
       <div class="new-folder-inline-row" id="newFolderInlineRow">
         <div class="new-folder-inline">
           <input type="text" id="newFolderNameInput" placeholder="Folder name" />
@@ -858,16 +905,13 @@
         </div>
       </div>
 
-      <div class="folder-list" id="folderList">
-        <!-- Populated by JS -->
-      </div>
+      <div class="folder-list" id="folderList"></div>
+      <p class="library-empty" id="libraryEmpty" style="display:none">No folders yet.</p>
+    </div>
 
-      <p class="library-empty" id="libraryEmpty" style="display:none">No folders yet. Create one to start saving files.</p>
-    </div><!-- /.library-panel -->
+  </div>
 
-  </div><!-- /.page-layout -->
-
-  <!-- Upgrade modal -->
+  <!-- Upgrade / sign-in modal -->
   <div class="modal-overlay hidden" id="upgradeModal" onclick="handleModalOverlayClick(event)">
     <div class="modal-box">
       <button class="modal-close" onclick="closeUpgradeModal()" title="Close">&times;</button>
@@ -880,16 +924,16 @@
         </button>
         <button class="plan-btn" onclick="startCheckout('pro')">
           <span class="plan-btn-name">Pro &mdash; $20/mo</span>
-          <span class="plan-btn-detail">Unlimited generations (1 000/month cap)</span>
+          <span class="plan-btn-detail">Unlimited generations (1,000/month cap)</span>
         </button>
       </div>
     </div>
   </div>
 
-  <!-- Success toast -->
+  <!-- Toast -->
   <div class="toast hidden" id="successToast"></div>
 
-  <!-- Save popover (appended to body, positioned absolutely) -->
+  <!-- Save popover -->
   <div class="save-popover" id="savePopover" style="display:none">
     <div class="save-popover-title">Save to folder</div>
     <div class="popover-folder-list" id="popoverFolderList"></div>
@@ -900,15 +944,12 @@
   </div>
 
   <script>
-    // ==========================================================================
-    // State
-    // ==========================================================================
     let currentUser = null;
-    let folders = []; // [{id, name, file_count}]
-    let openFolderId = null; // currently expanded folder in library
-    let activeSaveContext = null; // {name, prompt, midi_url, wav_url}
+    let folders = [];
+    let openFolderId = null;
+    let activeSaveContext = null;
     let abortController = null;
-    let usageInfo = null; // last known {plan, used, limit, remaining, period}
+    let usageInfo = null;
 
     // ==========================================================================
     // Auth
@@ -935,13 +976,13 @@
       if (!currentUser) {
         area.innerHTML = `
           <button class="btn-signin" onclick="location.href='/auth/google'">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
               <path d="M15.68 8.18c0-.57-.05-1.12-.14-1.64H8v3.1h4.3a3.67 3.67 0 0 1-1.6 2.42v2h2.58c1.51-1.39 2.4-3.44 2.4-5.88z" fill="#4285F4"/>
               <path d="M8 16c2.16 0 3.97-.72 5.3-1.94l-2.58-2a4.8 4.8 0 0 1-7.15-2.52H.96v2.07A8 8 0 0 0 8 16z" fill="#34A853"/>
               <path d="M3.57 9.54A4.8 4.8 0 0 1 3.32 8c0-.54.09-1.06.25-1.54V4.39H.96A8 8 0 0 0 0 8c0 1.29.31 2.51.96 3.61l2.61-2.07z" fill="#FBBC05"/>
               <path d="M8 3.18c1.22 0 2.31.42 3.17 1.24l2.37-2.37A8 8 0 0 0 8 0 8 8 0 0 0 .96 4.39l2.61 2.07A4.77 4.77 0 0 1 8 3.18z" fill="#EA4335"/>
             </svg>
-            Sign in with Google
+            Sign in
           </button>`;
       } else {
         const initial = (currentUser.name || currentUser.email || "?")[0].toUpperCase();
@@ -962,7 +1003,6 @@
       currentUser = null;
       renderAuthArea();
       document.getElementById("libraryPanel").classList.remove("visible");
-      // Hide all save buttons
       document.querySelectorAll("button.save-file").forEach(b => b.classList.remove("visible"));
     }
 
@@ -976,9 +1016,7 @@
         const res = await fetch("/api/folders");
         if (!res.ok) return;
         folders = await res.json();
-      } catch (_) {
-        folders = [];
-      }
+      } catch (_) { folders = []; }
       renderFolderList();
     }
 
@@ -992,8 +1030,8 @@
         return;
       }
       emptyMsg.style.display = "none";
-
       list.innerHTML = "";
+
       for (const folder of folders) {
         const item = document.createElement("div");
         item.className = "folder-item" + (openFolderId === folder.id ? " active" : "");
@@ -1018,22 +1056,18 @@
     }
 
     async function toggleFolder(folderId) {
-      if (openFolderId === folderId) {
-        openFolderId = null;
-      } else {
-        openFolderId = folderId;
-      }
+      openFolderId = openFolderId === folderId ? null : folderId;
       renderFolderList();
     }
 
     async function loadFolderFiles(folderId, container) {
-      container.innerHTML = `<p style="color:#444;font-size:0.78rem;padding:8px 12px">Loading…</p>`;
+      container.innerHTML = `<p style="color:var(--text-dim);font-size:0.76rem;padding:8px 12px">Loading…</p>`;
       try {
         const res = await fetch(`/api/saved?folder_id=${encodeURIComponent(folderId)}`);
-        if (!res.ok) throw new Error("Failed to load");
+        if (!res.ok) throw new Error();
         const files = await res.json();
         if (files.length === 0) {
-          container.innerHTML = `<p style="color:#444;font-size:0.78rem;padding:8px 12px">No files saved here.</p>`;
+          container.innerHTML = `<p style="color:var(--text-dim);font-size:0.76rem;padding:8px 12px">No files saved here.</p>`;
           return;
         }
         container.innerHTML = "";
@@ -1044,24 +1078,22 @@
             <div class="saved-file-name">${escHtml(f.name)}</div>
             <div class="saved-file-prompt">${escHtml(f.prompt)}</div>
             <div class="saved-file-actions">
-              <a href="${escHtml(f.midi_url)}" download>⠿ MIDI</a>
-              ${f.wav_url ? `<a href="${escHtml(f.wav_url)}" download>⠿ WAV</a>` : ""}
-              ${f.wav_url ? `<a href="${escHtml(f.wav_url)}">&#9654; Play</a>` : ""}
+              <a href="${escHtml(f.midi_url)}" download>MIDI</a>
+              ${f.wav_url ? `<a href="${escHtml(f.wav_url)}" download>WAV</a>` : ""}
+              ${f.wav_url ? `<a href="${escHtml(f.wav_url)}">Play</a>` : ""}
               <button class="btn-file-delete" title="Delete" onclick="deleteFile('${escAttr(f.id)}', '${escAttr(folderId)}')">&#x2715;</button>
             </div>`;
           container.appendChild(el);
         }
       } catch (_) {
-        container.innerHTML = `<p style="color:#e05;font-size:0.78rem;padding:8px 12px">Failed to load files.</p>`;
+        container.innerHTML = `<p style="color:var(--red);font-size:0.76rem;padding:8px 12px">Failed to load.</p>`;
       }
     }
 
     function toggleNewFolderRow() {
       const row = document.getElementById("newFolderInlineRow");
       row.classList.toggle("visible");
-      if (row.classList.contains("visible")) {
-        document.getElementById("newFolderNameInput").focus();
-      }
+      if (row.classList.contains("visible")) document.getElementById("newFolderNameInput").focus();
     }
 
     async function submitNewFolder() {
@@ -1095,7 +1127,7 @@
       if (!confirm("Remove this saved file?")) return;
       try {
         await fetch(`/api/saved/${encodeURIComponent(fileId)}`, { method: "DELETE" });
-        await refreshFolders(); // re-renders counts + open folder
+        await refreshFolders();
       } catch (_) {}
     }
 
@@ -1109,22 +1141,15 @@
       activeSaveContext = variation;
       const popover = document.getElementById("savePopover");
       const rect = button.getBoundingClientRect();
-
-      // Position below the button
       popover.style.display = "block";
       popover.style.top = (rect.bottom + window.scrollY + 6) + "px";
       const left = Math.min(rect.left + window.scrollX, window.innerWidth - 240);
       popover.style.left = Math.max(8, left) + "px";
-
       renderPopoverFolders();
       document.getElementById("popoverNewFolderInput").value = "";
-
-      // Close on outside click
       if (popoverCloseListener) document.removeEventListener("click", popoverCloseListener);
       popoverCloseListener = (e) => {
-        if (!popover.contains(e.target) && e.target !== button) {
-          closeSavePopover();
-        }
+        if (!popover.contains(e.target) && e.target !== button) closeSavePopover();
       };
       setTimeout(() => document.addEventListener("click", popoverCloseListener), 0);
     }
@@ -1141,14 +1166,11 @@
     function renderPopoverFolders() {
       const list = document.getElementById("popoverFolderList");
       list.innerHTML = "";
-
-      // "No folder" option
       const noFolder = document.createElement("div");
       noFolder.className = "popover-folder-option no-folder";
       noFolder.textContent = "No folder (unsorted)";
       noFolder.onclick = () => saveFileToFolder(null);
       list.appendChild(noFolder);
-
       for (const folder of folders) {
         const opt = document.createElement("div");
         opt.className = "popover-folder-option";
@@ -1173,7 +1195,6 @@
         input.value = "";
         await refreshFolders();
         renderPopoverFolders();
-        // Immediately save to newly created folder
         saveFileToFolder(newFolder.id);
       } catch (_) {}
     }
@@ -1182,26 +1203,23 @@
       if (!activeSaveContext) return;
       const context = activeSaveContext;
       closeSavePopover();
-
       try {
-        const body = {
-          name: context.name,
-          prompt: context.prompt,
-          midi_url: context.midi_url,
-          wav_url: context.wav_url || null,
-          folder_id: folderId || null,
-        };
         const res = await fetch("/api/save", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
+          body: JSON.stringify({
+            name: context.name,
+            prompt: context.prompt,
+            midi_url: context.midi_url,
+            wav_url: context.wav_url || null,
+            folder_id: folderId || null,
+          }),
         });
         if (!res.ok) {
           const err = await res.json();
           alert("Save failed: " + (err.detail || "Unknown error"));
           return;
         }
-        // Refresh library so counts update; open the target folder
         openFolderId = folderId;
         await refreshFolders();
       } catch (_) {
@@ -1236,7 +1254,6 @@
           <span class="group-status loading">Generating…</span>
         </div>
       `;
-
       const sessions = document.getElementById("sessions");
       if (afterEl) {
         afterEl.insertAdjacentElement("afterend", group);
@@ -1250,9 +1267,7 @@
       const prompt = group.dataset.basePrompt || "";
       const card = document.createElement("div");
       card.className = "card";
-
       const saveVisible = currentUser ? "visible" : "";
-
       card.innerHTML = `
         <div class="card-header">
           <span class="card-name">${escHtml(v.name)}</span>
@@ -1262,18 +1277,16 @@
         <div class="card-actions">
           ${v.wav_url
             ? `<audio controls src="${escHtml(v.wav_url)}"></audio>`
-            : `<span style="color:#555;font-size:0.8rem">No audio</span>`}
-          <a class="download" href="${escHtml(v.midi_url)}" download draggable="true" data-mime="audio/midi">⠿ MIDI</a>
-          ${v.wav_url ? `<a class="download" href="${escHtml(v.wav_url)}" download draggable="true" data-mime="audio/wav">⠿ WAV</a>` : ""}
+            : `<span style="color:var(--text-dim);font-size:0.76rem">No audio</span>`}
+          <a class="download" href="${escHtml(v.midi_url)}" download draggable="true" data-mime="audio/midi">MIDI</a>
+          ${v.wav_url ? `<a class="download" href="${escHtml(v.wav_url)}" download draggable="true" data-mime="audio/wav">WAV</a>` : ""}
           <button class="more-like">More like this</button>
           <button class="save-file ${saveVisible}" data-name="${escAttr(v.name)}" data-prompt="${escAttr(prompt)}" data-midi="${escAttr(v.midi_url)}" data-wav="${escAttr(v.wav_url || "")}">Save</button>
         </div>
       `;
-
       card.querySelector(".more-like").addEventListener("click", () =>
         morelike(v.name, v.character, v.tempo, group)
       );
-
       card.querySelector(".save-file").addEventListener("click", function (e) {
         e.stopPropagation();
         if (!currentUser) return;
@@ -1284,7 +1297,6 @@
           wav_url: this.dataset.wav || null,
         });
       });
-
       group.appendChild(card);
     }
 
@@ -1293,51 +1305,37 @@
     // ==========================================================================
 
     async function refreshUsage() {
-      if (!currentUser) {
-        renderUsageIndicator(null);
-        return;
-      }
+      if (!currentUser) { renderUsageIndicator(null); return; }
       try {
         const res = await fetch("/api/stripe/status");
-        if (!res.ok) {
-          renderUsageIndicator(null);
-          return;
-        }
+        if (!res.ok) { renderUsageIndicator(null); return; }
         usageInfo = await res.json();
         renderUsageIndicator(usageInfo);
-      } catch (_) {
-        renderUsageIndicator(null);
-      }
+      } catch (_) { renderUsageIndicator(null); }
     }
 
     function renderUsageIndicator(info) {
       const el = document.getElementById("usageIndicator");
-      if (!info) {
-        el.textContent = "";
-        el.className = "usage-indicator";
-        return;
-      }
-
-      const { plan, used, limit, remaining, period } = info;
-
+      if (!info) { el.textContent = ""; el.className = "usage-indicator"; return; }
+      const { plan, used, limit, remaining } = info;
       if (plan === "pro") {
-        el.textContent = `Pro plan · ${used} / ${limit} generations this month`;
+        el.textContent = `Pro · ${used} / ${limit} generations this month`;
       } else if (plan === "creator") {
-        el.textContent = `Creator plan · ${used} / ${limit} generations this month`;
+        el.textContent = `Creator · ${used} / ${limit} generations this month`;
       } else {
-        // free
-        el.textContent = `${remaining} free generation${remaining === 1 ? "" : "s"} remaining (lifetime)`;
+        el.textContent = `${remaining} free generation${remaining === 1 ? "" : "s"} remaining`;
       }
-
       el.className = "usage-indicator" + (remaining === 0 ? " danger" : remaining <= 3 ? " warn" : "");
     }
 
     function openUpgradeModal() {
-      document.getElementById("upgradeModal").querySelector(".modal-heading").textContent = "You've used your free generations";
-      document.getElementById("upgradeModal").querySelector(".modal-pitch").textContent = "Upgrade to keep creating unlimited MIDI patterns.";
-      document.getElementById("upgradeModal").querySelector(".modal-plans").style.display = "";
-      document.getElementById("upgradeModal").querySelector(".modal-signin-btn") && (document.getElementById("upgradeModal").querySelector(".modal-signin-btn").style.display = "none");
-      document.getElementById("upgradeModal").classList.remove("hidden");
+      const modal = document.getElementById("upgradeModal");
+      modal.querySelector(".modal-heading").textContent = "You've used your free generations";
+      modal.querySelector(".modal-pitch").textContent = "Upgrade to keep creating unlimited MIDI patterns.";
+      modal.querySelector(".modal-plans").style.display = "";
+      const signinBtn = modal.querySelector(".modal-signin-btn");
+      if (signinBtn) signinBtn.style.display = "none";
+      modal.classList.remove("hidden");
     }
 
     function showSignInModal() {
@@ -1350,7 +1348,7 @@
         signinBtn = document.createElement("a");
         signinBtn.className = "modal-signin-btn";
         signinBtn.href = "/auth/google";
-        signinBtn.style.cssText = "display:block;background:#f0f0f0;color:#0a0a0a;border-radius:10px;padding:14px;text-align:center;font-weight:600;text-decoration:none;margin-top:16px;";
+        signinBtn.style.cssText = "display:block;background:var(--accent);color:var(--accent-fg);border-radius:10px;padding:14px;text-align:center;font-weight:500;text-decoration:none;margin-top:16px;font-size:0.9rem;letter-spacing:0.02em;";
         signinBtn.textContent = "Sign in with Google";
         modal.querySelector(".modal-box").appendChild(signinBtn);
       }
@@ -1363,24 +1361,16 @@
     }
 
     function handleModalOverlayClick(e) {
-      if (e.target === document.getElementById("upgradeModal")) {
-        closeUpgradeModal();
-      }
+      if (e.target === document.getElementById("upgradeModal")) closeUpgradeModal();
     }
 
     async function startCheckout(plan) {
       try {
         const res = await fetch(`/api/stripe/checkout/${plan}`, { method: "POST" });
-        if (!res.ok) {
-          const err = await res.json();
-          alert("Checkout error: " + (err.detail || "Unknown error"));
-          return;
-        }
+        if (!res.ok) { const err = await res.json(); alert("Checkout error: " + (err.detail || "Unknown error")); return; }
         const data = await res.json();
         window.location.href = data.url;
-      } catch (_) {
-        alert("Could not start checkout. Please try again.");
-      }
+      } catch (_) { alert("Could not start checkout. Please try again."); }
     }
 
     function checkSubscribedParam() {
@@ -1388,9 +1378,7 @@
       if (params.has("subscribed")) {
         const plan = (usageInfo && usageInfo.plan !== "free") ? usageInfo.plan : "Creator/Pro";
         showToast(`Welcome to ${plan.charAt(0).toUpperCase() + plan.slice(1)}! Your subscription is active.`);
-        // Clean the URL
-        const clean = window.location.pathname;
-        window.history.replaceState({}, "", clean);
+        window.history.replaceState({}, "", window.location.pathname);
       }
     }
 
@@ -1400,10 +1388,7 @@
       toast.classList.remove("hidden");
       setTimeout(() => {
         toast.style.opacity = "0";
-        setTimeout(() => {
-          toast.classList.add("hidden");
-          toast.style.opacity = "";
-        }, 400);
+        setTimeout(() => { toast.classList.add("hidden"); toast.style.opacity = ""; }, 400);
       }, durationMs);
     }
 
@@ -1413,7 +1398,6 @@
 
       const btn = document.getElementById("generateBtn");
       const status = document.getElementById("status");
-
       btn.disabled = true;
       status.textContent = "";
 
@@ -1434,18 +1418,11 @@
         if (!res.ok) {
           const err = await res.json();
           if (res.status === 402 && err.detail && err.detail.code === "limit_reached") {
-            group.remove();
-            openUpgradeModal();
-            btn.disabled = false;
-            abortController = null;
-            return;
+            group.remove(); openUpgradeModal(); btn.disabled = false; abortController = null; return;
           }
           if (res.status === 429) {
-            group.remove();
-            currentUser ? openUpgradeModal() : showSignInModal();
-            btn.disabled = false;
-            abortController = null;
-            return;
+            group.remove(); currentUser ? openUpgradeModal() : showSignInModal();
+            btn.disabled = false; abortController = null; return;
           }
           throw new Error(err.detail || "Generation failed");
         }
@@ -1457,7 +1434,6 @@
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split("\n\n");
           buffer = lines.pop();
@@ -1465,18 +1441,13 @@
           for (const line of lines) {
             if (!line.startsWith("data: ")) continue;
             const event = JSON.parse(line.slice(6));
-
             if (event.type === "meta") {
               groupMeta.textContent = `${event.instrument} · ${event.key}`;
             } else if (event.type === "variation") {
               addVariationCard(event, group);
               const count = group.querySelectorAll(".card").length;
-              if (count < 5) {
-                groupStatus.textContent = `${count} of 5…`;
-              } else {
-                groupStatus.textContent = "";
-                groupStatus.classList.remove("loading");
-              }
+              groupStatus.textContent = count < 5 ? `${count} of 5…` : "";
+              if (count >= 5) groupStatus.classList.remove("loading");
             } else if (event.type === "done") {
               groupStatus.textContent = "";
               groupStatus.classList.remove("loading");
@@ -1488,12 +1459,11 @@
       } catch (err) {
         if (err.name !== "AbortError") {
           groupStatus.textContent = err.message;
-          groupStatus.style.color = "#e05";
+          groupStatus.style.color = "var(--red)";
         }
       } finally {
         abortController = null;
         btn.disabled = false;
-        // Refresh usage counter after each generation attempt
         if (currentUser) refreshUsage();
       }
     }
@@ -1504,37 +1474,19 @@
 
     function escHtml(str) {
       if (!str) return "";
-      return String(str)
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#39;");
+      return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
     }
 
     function escAttr(str) {
       if (!str) return "";
-      return String(str)
-        .replace(/&/g, "&amp;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#39;");
+      return String(str).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
     }
 
-    // ==========================================================================
-    // Event listeners
-    // ==========================================================================
-
-    document.getElementById("prompt").addEventListener("keydown", e => {
-      if (e.key === "Enter") generate();
-    });
-
+    document.getElementById("prompt").addEventListener("keydown", e => { if (e.key === "Enter") generate(); });
     document.getElementById("newFolderNameInput").addEventListener("keydown", e => {
       if (e.key === "Enter") submitNewFolder();
-      if (e.key === "Escape") {
-        document.getElementById("newFolderInlineRow").classList.remove("visible");
-      }
+      if (e.key === "Escape") document.getElementById("newFolderInlineRow").classList.remove("visible");
     });
-
     document.getElementById("popoverNewFolderInput").addEventListener("keydown", e => {
       if (e.key === "Enter") popoverCreateFolder();
       if (e.key === "Escape") closeSavePopover();
@@ -1545,19 +1497,14 @@
       if (!link) return;
       const url = new URL(link.href, location.href).href;
       const filename = url.split("/").pop();
-      const mime = link.dataset.mime;
-      e.dataTransfer.setData("DownloadURL", `${mime}:${filename}:${url}`);
+      e.dataTransfer.setData("DownloadURL", `${link.dataset.mime}:${filename}:${url}`);
       link.classList.add("dragging");
     });
-
     document.addEventListener("dragend", e => {
       const link = e.target.closest("a.download[draggable]");
       if (link) link.classList.remove("dragging");
     });
 
-    // ==========================================================================
-    // Bootstrap
-    // ==========================================================================
     initAuth();
   </script>
 
