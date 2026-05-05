@@ -1333,7 +1333,29 @@
     }
 
     function openUpgradeModal() {
+      document.getElementById("upgradeModal").querySelector(".modal-heading").textContent = "You've used your free generations";
+      document.getElementById("upgradeModal").querySelector(".modal-pitch").textContent = "Upgrade to keep creating unlimited MIDI patterns.";
+      document.getElementById("upgradeModal").querySelector(".modal-plans").style.display = "";
+      document.getElementById("upgradeModal").querySelector(".modal-signin-btn") && (document.getElementById("upgradeModal").querySelector(".modal-signin-btn").style.display = "none");
       document.getElementById("upgradeModal").classList.remove("hidden");
+    }
+
+    function showSignInModal() {
+      const modal = document.getElementById("upgradeModal");
+      modal.querySelector(".modal-heading").textContent = "You've hit the daily limit";
+      modal.querySelector(".modal-pitch").textContent = "Sign in for 10 free generations — no card needed.";
+      modal.querySelector(".modal-plans").style.display = "none";
+      let signinBtn = modal.querySelector(".modal-signin-btn");
+      if (!signinBtn) {
+        signinBtn = document.createElement("a");
+        signinBtn.className = "modal-signin-btn";
+        signinBtn.href = "/auth/google";
+        signinBtn.style.cssText = "display:block;background:#f0f0f0;color:#0a0a0a;border-radius:10px;padding:14px;text-align:center;font-weight:600;text-decoration:none;margin-top:16px;";
+        signinBtn.textContent = "Sign in with Google";
+        modal.querySelector(".modal-box").appendChild(signinBtn);
+      }
+      signinBtn.style.display = "block";
+      modal.classList.remove("hidden");
     }
 
     function closeUpgradeModal() {
@@ -1411,10 +1433,16 @@
 
         if (!res.ok) {
           const err = await res.json();
-          // 402 = limit reached — show upgrade modal
           if (res.status === 402 && err.detail && err.detail.code === "limit_reached") {
             group.remove();
             openUpgradeModal();
+            btn.disabled = false;
+            abortController = null;
+            return;
+          }
+          if (res.status === 429) {
+            group.remove();
+            currentUser ? openUpgradeModal() : showSignInModal();
             btn.disabled = false;
             abortController = null;
             return;
