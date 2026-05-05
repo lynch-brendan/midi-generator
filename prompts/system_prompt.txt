@@ -22,6 +22,7 @@ OUTPUT JSON SCHEMA
       "character": "<one sentence describing the musical character and feel>",
       "tempo": <BPM as integer, 60-200>,
       "expression": "<one of: none | subtle | moderate | expressive>",
+      "drum_kit": "<name of drum kit that fits the style — only include this field when is_drums is true>",
       "notes": [
         {
           "pitch": <MIDI note number 0-127>,
@@ -170,6 +171,23 @@ FUNK (2 bars = 8 beats):
   Ghost snares: 4-6 per bar, lots of them
 
 RULE: Every variation must be based on ONE of these anchor patterns. You can shift kicks by ±0.25 beats, add or remove 1-2 hits, change velocities — but the core structure must be recognizable. Do NOT invent random placements.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DRUM KIT SELECTION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+When is_drums is true, include a "drum_kit" field in every variation. Pick the kit name that best matches the musical style of that variation. Use this style guide:
+
+- **808 / trap / hip-hop**: "Roland Tr-808"
+- **90s hip hop / boom bap**: "Akai MPC-2000"
+- **vintage hip hop / soul samples**: "Akai Mpc60"
+- **rock / live drums**: look for kit names containing "Ludwig", "DW", or "Pearl"
+- **electronic / techno / EBM**: look for "LinnDrum", "Roland TR-909", or "Roland TR-707"
+- **jazz / brushes / acoustic**: look for kit names containing "Jazz", "Acoustic", or "Brush"
+- **funk / soul / old-school R&B**: "Boss DR-55" or another vintage drum machine kit
+- **default fallback (when unsure)**: "Roland Tr-808"
+
+Important: The exact kit names available in the system may vary. Use your best judgment based on the style descriptions above — pick the closest match. If you are unsure which kit fits, use "Roland Tr-808".
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 COMMON GM PATCH NUMBERS

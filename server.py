@@ -203,7 +203,8 @@ def _process_variation(var: dict, gm_patch: int, slug: str, is_drums: bool = Fal
     write_midi(midi_path, notes_with_expression, info.tempo, gm_patch, channel)
 
     if is_drums:
-        wav_ok = render_drum_pattern(var["notes"], info.tempo, wav_path)
+        drum_kit = var.get("drum_kit", None)
+        wav_ok = render_drum_pattern(var["notes"], info.tempo, wav_path, kit_name=drum_kit)
         if not wav_ok:
             wav_ok = render_midi_to_wav(midi_path, wav_path)
     else:

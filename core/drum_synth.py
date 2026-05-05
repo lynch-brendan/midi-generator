@@ -2,12 +2,16 @@
 Renders drum patterns using WAV samples.
 Defaults to the Roland TR-808 pack from FL Studio for local development.
 Swap SAMPLES_DIR to any folder of WAV files for production.
+
+Pass kit_name to render_drum_pattern() to use a kit fetched from R2 via drum_kits.
 """
 import wave
 import struct
 import array
 from pathlib import Path
 from typing import List, Dict, Optional
+
+from core import drum_kits
 
 SAMPLE_RATE = 44100
 
@@ -39,11 +43,15 @@ GM_TO_SAMPLE = {
 _sample_cache: Dict[str, List[float]] = {}
 
 
-def _load_sample(filename: str) -> Optional[List[float]]:
-    if filename in _sample_cache:
-        return _sample_cache[filename]
+def _load_sample(filename: str, samples_dir: Path = None) -> Optional[List[float]]:
+    if samples_dir is None:
+        samples_dir = SAMPLES_DIR
 
-    path = SAMPLES_DIR / filename
+    cache_key = str(samples_dir / filename)
+    if cache_key in _sample_cache:
+        return _sample_cache[cache_key]
+
+    path = samples_dir / filename
     if not path.exists():
         return None
 
@@ -84,7 +92,7 @@ def _load_sample(filename: str) -> Optional[List[float]]:
                     resampled.append(floats[idx] if idx < len(floats) else 0.0)
             floats = resampled
 
-        _sample_cache[filename] = floats
+        _sample_cache[cache_key] = floats
         return floats
 
     except Exception as e:
@@ -92,11 +100,38 @@ def _load_sample(filename: str) -> Optional[List[float]]:
         return None
 
 
-def render_drum_pattern(notes: List[Dict], tempo_bpm: int, output_path: Path) -> bool:
+def render_drum_pattern(
+    notes: List[Dict],
+    tempo_bpm: int,
+    output_path: Path,
+    kit_name: Optional[str] = None,
+) -> bool:
     """
     Render a drum pattern to WAV using real samples.
-    Falls back to silence with a warning if samples aren't found.
+
+    If kit_name is provided, drum_kits.get_kit_dir() is used to locate samples
+    and drum_kits.auto_map_kit() builds the GM→filename mapping dynamically.
+    Falls back to the bundled/FL Studio Roland TR-808 samples when kit_name is
+    None or the kit cannot be fetched.
+
+    Falls back to silence with a warning if no samples are found at all.
     """
+    # Resolve samples directory and pitch→filename mapping
+    active_samples_dir: Path = SAMPLES_DIR
+    active_gm_map: Dict[int, str] = GM_TO_SAMPLE
+
+    if kit_name:
+        kit_dir = drum_kits.get_kit_dir(kit_name)
+        if kit_dir is not None:
+            mapped = drum_kits.auto_map_kit(kit_dir)
+            if mapped:
+                active_samples_dir = kit_dir
+                active_gm_map = mapped
+            else:
+                print(f"  [drum_synth] auto_map_kit returned empty for '{kit_name}', using fallback")
+        else:
+            print(f"  [drum_synth] kit '{kit_name}' unavailable, using fallback")
+
     try:
         beats_per_second = tempo_bpm / 60.0
         last_beat = max((float(n["time"]) + float(n.get("duration", 0.1))) for n in notes)
@@ -110,11 +145,11 @@ def render_drum_pattern(notes: List[Dict], tempo_bpm: int, output_path: Path) ->
             start_beat = float(note["time"])
             start_sample = int(start_beat / beats_per_second * SAMPLE_RATE)
 
-            filename = GM_TO_SAMPLE.get(pitch)
+            filename = active_gm_map.get(pitch)
             if not filename:
                 continue
 
-            sample_data = _load_sample(filename)
+            sample_data = _load_sample(filename, active_samples_dir)
             if not sample_data:
                 continue
 
