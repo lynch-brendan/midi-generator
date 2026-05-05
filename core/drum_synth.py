@@ -11,9 +11,9 @@ from typing import List, Dict, Optional
 
 SAMPLE_RATE = 44100
 
-SAMPLES_DIR = Path(
-    "/Applications/FL Studio 21.app/Contents/Resources/FL/Data/Patches/Packs/All drum packs/Roland Tr-808"
-)
+_BUNDLED = Path(__file__).parent.parent / "samples" / "drums"
+_FL_STUDIO = Path("/Applications/FL Studio 21.app/Contents/Resources/FL/Data/Patches/Packs/All drum packs/Roland Tr-808")
+SAMPLES_DIR = _BUNDLED if _BUNDLED.exists() else _FL_STUDIO
 
 # GM pitch → sample filename in SAMPLES_DIR
 GM_TO_SAMPLE = {
