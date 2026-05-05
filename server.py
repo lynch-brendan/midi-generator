@@ -88,6 +88,12 @@ def _check_and_increment_generation(user, db, ip: str) -> None:
     Raises HTTPException 402 when a limit is reached.
     Raises HTTPException 429 for anonymous IP-based rate limiting.
     """
+    # Admin emails get unlimited generations
+    if user is not None:
+        admin_emails = {x.strip().lower() for x in os.environ.get("ADMIN_EMAILS", "").split(",") if x.strip()}
+        if user.email.lower() in admin_emails:
+            return
+
     # Anonymous path — IP-based daily limit (existing behaviour)
     if user is None or not _stripe_enabled():
         if user is None:
