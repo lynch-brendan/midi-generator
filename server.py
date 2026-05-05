@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from core.claude_client import stream_variations
 from core.midi_writer import write_midi
 from core.audio_renderer import render_midi_to_wav
+from core.expression import apply_expression
 from core.drum_synth import render_drum_pattern
 from core.variations import extract_variation_info, validate_variation, sanitize_variation
 from core.auth import create_jwt, get_current_user, google_auth_url, exchange_google_code
@@ -197,7 +198,9 @@ def _process_variation(var: dict, gm_patch: int, slug: str, is_drums: bool = Fal
     wav_path = out_dir / f"{idx}-{var_slug}.wav"
 
     channel = 9 if is_drums else 0
-    write_midi(midi_path, var["notes"], info.tempo, gm_patch, channel)
+    expression_level = var.get("expression", "subtle")
+    notes_with_expression = apply_expression(var["notes"], gm_patch, expression_level, is_drums)
+    write_midi(midi_path, notes_with_expression, info.tempo, gm_patch, channel)
 
     if is_drums:
         wav_ok = render_drum_pattern(var["notes"], info.tempo, wav_path)

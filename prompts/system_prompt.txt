@@ -21,16 +21,13 @@ OUTPUT JSON SCHEMA
       "name": "<evocative variation name, e.g. 'The Hero's Call'>",
       "character": "<one sentence describing the musical character and feel>",
       "tempo": <BPM as integer, 60-200>,
+      "expression": "<one of: none | subtle | moderate | expressive>",
       "notes": [
         {
           "pitch": <MIDI note number 0-127>,
           "duration": <duration in beats as float>,
           "velocity": <note velocity 1-127>,
-          "time": <note start time in beats from bar start as float>,
-          "bend_start": <optional float: semitones to slide in from. -1.5 = slide up from below. 0 = no slide>,
-          "bend_end": <optional float: semitones to slide out to at end of note. 1.0 = slide up. 0 = no slide>,
-          "vibrato": <optional float: vibrato depth in semitones. 0.3 = subtle, 0.7 = expressive, 0 = none>,
-          "vibrato_delay": <optional float: beats before vibrato starts, default 0.25>
+          "time": <note start time in beats from bar start as float>
         }
       ]
     }
@@ -85,26 +82,17 @@ CHORDS AND POLYPHONY:
 - Chord voicings should be musically correct — no random note stacking
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-EXPRESSIVE TECHNIQUES
+EXPRESSION LEVEL
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-**USE EXPRESSIVE TECHNIQUES for melodic/solo instruments. Omit them for piano, drums, bass.**
+Each variation has an `expression` field. Choose one value that describes the overall performance feel. The renderer will apply appropriate slides and vibrato automatically — you do NOT add any bend data to individual notes.
 
-Instrument-specific guidance:
-- **Trumpet/Flugelhorn**: Occasional subtle slides on phrase entries only — `bend_start: -0.5` to `-1.0` on 2-3 notes max per phrase. Vibrato only on the final held note of a phrase (0.2-0.3 depth, 0.4 delay). Less is more.
-- **Trombone**: Slides on held notes only — `bend_start: -1.0` to `-2.0`. One `bend_end` glissando per phrase maximum. Vibrato depth 0.2-0.3.
-- **Strings (violin, viola, cello)**: Vibrato on notes >= 1.5 beats only (0.2-0.4 depth, 0.3 delay). Rare glissandos — only on very lyrical phrase peaks.
-- **Guitar (electric)**: One or two string bends per phrase — `bend_end: 1.0` on the most expressive note. Vibrato only on bent notes (0.2-0.3).
-- **Fretless Bass**: Very subtle slides only — `bend_start: -0.3` to `-0.5` on 1-2 notes. No vibrato.
-- **Saxophone**: Vibrato only on notes >= 1.0 beat (0.2-0.3 depth, 0.4 delay). Occasional slide into phrase peak (`bend_start: -0.5`).
-- **Flute**: Very light vibrato only on notes >= 2.0 beats (0.15-0.25 depth, 0.5 delay). Rarely use bends.
+- **"none"** — no expression. Use for: piano, drums, bass, electronic, staccato styles, any instrument playing a dry mechanical part.
+- **"subtle"** — light touch. Use for: cool jazz, late-night, restrained classical, background parts, muted trumpet.
+- **"moderate"** — natural expression. Use for: most melodic playing — standard jazz, pop, folk, lyrical passages.
+- **"expressive"** — full feel. Use for: blues, soul, passionate solos, romantic strings, gospel, any variation described as emotional or raw.
 
-**RULES:**
-- Only add bends/vibrato to notes with duration >= 1.0 beats
-- Use bend_start on at most 2 notes per phrase — the most important entry and peak only
-- Vibrato only on the longest, most sustained notes — never on runs or busy passages
-- When in doubt, omit — a clean phrase is better than an over-processed one
-- Piano, drums, bass: NEVER use bend fields (omit entirely)
+Piano, bass, and drums should always be "none".
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 VARIATION STRATEGY
