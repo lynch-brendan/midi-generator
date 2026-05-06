@@ -854,7 +854,10 @@
   <!-- Top bar -->
   <div class="top-bar">
     <span class="top-bar-title">Muse <span style="font-family:-apple-system,sans-serif;font-size:0.62rem;font-weight:500;letter-spacing:0.08em;color:var(--text-dim);vertical-align:middle;text-transform:uppercase;">Beta</span></span>
-    <div class="top-bar-right" id="authArea"></div>
+    <div class="top-bar-right">
+      <a href="mailto:vowringscompany@gmail.com?subject=Muse feedback" style="font-size:0.78rem;color:var(--text-dim);text-decoration:none;transition:color 0.15s;" onmouseover="this.style.color='var(--text-muted)'" onmouseout="this.style.color='var(--text-dim)'">Send feedback</a>
+      <div id="authArea" style="display:flex;align-items:center;gap:12px;"></div>
+    </div>
   </div>
 
   <!-- Page layout -->
@@ -864,11 +867,12 @@
 
       <div class="hero">
         <h1>Muse</h1>
-        <p class="subtitle">Describe a musical idea. Get five variations back.</p>
+        <p class="subtitle">Your AI musician. Five variations, every time.</p>
+        <p style="font-size:0.72rem;color:var(--text-dim);margin-top:8px;letter-spacing:0.02em;">All output is royalty free.</p>
       </div>
 
       <div class="input-row">
-        <input type="text" id="prompt" placeholder='e.g. "jazzy piano riff in D minor"' />
+        <input type="text" id="prompt" placeholder="I'll play any instrument — what do you want to hear?" />
         <button class="generate" id="generateBtn" onclick="generate()">Generate</button>
       </div>
 
@@ -886,6 +890,7 @@
       </div>
 
       <p class="status" id="status"></p>
+      <p id="upgradeCta" style="display:none;font-size:0.75rem;color:var(--text-dim);text-align:center;margin-top:-24px;margin-bottom:32px;">Want unlimited? <a href="#" onclick="openUpgradeModal();return false;" style="color:var(--text-muted);text-decoration:underline;text-underline-offset:2px;">See plans</a></p>
 
       <div id="sessions"></div>
 
@@ -1316,14 +1321,18 @@
 
     function renderUsageIndicator(info) {
       const el = document.getElementById("usageIndicator");
-      if (!info) { el.textContent = ""; el.className = "usage-indicator"; return; }
+      const cta = document.getElementById("upgradeCta");
+      if (!info) { el.textContent = ""; el.className = "usage-indicator"; if (cta) cta.style.display = "none"; return; }
       const { plan, used, limit, remaining } = info;
       if (plan === "pro") {
         el.textContent = `Pro · ${used} / ${limit} generations this month`;
+        if (cta) cta.style.display = "none";
       } else if (plan === "creator") {
         el.textContent = `Creator · ${used} / ${limit} generations this month`;
+        if (cta) cta.style.display = "none";
       } else {
         el.textContent = `${remaining} free generation${remaining === 1 ? "" : "s"} remaining`;
+        if (cta) cta.style.display = "block";
       }
       el.className = "usage-indicator" + (remaining === 0 ? " danger" : remaining <= 3 ? " warn" : "");
     }
