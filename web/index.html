@@ -946,6 +946,21 @@
       50% { transform: translateY(-8px) rotate(8deg); opacity: 1; }
     }
 
+    @keyframes grab {
+      0%   { transform: translateY(0) scale(0.5); opacity: 0; }
+      40%  { transform: translateY(-12px) scale(1.3); opacity: 1; }
+      100% { transform: translateY(0) scale(1); opacity: 1; }
+    }
+
+    .char-held {
+      animation: grab 0.5s cubic-bezier(0.34,1.56,0.64,1) forwards;
+    }
+
+    .instrument.dimmed {
+      transition: opacity 0.4s;
+      opacity: 0.15 !important;
+    }
+
     @media (max-width: 860px) {
       .library-panel { width: 85vw; }
     }
@@ -978,23 +993,25 @@
         <div class="speech-bubble">I'll play any instrument — what do you want to hear?</div>
         <svg class="character-svg" width="160" height="140" viewBox="0 0 160 140" fill="none" xmlns="http://www.w3.org/2000/svg">
           <!-- Floating instruments -->
-          <text class="instrument" x="8" y="55" font-size="22" opacity="0.6">🎸</text>
-          <text class="instrument" x="126" y="48" font-size="20" opacity="0.6">🎹</text>
-          <text class="instrument" x="18" y="100" font-size="18" opacity="0.5">🎺</text>
-          <text class="instrument" x="122" y="98" font-size="18" opacity="0.5">🥁</text>
-          <text class="instrument" x="68" y="18" font-size="16" opacity="0.5">🎻</text>
+          <text id="fi0" class="instrument" x="8" y="55" font-size="22" opacity="0.6">🎸</text>
+          <text id="fi1" class="instrument" x="126" y="48" font-size="20" opacity="0.6">🎹</text>
+          <text id="fi2" class="instrument" x="18" y="100" font-size="18" opacity="0.5">🎺</text>
+          <text id="fi3" class="instrument" x="122" y="98" font-size="18" opacity="0.5">🥁</text>
+          <text id="fi4" class="instrument" x="68" y="18" font-size="16" opacity="0.5">🎻</text>
           <!-- Head -->
           <circle cx="80" cy="52" r="18" fill="var(--bg-card)" stroke="var(--border)" stroke-width="1.5"/>
           <!-- Eyes -->
           <circle cx="74" cy="50" r="2.5" fill="var(--text-muted)"/>
           <circle cx="86" cy="50" r="2.5" fill="var(--text-muted)"/>
           <!-- Smile -->
-          <path d="M74 57 Q80 63 86 57" stroke="var(--text-muted)" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+          <path id="charMouth" d="M74 57 Q80 63 86 57" stroke="var(--text-muted)" stroke-width="1.5" stroke-linecap="round" fill="none"/>
           <!-- Body -->
           <rect x="66" y="72" width="28" height="32" rx="8" fill="var(--bg-card)" stroke="var(--border)" stroke-width="1.5"/>
-          <!-- Arms -->
+          <!-- Arms — right arm raised when holding -->
           <line x1="66" y1="80" x2="48" y2="95" stroke="var(--border)" stroke-width="3" stroke-linecap="round"/>
-          <line x1="94" y1="80" x2="112" y2="95" stroke="var(--border)" stroke-width="3" stroke-linecap="round"/>
+          <line id="charRightArm" x1="94" y1="80" x2="112" y2="95" stroke="var(--border)" stroke-width="3" stroke-linecap="round"/>
+          <!-- Held instrument (appears on grab) -->
+          <text id="charHeldInstrument" x="108" y="92" font-size="22" opacity="0" text-anchor="middle"></text>
           <!-- Legs -->
           <line x1="72" y1="104" x2="68" y2="128" stroke="var(--border)" stroke-width="3" stroke-linecap="round"/>
           <line x1="88" y1="104" x2="92" y2="128" stroke="var(--border)" stroke-width="3" stroke-linecap="round"/>
@@ -1079,6 +1096,58 @@
   </div>
 
   <script>
+    const INSTRUMENT_EMOJI = {
+      piano: "🎹", "electric piano": "🎹", harpsichord: "🎹", organ: "🎹", vibraphone: "🎹", marimba: "🎹",
+      guitar: "🎸", "acoustic guitar": "🎸", "electric guitar": "🎸", bass: "🎸", "bass guitar": "🎸", "fretless bass": "🎸",
+      trumpet: "🎺", trombone: "🎺", tuba: "🎺", "muted trumpet": "🎺", "french horn": "📯", "brass section": "🎺",
+      violin: "🎻", viola: "🎻", cello: "🎻", strings: "🎻",
+      "alto sax": "🎷", "tenor sax": "🎷", "baritone sax": "🎷", saxophone: "🎷",
+      flute: "🪈", oboe: "🪈", clarinet: "🪈",
+      drums: "🥁", "drum kit": "🥁", percussion: "🥁",
+      synth: "🎹", "synth lead": "🎹", pad: "🎹",
+    };
+
+    function setCharacterInstrument(instrumentName) {
+      const key = (instrumentName || "").toLowerCase();
+      let emoji = null;
+      for (const [k, v] of Object.entries(INSTRUMENT_EMOJI)) {
+        if (key.includes(k)) { emoji = v; break; }
+      }
+      if (!emoji) return;
+
+      // Raise right arm
+      const arm = document.getElementById("charRightArm");
+      if (arm) { arm.setAttribute("x2", "115"); arm.setAttribute("y2", "72"); }
+
+      // Show held instrument
+      const held = document.getElementById("charHeldInstrument");
+      if (held) {
+        held.textContent = emoji;
+        held.setAttribute("y", "70");
+        held.setAttribute("opacity", "1");
+        held.classList.remove("char-held");
+        void held.offsetWidth; // force reflow for re-animation
+        held.classList.add("char-held");
+      }
+
+      // Dim floating instruments
+      for (let i = 0; i < 5; i++) {
+        const el = document.getElementById(`fi${i}`);
+        if (el) el.classList.add("dimmed");
+      }
+    }
+
+    function resetCharacter() {
+      const arm = document.getElementById("charRightArm");
+      if (arm) { arm.setAttribute("x2", "112"); arm.setAttribute("y2", "95"); }
+      const held = document.getElementById("charHeldInstrument");
+      if (held) { held.textContent = ""; held.setAttribute("opacity", "0"); held.classList.remove("char-held"); }
+      for (let i = 0; i < 5; i++) {
+        const el = document.getElementById(`fi${i}`);
+        if (el) el.classList.remove("dimmed");
+      }
+    }
+
     let currentUser = null;
     let folders = [];
     let openFolderId = null;
@@ -1561,6 +1630,7 @@
       const status = document.getElementById("status");
       btn.disabled = true;
       status.textContent = "";
+      resetCharacter();
 
       const group = createGroup(prompt, basePrompt || prompt, !!insertAfter, insertAfter || null);
       const groupStatus = group.querySelector(".group-status");
@@ -1604,6 +1674,7 @@
             const event = JSON.parse(line.slice(6));
             if (event.type === "meta") {
               groupMeta.textContent = `${event.instrument} · ${event.key}`;
+              setCharacterInstrument(event.instrument);
             } else if (event.type === "variation") {
               addVariationCard(event, group);
               const count = group.querySelectorAll(".card").length;
