@@ -884,22 +884,23 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      margin-bottom: 32px;
       position: relative;
     }
 
     .speech-bubble {
       background: var(--bg-input);
       border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 12px 18px;
-      font-size: 0.88rem;
-      color: var(--text-muted);
-      max-width: 320px;
+      border-radius: 22px;
+      padding: 14px 26px;
+      font-size: 1.02rem;
+      font-weight: 500;
+      color: var(--text);
+      white-space: nowrap;
       text-align: center;
       position: relative;
       margin-bottom: 10px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+      box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+      letter-spacing: -0.01em;
     }
 
     .speech-bubble::after {
@@ -960,6 +961,169 @@
       opacity: 0.15 !important;
     }
 
+    /* -----------------------------------------------------------------------
+       Thought stage
+    ----------------------------------------------------------------------- */
+
+    #thoughtStage {
+      position: relative;
+      width: 100%;
+      max-width: 560px;
+      height: 390px;
+      margin-bottom: 8px;
+    }
+
+    #thoughtStage .character-wrap {
+      position: absolute;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+
+    /* -----------------------------------------------------------------------
+       Thought clouds (5, semicircle above character)
+    ----------------------------------------------------------------------- */
+
+    .thought-cloud {
+      position: absolute;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 8px 12px 8px 15px;
+      cursor: pointer;
+      white-space: nowrap;
+      max-width: 170px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s, border-color 0.15s, background 0.15s;
+    }
+
+    .thought-cloud.visible {
+      opacity: 1;
+      pointer-events: all;
+      animation: cloudPop 0.3s ease both;
+    }
+
+    @keyframes cloudPop {
+      from { opacity: 0; transform: scale(0.88); }
+      to   { opacity: 1; transform: scale(1); }
+    }
+
+    .thought-cloud:hover  { border-color: var(--text-muted); }
+    .thought-cloud.active { border-color: var(--text-muted); background: var(--bg-card); }
+
+    .cloud-name {
+      font-size: 0.78rem;
+      font-weight: 500;
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .cloud-play {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 0.6rem;
+      cursor: pointer;
+      padding: 2px 3px;
+      border-radius: 4px;
+      line-height: 1;
+      flex-shrink: 0;
+      transition: color 0.15s;
+    }
+
+    .cloud-play:hover { color: var(--text); }
+
+    /* Semicircle positions (arc center ≈ character head, r=140px, angles 160→20°) */
+    .thought-cloud[data-idx="0"] { left: 14%; top: 222px; }
+    .thought-cloud[data-idx="1"] { left: 22%; top: 162px; }
+    .thought-cloud[data-idx="2"] { left: 38%; top: 130px; }
+    .thought-cloud[data-idx="3"] { left: 54%; top: 162px; }
+    .thought-cloud[data-idx="4"] { left: 62%; top: 222px; }
+
+    /* -----------------------------------------------------------------------
+       Variation panel (expanded detail, below stage)
+    ----------------------------------------------------------------------- */
+
+    .variation-panel {
+      width: 100%;
+      max-width: 560px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-soft);
+      border-radius: 14px;
+      padding: 20px 22px;
+      margin-bottom: 20px;
+      animation: fadeUp 0.25s ease both;
+    }
+
+    .vp-header {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+
+    .vp-name {
+      font-weight: 600;
+      font-size: 0.95rem;
+      color: var(--text);
+    }
+
+    .vp-tempo {
+      color: var(--text-dim);
+      font-size: 0.75rem;
+    }
+
+    .vp-character {
+      color: var(--text-muted);
+      font-size: 0.83rem;
+      line-height: 1.55;
+      margin-bottom: 16px;
+    }
+
+    .vp-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    /* -----------------------------------------------------------------------
+       Mobile — vertical cloud stack
+    ----------------------------------------------------------------------- */
+
+    @media (max-width: 599px) {
+      #thoughtStage {
+        height: auto;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        padding-bottom: 20px;
+      }
+
+      #thoughtStage .character-wrap {
+        position: static;
+        transform: none;
+        order: -1;
+      }
+
+      .thought-cloud {
+        position: static;
+        opacity: 1;
+        pointer-events: all;
+        max-width: 100%;
+        width: calc(100% - 0px);
+      }
+
+      .thought-cloud:not(.visible) { display: none; }
+    }
+
     @media (max-width: 860px) {
       .library-panel { width: 85vw; }
     }
@@ -987,35 +1151,40 @@
   <div class="page-layout">
     <div class="main-content">
 
-      <!-- Animated character -->
-      <div class="character-wrap" style="position:relative;">
-        <div class="speech-bubble">I'll play any instrument — what do you want to hear?</div>
-        <svg class="character-svg" width="160" height="140" viewBox="0 0 160 140" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <!-- Floating instruments -->
-          <text id="fi0" class="instrument" x="8" y="55" font-size="22" opacity="0.6">🎸</text>
-          <text id="fi1" class="instrument" x="126" y="48" font-size="20" opacity="0.6">🎹</text>
-          <text id="fi2" class="instrument" x="18" y="100" font-size="18" opacity="0.5">🎺</text>
-          <text id="fi3" class="instrument" x="122" y="98" font-size="18" opacity="0.5">🥁</text>
-          <text id="fi4" class="instrument" x="68" y="18" font-size="16" opacity="0.5">🎻</text>
-          <!-- Head -->
-          <circle cx="80" cy="52" r="18" fill="var(--bg-card)" stroke="var(--border)" stroke-width="1.5"/>
-          <!-- Eyes -->
-          <circle cx="74" cy="50" r="2.5" fill="var(--text-muted)"/>
-          <circle cx="86" cy="50" r="2.5" fill="var(--text-muted)"/>
-          <!-- Smile -->
-          <path id="charMouth" d="M74 57 Q80 63 86 57" stroke="var(--text-muted)" stroke-width="1.5" stroke-linecap="round" fill="none"/>
-          <!-- Body -->
-          <rect x="66" y="72" width="28" height="32" rx="8" fill="var(--bg-card)" stroke="var(--border)" stroke-width="1.5"/>
-          <!-- Arms — right arm raised when holding -->
-          <line x1="66" y1="80" x2="48" y2="95" stroke="var(--border)" stroke-width="3" stroke-linecap="round"/>
-          <line id="charRightArm" x1="94" y1="80" x2="112" y2="95" stroke="var(--border)" stroke-width="3" stroke-linecap="round"/>
-          <!-- Legs -->
-          <line x1="72" y1="104" x2="68" y2="128" stroke="var(--border)" stroke-width="3" stroke-linecap="round"/>
-          <line x1="88" y1="104" x2="92" y2="128" stroke="var(--border)" stroke-width="3" stroke-linecap="round"/>
-        </svg>
-        <!-- Held instrument as HTML element — reliable cross-browser -->
-        <div id="charHeldInstrument" style="position:absolute;bottom:18px;right:14px;font-size:24px;opacity:0;transition:opacity 0.3s;pointer-events:none;"></div>
+      <!-- Thought stage: character + floating idea clouds -->
+      <div id="thoughtStage">
+        <div class="character-wrap">
+          <div class="speech-bubble" id="speechBubble">I'll play any instrument — what do you want to hear?</div>
+          <svg class="character-svg" width="160" height="140" viewBox="0 0 160 140" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <!-- Floating instruments -->
+            <text id="fi0" class="instrument" x="8" y="55" font-size="22" opacity="0.6">🎸</text>
+            <text id="fi1" class="instrument" x="126" y="48" font-size="20" opacity="0.6">🎹</text>
+            <text id="fi2" class="instrument" x="18" y="100" font-size="18" opacity="0.5">🎺</text>
+            <text id="fi3" class="instrument" x="122" y="98" font-size="18" opacity="0.5">🥁</text>
+            <text id="fi4" class="instrument" x="68" y="18" font-size="16" opacity="0.5">🎻</text>
+            <!-- Head -->
+            <circle cx="80" cy="52" r="18" fill="var(--bg-card)" stroke="var(--border)" stroke-width="1.5"/>
+            <!-- Eyes -->
+            <circle cx="74" cy="50" r="2.5" fill="var(--text-muted)"/>
+            <circle cx="86" cy="50" r="2.5" fill="var(--text-muted)"/>
+            <!-- Smile -->
+            <path id="charMouth" d="M74 57 Q80 63 86 57" stroke="var(--text-muted)" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+            <!-- Body -->
+            <rect x="66" y="72" width="28" height="32" rx="8" fill="var(--bg-card)" stroke="var(--border)" stroke-width="1.5"/>
+            <!-- Arms — right arm raised when holding -->
+            <line x1="66" y1="80" x2="48" y2="95" stroke="var(--border)" stroke-width="3" stroke-linecap="round"/>
+            <line id="charRightArm" x1="94" y1="80" x2="112" y2="95" stroke="var(--border)" stroke-width="3" stroke-linecap="round"/>
+            <!-- Legs -->
+            <line x1="72" y1="104" x2="68" y2="128" stroke="var(--border)" stroke-width="3" stroke-linecap="round"/>
+            <line x1="88" y1="104" x2="92" y2="128" stroke="var(--border)" stroke-width="3" stroke-linecap="round"/>
+          </svg>
+          <!-- Held instrument as HTML element — reliable cross-browser -->
+          <div id="charHeldInstrument" style="position:absolute;bottom:18px;right:14px;font-size:24px;opacity:0;transition:opacity 0.3s;pointer-events:none;"></div>
+        </div>
       </div>
+
+      <!-- Variation detail panel (populated on cloud click) -->
+      <div id="variationPanel" style="display:none"></div>
 
       <div class="input-row">
         <input type="text" id="prompt" placeholder="e.g. funky bass riff in E minor" />
@@ -1038,8 +1207,6 @@
       <p class="status" id="status"></p>
       <p id="upgradeCta" style="display:none;font-size:0.75rem;color:var(--text-dim);text-align:center;margin-top:-24px;margin-bottom:12px;">Need more generations? <a href="#" onclick="openUpgradeModal();return false;" style="color:var(--text-muted);text-decoration:underline;text-underline-offset:2px;">See plans</a></p>
       <p style="font-size:0.72rem;color:var(--text-dim);text-align:center;margin-bottom:32px;letter-spacing:0.02em;">All output is royalty free.</p>
-
-      <div id="sessions"></div>
 
     </div>
   </div>
@@ -1149,6 +1316,8 @@
     let activeSaveContext = null;
     let abortController = null;
     let usageInfo = null;
+    let currentVariations = [];
+    let activeCloudIdx = -1;
 
     // ==========================================================================
     // Auth
@@ -1221,6 +1390,7 @@
       closeLibraryDrawer();
       document.getElementById("libraryBtn").style.display = "none";
       document.querySelectorAll("button.save-file").forEach(b => b.classList.remove("visible"));
+      clearClouds();
     }
 
     // ==========================================================================
@@ -1452,59 +1622,71 @@
       document.getElementById("prompt").value = el.textContent;
     }
 
-    function morelike(name, character, tempo, parentGroup) {
-      const basePrompt = parentGroup.dataset.basePrompt;
-      const refined = `${basePrompt} — more like: "${name}", ${tempo} BPM, ${character}`;
-      document.getElementById("prompt").value = refined;
-      if (abortController) abortController.abort();
-      generate(parentGroup, basePrompt);
+    function setSpeechBubble(text) {
+      const el = document.getElementById("speechBubble");
+      if (el) el.textContent = text;
     }
 
-    function createGroup(prompt, basePrompt, isChild, afterEl) {
-      const group = document.createElement("div");
-      group.className = "group" + (isChild ? " is-child" : "");
-      group.dataset.basePrompt = basePrompt;
-      group.innerHTML = `
-        <div class="group-header">
-          <span class="group-prompt">${escHtml(prompt)}</span>
-          <span class="group-meta"></span>
-          <span class="group-status loading">Generating…</span>
-        </div>
-      `;
-      const sessions = document.getElementById("sessions");
-      if (afterEl) {
-        afterEl.insertAdjacentElement("afterend", group);
-      } else {
-        sessions.prepend(group);
-      }
-      return group;
+    function clearClouds() {
+      document.querySelectorAll(".thought-cloud").forEach(c => c.remove());
+      const panel = document.getElementById("variationPanel");
+      panel.innerHTML = "";
+      panel.style.display = "none";
+      currentVariations = [];
+      activeCloudIdx = -1;
     }
 
-    function addVariationCard(v, group) {
-      const prompt = group.dataset.basePrompt || "";
-      const card = document.createElement("div");
-      card.className = "card";
+    function addCloud(idx, variation) {
+      const stage = document.getElementById("thoughtStage");
+      const cloud = document.createElement("div");
+      cloud.className = "thought-cloud visible";
+      cloud.dataset.idx = idx;
+      cloud.innerHTML = `<span class="cloud-name">${escHtml(variation.name)}</span><button class="cloud-play" title="Play">▶</button>`;
+      stage.appendChild(cloud);
+
+      cloud.addEventListener("click", () => selectCloud(idx));
+      cloud.querySelector(".cloud-play").addEventListener("click", (e) => {
+        e.stopPropagation();
+        selectCloud(idx, true);
+      });
+    }
+
+    function selectCloud(idx, autoPlay) {
+      document.querySelectorAll(".thought-cloud").forEach(c =>
+        c.classList.toggle("active", parseInt(c.dataset.idx) === idx)
+      );
+      activeCloudIdx = idx;
+
+      const v = currentVariations[idx];
+      if (!v) return;
+
+      const panel = document.getElementById("variationPanel");
       const saveVisible = currentUser ? "visible" : "";
-      card.innerHTML = `
-        <div class="card-header">
-          <span class="card-name">${escHtml(v.name)}</span>
-          <span class="card-tempo">${v.tempo} BPM · ${v.note_count} notes</span>
+      panel.style.display = "block";
+      panel.className = "variation-panel";
+      panel.innerHTML = `
+        <div class="vp-header">
+          <span class="vp-name">${escHtml(v.name)}</span>
+          <span class="vp-tempo">${v.tempo} BPM · ${v.note_count} notes</span>
         </div>
-        <p class="card-character">${escHtml(v.character)}</p>
-        <div class="card-actions">
+        <p class="vp-character">${escHtml(v.character)}</p>
+        <div class="vp-actions">
           ${v.wav_url
             ? `<audio controls src="${escHtml(v.wav_url)}"></audio>`
             : `<span style="color:var(--text-dim);font-size:0.76rem">No audio</span>`}
           <a class="download" href="${escHtml(v.midi_url)}" download draggable="true" data-mime="audio/midi">MIDI</a>
           ${v.wav_url ? `<a class="download" href="${escHtml(v.wav_url)}" download draggable="true" data-mime="audio/wav">WAV</a>` : ""}
           <button class="more-like">More like this</button>
-          <button class="save-file ${saveVisible}" data-name="${escAttr(v.name)}" data-prompt="${escAttr(prompt)}" data-midi="${escAttr(v.midi_url)}" data-wav="${escAttr(v.wav_url || "")}">Save</button>
+          <button class="save-file ${saveVisible}" data-name="${escAttr(v.name)}" data-prompt="${escAttr(v.prompt)}" data-midi="${escAttr(v.midi_url)}" data-wav="${escAttr(v.wav_url || "")}">Save</button>
         </div>
       `;
-      card.querySelector(".more-like").addEventListener("click", () =>
-        morelike(v.name, v.character, v.tempo, group)
-      );
-      card.querySelector(".save-file").addEventListener("click", function (e) {
+      panel.querySelector(".more-like").addEventListener("click", () => {
+        const refined = `${v.prompt} — more like: "${v.name}", ${v.tempo} BPM, ${v.character}`;
+        document.getElementById("prompt").value = refined;
+        if (abortController) abortController.abort();
+        generate();
+      });
+      panel.querySelector(".save-file").addEventListener("click", function(e) {
         e.stopPropagation();
         if (!currentUser) return;
         openSavePopover(this, {
@@ -1514,7 +1696,13 @@
           wav_url: this.dataset.wav || null,
         });
       });
-      group.appendChild(card);
+
+      if (autoPlay) {
+        const audio = panel.querySelector("audio");
+        if (audio) audio.play().catch(() => {});
+      }
+
+      panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
 
     // ==========================================================================
@@ -1617,19 +1805,15 @@
       }, durationMs);
     }
 
-    async function generate(insertAfter, basePrompt) {
+    async function generate() {
       const prompt = document.getElementById("prompt").value.trim();
       if (!prompt) return;
 
       const btn = document.getElementById("generateBtn");
-      const status = document.getElementById("status");
       btn.disabled = true;
-      status.textContent = "";
+      clearClouds();
       resetCharacter();
-
-      const group = createGroup(prompt, basePrompt || prompt, !!insertAfter, insertAfter || null);
-      const groupStatus = group.querySelector(".group-status");
-      const groupMeta = group.querySelector(".group-meta");
+      setSpeechBubble("Let me think…");
 
       abortController = new AbortController();
 
@@ -1643,11 +1827,12 @@
 
         if (!res.ok) {
           const err = await res.json();
+          setSpeechBubble("I'll play any instrument — what do you want to hear?");
           if (res.status === 402 && err.detail && err.detail.code === "limit_reached") {
-            group.remove(); openUpgradeModal(); btn.disabled = false; abortController = null; return;
+            openUpgradeModal(); btn.disabled = false; abortController = null; return;
           }
           if (res.status === 429) {
-            group.remove(); currentUser ? openUpgradeModal() : showSignInModal();
+            currentUser ? openUpgradeModal() : showSignInModal();
             btn.disabled = false; abortController = null; return;
           }
           throw new Error(err.detail || "Generation failed");
@@ -1668,16 +1853,14 @@
             if (!line.startsWith("data: ")) continue;
             const event = JSON.parse(line.slice(6));
             if (event.type === "meta") {
-              groupMeta.textContent = `${event.instrument} · ${event.key}`;
               setCharacterInstrument(event.instrument);
+              setSpeechBubble(`Playing ${event.instrument} in ${event.key}…`);
             } else if (event.type === "variation") {
-              addVariationCard(event, group);
-              const count = group.querySelectorAll(".card").length;
-              groupStatus.textContent = count < 5 ? `${count} of 5…` : "";
-              if (count >= 5) groupStatus.classList.remove("loading");
+              const idx = currentVariations.length;
+              currentVariations.push({ ...event, prompt });
+              addCloud(idx, event);
             } else if (event.type === "done") {
-              groupStatus.textContent = "";
-              groupStatus.classList.remove("loading");
+              setSpeechBubble("I'll play any instrument — what do you want to hear?");
             } else if (event.type === "error") {
               throw new Error(event.message);
             }
@@ -1685,8 +1868,7 @@
         }
       } catch (err) {
         if (err.name !== "AbortError") {
-          groupStatus.textContent = err.message;
-          groupStatus.style.color = "var(--red)";
+          setSpeechBubble("Something went wrong — try again?");
         }
       } finally {
         abortController = null;
