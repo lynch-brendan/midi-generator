@@ -110,8 +110,11 @@ def _check_and_increment_generation(user, db, ip: str) -> None:
         return  # logged-in but Stripe disabled — no quota enforcement
 
     # Reset monthly counter if the reset date has passed
-    now = datetime.now(timezone.utc)
-    if user.monthly_reset_date and now >= user.monthly_reset_date:
+    now = datetime.utcnow()
+    reset_date = user.monthly_reset_date
+    if reset_date and reset_date.tzinfo is not None:
+        reset_date = reset_date.replace(tzinfo=None)
+    if reset_date and now >= reset_date:
         user.monthly_generations = 0
         user.monthly_reset_date = now + timedelta(days=30)
 
@@ -466,9 +469,8 @@ async def stripe_webhook(request: Request, db=Depends(get_db)):
         customer_id = _attr(data_obj, "customer")
         user = _get_user_by_customer(customer_id)
         if user and db:
-            now = datetime.now(timezone.utc)
             user.monthly_generations = 0
-            user.monthly_reset_date = now + timedelta(days=30)
+            user.monthly_reset_date = datetime.utcnow() + timedelta(days=30)
             db.commit()
 
     return JSONResponse({"received": True})
