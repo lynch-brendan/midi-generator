@@ -202,12 +202,20 @@ def _process_variation(var: dict, gm_patch: int, slug: str, is_drums: bool = Fal
 
     channel = 9 if is_drums else 0
     expression_level = var.get("expression", "subtle")
-    notes_with_expression = apply_expression(var["notes"], gm_patch, expression_level, is_drums)
+
+    notes = var["notes"]
+    if is_drums:
+        # Snap all drum times to nearest 16th note grid (0.25 beats)
+        grid = 0.25
+        for n in notes:
+            n["time"] = round(round(float(n["time"]) / grid) * grid, 4)
+
+    notes_with_expression = apply_expression(notes, gm_patch, expression_level, is_drums)
     write_midi(midi_path, notes_with_expression, info.tempo, gm_patch, channel)
 
     if is_drums:
         drum_kit = var.get("drum_kit", None)
-        wav_ok = render_drum_pattern(var["notes"], info.tempo, wav_path, kit_name=drum_kit)
+        wav_ok = render_drum_pattern(notes, info.tempo, wav_path, kit_name=drum_kit)
         if not wav_ok:
             wav_ok = render_midi_to_wav(midi_path, wav_path)
     else:
