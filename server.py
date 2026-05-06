@@ -413,28 +413,49 @@ async def stripe_webhook(request: Request, db=Depends(get_db)):
     def _plan_from_subscription(subscription) -> Optional[str]:
         """Determine plan name from subscription's price items."""
         try:
-            for item in subscription["items"]["data"]:
-                pid = item["price"]["id"]
+            items = subscription["items"]["data"]
+        except (KeyError, TypeError, AttributeError):
+            try:
+                items = subscription.items.data
+            except Exception:
+                return None
+        try:
+            for item in items:
+                try:
+                    pid = item["price"]["id"]
+                except (KeyError, TypeError, AttributeError):
+                    pid = item.price.id
                 if pid == pro_price_id:
                     return "pro"
                 if pid == creator_price_id:
                     return "creator"
-        except (KeyError, TypeError):
+        except Exception:
             pass
         return None
 
+    def _attr(obj, key, default=None):
+        """Get a field from a Stripe object whether it's dict-like or attribute-based."""
+        try:
+            return obj[key]
+        except (KeyError, TypeError):
+            pass
+        try:
+            return getattr(obj, key, default)
+        except Exception:
+            return default
+
     if event_type in ("customer.subscription.created", "customer.subscription.updated"):
-        customer_id = data_obj.get("customer")
+        customer_id = _attr(data_obj, "customer")
         user = _get_user_by_customer(customer_id)
         if user and db:
             plan = _plan_from_subscription(data_obj)
-            user.stripe_subscription_id = data_obj["id"]
+            user.stripe_subscription_id = _attr(data_obj, "id")
             user.subscription_plan = plan
-            user.subscription_status = data_obj.get("status")
+            user.subscription_status = _attr(data_obj, "status")
             db.commit()
 
     elif event_type == "customer.subscription.deleted":
-        customer_id = data_obj.get("customer")
+        customer_id = _attr(data_obj, "customer")
         user = _get_user_by_customer(customer_id)
         if user and db:
             user.subscription_plan = None
@@ -442,7 +463,7 @@ async def stripe_webhook(request: Request, db=Depends(get_db)):
             db.commit()
 
     elif event_type == "invoice.payment_succeeded":
-        customer_id = data_obj.get("customer")
+        customer_id = _attr(data_obj, "customer")
         user = _get_user_by_customer(customer_id)
         if user and db:
             now = datetime.now(timezone.utc)
