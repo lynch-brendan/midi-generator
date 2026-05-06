@@ -367,7 +367,7 @@ async def stripe_checkout(plan: str, request: Request, db=Depends(get_db)):
             user.stripe_customer_id = customer_id
             db.commit()
 
-    success_url = APP_URL.rstrip("/") + "/?subscribed=1"
+    success_url = APP_URL.rstrip("/") + f"/?subscribed={plan}"
     cancel_url = APP_URL.rstrip("/") + "/"
 
     url = create_checkout_session(user, plan, success_url, cancel_url)

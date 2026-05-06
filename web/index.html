@@ -1375,9 +1375,13 @@
 
     function checkSubscribedParam() {
       const params = new URLSearchParams(window.location.search);
-      if (params.has("subscribed")) {
-        const plan = (usageInfo && usageInfo.plan !== "free") ? usageInfo.plan : "Creator/Pro";
-        showToast(`Welcome to ${plan.charAt(0).toUpperCase() + plan.slice(1)}! Your subscription is active.`);
+      const plan = params.get("subscribed");
+      if (plan && plan !== "1") {
+        const label = plan.charAt(0).toUpperCase() + plan.slice(1);
+        showToast(`Welcome to ${label}! Your subscription is active.`);
+        window.history.replaceState({}, "", window.location.pathname);
+      } else if (plan === "1") {
+        showToast("Your subscription is active. Welcome!");
         window.history.replaceState({}, "", window.location.pathname);
       }
     }
