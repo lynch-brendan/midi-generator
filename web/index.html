@@ -128,13 +128,10 @@
     ----------------------------------------------------------------------- */
 
     .page-layout {
-      display: flex;
-      align-items: flex-start;
+      display: block;
     }
 
     .main-content {
-      flex: 1;
-      min-width: 0;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -413,19 +410,44 @@
     button.save-file.visible { display: inline-block; }
 
     /* -----------------------------------------------------------------------
-       Library panel
+       Library drawer (slide-out overlay)
     ----------------------------------------------------------------------- */
 
-    .library-panel {
-      width: 300px;
-      flex-shrink: 0;
-      border-left: 1px solid var(--border-soft);
-      min-height: calc(100vh - 56px);
-      padding: 28px 20px;
-      display: none;
+    .library-drawer-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 300;
+      background: rgba(28,24,20,0.25);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s;
+      backdrop-filter: blur(1px);
     }
 
-    .library-panel.visible { display: block; }
+    .library-drawer-overlay.open {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    .library-panel {
+      position: fixed;
+      top: 0;
+      right: 0;
+      z-index: 301;
+      width: 300px;
+      height: 100vh;
+      background: var(--bg-input);
+      border-left: 1px solid var(--border-soft);
+      padding: 24px 20px;
+      overflow-y: auto;
+      transform: translateX(100%);
+      transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: -8px 0 32px rgba(0,0,0,0.06);
+    }
+
+    .library-panel.visible {
+      transform: translateX(0);
+    }
 
     .library-header {
       display: flex;
@@ -836,16 +858,8 @@
     ----------------------------------------------------------------------- */
 
     @media (max-width: 860px) {
-      .library-panel {
-        width: 100%;
-        border-left: none;
-        border-top: 1px solid var(--border-soft);
-        min-height: unset;
-        padding: 20px 20px 40px;
-      }
-
-      .page-layout { flex-direction: column; }
       .hero h1 { font-size: 2.4rem; }
+      .library-panel { width: 85vw; }
     }
   </style>
 </head>
@@ -856,13 +870,16 @@
     <span class="top-bar-title">Muse <span style="font-family:-apple-system,sans-serif;font-size:0.62rem;font-weight:500;letter-spacing:0.08em;color:var(--text-dim);vertical-align:middle;text-transform:uppercase;">Beta</span></span>
     <div class="top-bar-right">
       <a href="mailto:vowringscompany@gmail.com?subject=Muse feedback" style="font-size:0.78rem;color:var(--text-dim);text-decoration:none;transition:color 0.15s;" onmouseover="this.style.color='var(--text-muted)'" onmouseout="this.style.color='var(--text-dim)'">Send feedback</a>
+      <button id="libraryBtn" onclick="toggleLibraryDrawer()" style="display:none;background:none;border:1px solid var(--border);border-radius:7px;padding:6px 12px;color:var(--text-muted);font-size:0.78rem;cursor:pointer;transition:color 0.15s,border-color 0.15s;">Library</button>
       <div id="authArea" style="display:flex;align-items:center;gap:12px;"></div>
     </div>
   </div>
 
+  <!-- Library drawer overlay -->
+  <div class="library-drawer-overlay" id="libraryOverlay" onclick="closeLibraryDrawer()"></div>
+
   <!-- Page layout -->
   <div class="page-layout">
-
     <div class="main-content">
 
       <div class="hero">
@@ -895,9 +912,10 @@
       <div id="sessions"></div>
 
     </div>
+  </div>
 
-    <!-- Library panel -->
-    <div class="library-panel" id="libraryPanel">
+  <!-- Library drawer -->
+  <div class="library-panel" id="libraryPanel">
       <div class="library-header">
         <span class="library-title">Library</span>
         <button class="btn-new-folder" id="btnNewFolder" onclick="toggleNewFolderRow()">+ Folder</button>
@@ -913,8 +931,6 @@
       <div class="folder-list" id="folderList"></div>
       <p class="library-empty" id="libraryEmpty" style="display:none">No folders yet.</p>
     </div>
-
-  </div>
 
   <!-- Upgrade / sign-in modal -->
   <div class="modal-overlay hidden" id="upgradeModal" onclick="handleModalOverlayClick(event)">
@@ -960,6 +976,23 @@
     // Auth
     // ==========================================================================
 
+    function toggleLibraryDrawer() {
+      const panel = document.getElementById("libraryPanel");
+      const overlay = document.getElementById("libraryOverlay");
+      const isOpen = panel.classList.contains("visible");
+      if (isOpen) {
+        closeLibraryDrawer();
+      } else {
+        panel.classList.add("visible");
+        overlay.classList.add("open");
+      }
+    }
+
+    function closeLibraryDrawer() {
+      document.getElementById("libraryPanel").classList.remove("visible");
+      document.getElementById("libraryOverlay").classList.remove("open");
+    }
+
     async function initAuth() {
       try {
         const res = await fetch("/auth/me");
@@ -970,7 +1003,7 @@
       }
       renderAuthArea();
       if (currentUser) {
-        document.getElementById("libraryPanel").classList.add("visible");
+        document.getElementById("libraryBtn").style.display = "block";
         await Promise.all([refreshFolders(), refreshUsage()]);
       }
       checkSubscribedParam();
@@ -1007,7 +1040,8 @@
       await fetch("/auth/logout", { method: "POST" });
       currentUser = null;
       renderAuthArea();
-      document.getElementById("libraryPanel").classList.remove("visible");
+      closeLibraryDrawer();
+      document.getElementById("libraryBtn").style.display = "none";
       document.querySelectorAll("button.save-file").forEach(b => b.classList.remove("visible"));
     }
 
