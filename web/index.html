@@ -136,7 +136,7 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 48px 24px 140px;
+      padding: 12px 24px 140px;
     }
 
     /* -----------------------------------------------------------------------
@@ -145,7 +145,7 @@
 
     .hero {
       text-align: center;
-      margin-bottom: 52px;
+      margin-bottom: 24px;
     }
 
     .hero h1 {
@@ -1064,48 +1064,54 @@
     .thought-cloud[data-idx="4"] { left: 84%; top: 188px; }  /* lower-right */
 
     /* -----------------------------------------------------------------------
-       Variation panel (expanded detail, below stage)
+       Variation panel (top-left bubble inside stage)
     ----------------------------------------------------------------------- */
 
     .variation-panel {
-      width: 100%;
-      max-width: 560px;
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      width: 240px;
+      z-index: 20;
       background: var(--bg-card);
       border: 1px solid var(--border-soft);
-      border-radius: 14px;
-      padding: 20px 22px;
-      margin-bottom: 20px;
-      animation: fadeUp 0.25s ease both;
+      border-radius: 12px;
+      padding: 12px 14px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+      animation: fadeUp 0.2s ease both;
     }
 
     .vp-header {
       display: flex;
       align-items: baseline;
-      gap: 10px;
-      margin-bottom: 6px;
+      gap: 8px;
+      margin-bottom: 4px;
+      flex-wrap: wrap;
     }
 
     .vp-name {
       font-weight: 600;
-      font-size: 0.95rem;
+      font-size: 0.82rem;
       color: var(--text);
+      line-height: 1.3;
     }
 
     .vp-tempo {
       color: var(--text-dim);
-      font-size: 0.75rem;
+      font-size: 0.7rem;
+      white-space: nowrap;
     }
 
     .vp-character {
       color: var(--text-muted);
-      font-size: 0.83rem;
-      line-height: 1.55;
-      margin-bottom: 16px;
+      font-size: 0.75rem;
+      line-height: 1.45;
+      margin-bottom: 10px;
     }
 
     .vp-actions {
       display: flex;
-      gap: 8px;
+      gap: 6px;
       align-items: center;
       flex-wrap: wrap;
     }
@@ -1149,6 +1155,13 @@
 
       .thought-cloud.loading { opacity: 0.22; pointer-events: none; }
       .thought-cloud:not(.visible):not(.loading) { display: none; }
+
+      .variation-panel {
+        position: static;
+        width: 100%;
+        max-width: 100%;
+        box-shadow: none;
+      }
     }
 
     @media (max-width: 860px) {
@@ -1180,6 +1193,9 @@
 
       <!-- Thought stage: character + floating idea clouds -->
       <div id="thoughtStage">
+        <!-- Variation detail panel (top-left bubble, populated on cloud click) -->
+        <div id="variationPanel" style="display:none"></div>
+
         <div class="character-wrap">
           <div class="speech-bubble" id="speechBubble">I'll play any instrument — what do you want to hear?</div>
           <svg class="character-svg" width="160" height="140" viewBox="0 0 160 140" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1210,9 +1226,6 @@
         </div>
       </div>
 
-      <!-- Variation detail panel (populated on cloud click) -->
-      <div id="variationPanel" style="display:none"></div>
-
       <p id="genStatus" style="font-size:0.78rem;color:var(--text-muted);text-align:center;min-height:18px;margin-bottom:4px;letter-spacing:0.01em;"></p>
 
       <div class="input-row">
@@ -1220,7 +1233,15 @@
         <button class="generate" id="generateBtn" onclick="generate()">Generate</button>
       </div>
 
+      <div style="width:100%;max-width:580px;display:flex;justify-content:flex-end;margin-top:6px;margin-bottom:4px;">
+        <button id="autoPlayToggle" onclick="toggleAutoPlay()" title="Auto-play each variation as it arrives" style="background:none;border:none;font-size:0.73rem;cursor:pointer;padding:0;display:flex;align-items:center;gap:5px;letter-spacing:0.01em;color:var(--text-muted);transition:color 0.15s;">
+          <span id="autoPlayDot" style="font-size:0.55rem;transition:color 0.15s;">●</span> Auto-play
+        </button>
+      </div>
+
+      <p style="font-size:0.72rem;color:var(--text-dim);text-align:center;margin-bottom:4px;letter-spacing:0.02em;">All output is royalty free.</p>
       <p class="usage-indicator" id="usageIndicator"></p>
+      <p id="upgradeCta" style="display:none;font-size:0.75rem;color:var(--text-dim);text-align:center;margin-bottom:12px;">Need more generations? <a href="#" onclick="openUpgradeModal();return false;" style="color:var(--text-muted);text-decoration:underline;text-underline-offset:2px;">See plans</a></p>
 
       <div class="examples">
         <span class="example" onclick="useExample(this)">jazzy piano riff in D minor</span>
@@ -1234,8 +1255,6 @@
       </div>
 
       <p class="status" id="status"></p>
-      <p id="upgradeCta" style="display:none;font-size:0.75rem;color:var(--text-dim);text-align:center;margin-top:-24px;margin-bottom:12px;">Need more generations? <a href="#" onclick="openUpgradeModal();return false;" style="color:var(--text-muted);text-decoration:underline;text-underline-offset:2px;">See plans</a></p>
-      <p style="font-size:0.72rem;color:var(--text-dim);text-align:center;margin-bottom:32px;letter-spacing:0.02em;">All output is royalty free.</p>
 
     </div>
   </div>
@@ -1357,6 +1376,37 @@
     let usageInfo = null;
     let currentVariations = [];
     let activeCloudIdx = -1;
+
+    let autoPlayEnabled = true;
+    let autoPlayWaitingForIdx = -1;
+
+    function toggleAutoPlay() {
+      autoPlayEnabled = !autoPlayEnabled;
+      const dot = document.getElementById("autoPlayDot");
+      const btn = document.getElementById("autoPlayToggle");
+      dot.textContent = autoPlayEnabled ? "●" : "○";
+      btn.style.color = autoPlayEnabled ? "var(--text-muted)" : "var(--text-dim)";
+    }
+
+    function autoPlayVariation(idx) {
+      selectCloud(idx, true);
+      const panel = document.getElementById("variationPanel");
+      const audio = panel.querySelector("audio");
+      if (audio) {
+        audio.addEventListener("ended", () => advanceAutoPlay(idx), { once: true });
+      }
+    }
+
+    function advanceAutoPlay(fromIdx) {
+      if (!autoPlayEnabled) return;
+      const nextIdx = fromIdx + 1;
+      if (nextIdx >= 5) return;
+      if (currentVariations[nextIdx]) {
+        autoPlayVariation(nextIdx);
+      } else {
+        autoPlayWaitingForIdx = nextIdx;
+      }
+    }
 
     // ==========================================================================
     // Auth
@@ -1678,6 +1728,7 @@
       panel.style.display = "none";
       currentVariations = [];
       activeCloudIdx = -1;
+      autoPlayWaitingForIdx = -1;
       setGenStatus("");
     }
 
@@ -1702,6 +1753,15 @@
         e.stopPropagation();
         selectCloud(idx, true);
       });
+
+      if (autoPlayEnabled) {
+        if (idx === 0) {
+          autoPlayVariation(0);
+        } else if (autoPlayWaitingForIdx === idx) {
+          autoPlayWaitingForIdx = -1;
+          autoPlayVariation(idx);
+        }
+      }
     }
 
     function selectCloud(idx, autoPlay) {
