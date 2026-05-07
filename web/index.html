@@ -897,31 +897,13 @@
       color: var(--text);
       white-space: nowrap;
       text-align: center;
-      position: relative;
-      margin-bottom: 10px;
       box-shadow: 0 2px 10px rgba(0,0,0,0.06);
       letter-spacing: -0.01em;
-    }
-
-    .speech-bubble::after {
-      content: '';
       position: absolute;
-      bottom: -9px;
+      top: 20px;
       left: 50%;
       transform: translateX(-50%);
-      border: 9px solid transparent;
-      border-top-color: var(--border);
-    }
-
-    .speech-bubble::before {
-      content: '';
-      position: absolute;
-      bottom: -7px;
-      left: 50%;
-      transform: translateX(-50%);
-      border: 8px solid transparent;
-      border-top-color: var(--bg-input);
-      z-index: 1;
+      z-index: 2;
     }
 
     .character-svg {
@@ -969,7 +951,7 @@
       position: relative;
       width: 100%;
       max-width: 560px;
-      height: 390px;
+      height: 440px;
       margin-bottom: 8px;
     }
 
@@ -988,36 +970,42 @@
       position: absolute;
       display: flex;
       align-items: center;
-      gap: 7px;
+      gap: 8px;
       background: var(--bg-input);
       border: 1px solid var(--border);
-      border-radius: 24px;
-      padding: 8px 12px 8px 15px;
+      border-radius: 28px;
+      padding: 11px 16px 11px 18px;
       cursor: pointer;
       white-space: nowrap;
-      max-width: 170px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+      max-width: 175px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.07);
       opacity: 0;
       pointer-events: none;
-      transition: opacity 0.3s, border-color 0.15s, background 0.15s;
+      transition: opacity 0.3s, border-color 0.15s, background 0.15s, box-shadow 0.15s;
     }
 
     .thought-cloud.visible {
       opacity: 1;
       pointer-events: all;
-      animation: cloudPop 0.3s ease both;
+      animation: cloudPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+    }
+
+    .thought-cloud.loading {
+      opacity: 0.22;
+      pointer-events: none;
+      animation: pulse 1.5s ease-in-out infinite;
     }
 
     @keyframes cloudPop {
-      from { opacity: 0; transform: scale(0.88); }
-      to   { opacity: 1; transform: scale(1); }
+      from { opacity: 0; transform: scale(0.75) translateY(6px); }
+      to   { opacity: 1; transform: scale(1) translateY(0); }
     }
 
-    .thought-cloud:hover  { border-color: var(--text-muted); }
-    .thought-cloud.active { border-color: var(--text-muted); background: var(--bg-card); }
+    .thought-cloud:hover  { border-color: var(--text-muted); box-shadow: 0 6px 18px rgba(0,0,0,0.1); }
+    .thought-cloud.active { border-color: var(--accent); background: var(--bg-card); box-shadow: 0 6px 18px rgba(0,0,0,0.1); }
 
     .cloud-name {
-      font-size: 0.78rem;
+      font-size: 0.8rem;
       font-weight: 500;
       color: var(--text);
       overflow: hidden;
@@ -1028,9 +1016,9 @@
       background: none;
       border: none;
       color: var(--text-muted);
-      font-size: 0.6rem;
+      font-size: 0.62rem;
       cursor: pointer;
-      padding: 2px 3px;
+      padding: 3px 4px;
       border-radius: 4px;
       line-height: 1;
       flex-shrink: 0;
@@ -1039,12 +1027,13 @@
 
     .cloud-play:hover { color: var(--text); }
 
-    /* Semicircle positions (arc center ≈ character head, r=140px, angles 160→20°) */
-    .thought-cloud[data-idx="0"] { left: 14%; top: 222px; }
-    .thought-cloud[data-idx="1"] { left: 22%; top: 162px; }
-    .thought-cloud[data-idx="2"] { left: 38%; top: 130px; }
-    .thought-cloud[data-idx="3"] { left: 54%; top: 162px; }
-    .thought-cloud[data-idx="4"] { left: 62%; top: 222px; }
+    /* Semicircle positions (arc center ≈ character head, rx=160 ry=195, angles 155→25°)
+       Speech bubble is at top:20px, clouds clear it by 60px+ */
+    .thought-cloud[data-idx="0"] { left: 12%; top: 247px; }
+    .thought-cloud[data-idx="1"] { left: 22%; top: 170px; }
+    .thought-cloud[data-idx="2"] { left: 38%; top: 135px; }
+    .thought-cloud[data-idx="3"] { left: 55%; top: 170px; }
+    .thought-cloud[data-idx="4"] { left: 63%; top: 247px; }
 
     /* -----------------------------------------------------------------------
        Variation panel (expanded detail, below stage)
@@ -1104,7 +1093,14 @@
         flex-direction: column;
         align-items: center;
         gap: 10px;
-        padding-bottom: 20px;
+        padding: 80px 0 20px; /* room for speech bubble at top */
+      }
+
+      #thoughtStage .speech-bubble {
+        font-size: 0.88rem;
+        padding: 11px 18px;
+        white-space: normal;
+        width: calc(100% - 32px);
       }
 
       #thoughtStage .character-wrap {
@@ -1118,10 +1114,12 @@
         opacity: 1;
         pointer-events: all;
         max-width: 100%;
-        width: calc(100% - 0px);
+        width: 100%;
+        animation: none !important;
       }
 
-      .thought-cloud:not(.visible) { display: none; }
+      .thought-cloud.loading { opacity: 0.22; pointer-events: none; }
+      .thought-cloud:not(.visible):not(.loading) { display: none; }
     }
 
     @media (max-width: 860px) {
@@ -1153,8 +1151,8 @@
 
       <!-- Thought stage: character + floating idea clouds -->
       <div id="thoughtStage">
+        <div class="speech-bubble" id="speechBubble">I'll play any instrument — what do you want to hear?</div>
         <div class="character-wrap">
-          <div class="speech-bubble" id="speechBubble">I'll play any instrument — what do you want to hear?</div>
           <svg class="character-svg" width="160" height="140" viewBox="0 0 160 140" fill="none" xmlns="http://www.w3.org/2000/svg">
             <!-- Floating instruments -->
             <text id="fi0" class="instrument" x="8" y="55" font-size="22" opacity="0.6">🎸</text>
@@ -1185,6 +1183,8 @@
 
       <!-- Variation detail panel (populated on cloud click) -->
       <div id="variationPanel" style="display:none"></div>
+
+      <p id="genStatus" style="font-size:0.78rem;color:var(--text-muted);text-align:center;min-height:18px;margin-bottom:4px;letter-spacing:0.01em;"></p>
 
       <div class="input-row">
         <input type="text" id="prompt" placeholder="e.g. funky bass riff in E minor" />
@@ -1627,6 +1627,11 @@
       if (el) el.textContent = text;
     }
 
+    function setGenStatus(text) {
+      const el = document.getElementById("genStatus");
+      if (el) el.textContent = text;
+    }
+
     function clearClouds() {
       document.querySelectorAll(".thought-cloud").forEach(c => c.remove());
       const panel = document.getElementById("variationPanel");
@@ -1634,16 +1639,25 @@
       panel.style.display = "none";
       currentVariations = [];
       activeCloudIdx = -1;
+      setGenStatus("");
     }
 
-    function addCloud(idx, variation) {
+    function createLoadingClouds() {
       const stage = document.getElementById("thoughtStage");
-      const cloud = document.createElement("div");
-      cloud.className = "thought-cloud visible";
-      cloud.dataset.idx = idx;
-      cloud.innerHTML = `<span class="cloud-name">${escHtml(variation.name)}</span><button class="cloud-play" title="Play">▶</button>`;
-      stage.appendChild(cloud);
+      for (let i = 0; i < 5; i++) {
+        const cloud = document.createElement("div");
+        cloud.className = "thought-cloud loading";
+        cloud.dataset.idx = i;
+        cloud.innerHTML = `<span class="cloud-name" style="width:60px;height:12px;background:var(--border);border-radius:6px;display:inline-block;"></span>`;
+        stage.appendChild(cloud);
+      }
+    }
 
+    function populateCloud(idx, variation) {
+      const cloud = document.querySelector(`.thought-cloud[data-idx="${idx}"]`);
+      if (!cloud) return;
+      cloud.className = "thought-cloud visible";
+      cloud.innerHTML = `<span class="cloud-name">${escHtml(variation.name)}</span><button class="cloud-play" title="Play">▶</button>`;
       cloud.addEventListener("click", () => selectCloud(idx));
       cloud.querySelector(".cloud-play").addEventListener("click", (e) => {
         e.stopPropagation();
@@ -1814,6 +1828,7 @@
       clearClouds();
       resetCharacter();
       setSpeechBubble("Let me think…");
+      createLoadingClouds(); // instant visual feedback
 
       abortController = new AbortController();
 
@@ -1827,6 +1842,7 @@
 
         if (!res.ok) {
           const err = await res.json();
+          clearClouds();
           setSpeechBubble("I'll play any instrument — what do you want to hear?");
           if (res.status === 402 && err.detail && err.detail.code === "limit_reached") {
             openUpgradeModal(); btn.disabled = false; abortController = null; return;
@@ -1854,13 +1870,14 @@
             const event = JSON.parse(line.slice(6));
             if (event.type === "meta") {
               setCharacterInstrument(event.instrument);
-              setSpeechBubble(`Playing ${event.instrument} in ${event.key}…`);
+              setGenStatus(`${event.instrument} · ${event.key}`);
             } else if (event.type === "variation") {
               const idx = currentVariations.length;
               currentVariations.push({ ...event, prompt });
-              addCloud(idx, event);
+              populateCloud(idx, event);
             } else if (event.type === "done") {
               setSpeechBubble("I'll play any instrument — what do you want to hear?");
+              setGenStatus("");
             } else if (event.type === "error") {
               throw new Error(event.message);
             }
@@ -1868,7 +1885,9 @@
         }
       } catch (err) {
         if (err.name !== "AbortError") {
-          setSpeechBubble("Something went wrong — try again?");
+          clearClouds();
+          setSpeechBubble("I'll play any instrument — what do you want to hear?");
+          setGenStatus("Something went wrong — try again?");
         }
       } finally {
         abortController = null;
