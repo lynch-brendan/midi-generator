@@ -10,6 +10,9 @@ from datetime import date, datetime, timedelta, timezone
 import os
 import re
 from typing import Optional
+from concurrent.futures import ThreadPoolExecutor
+
+_wav_executor = ThreadPoolExecutor(max_workers=4)
 
 # {ip: {date: count}} — used for anonymous users only
 _rate_counts: dict = defaultdict(lambda: defaultdict(int))
@@ -189,6 +192,19 @@ class SaveFileRequest(BaseModel):
 # Existing generation logic
 # ---------------------------------------------------------------------------
 
+def _render_wav(notes, tempo, is_drums, drum_kit, midi_path, wav_path):
+    """Runs in background thread — renders WAV after MIDI is written."""
+    try:
+        if is_drums:
+            ok = render_drum_pattern(notes, tempo, wav_path, kit_name=drum_kit)
+            if not ok:
+                render_midi_to_wav(midi_path, wav_path)
+        else:
+            render_midi_to_wav(midi_path, wav_path)
+    except Exception as e:
+        print(f"  [warn] background WAV render failed for {wav_path.name}: {e}")
+
+
 def _process_variation(var: dict, gm_patch: int, slug: str, is_drums: bool = False) -> dict:
     var = sanitize_variation(var)
     validate_variation(var)
@@ -205,7 +221,6 @@ def _process_variation(var: dict, gm_patch: int, slug: str, is_drums: bool = Fal
 
     notes = var["notes"]
     if is_drums:
-        # Snap all drum times to nearest 16th note grid (0.25 beats)
         grid = 0.25
         for n in notes:
             n["time"] = round(round(float(n["time"]) / grid) * grid, 4)
@@ -213,13 +228,10 @@ def _process_variation(var: dict, gm_patch: int, slug: str, is_drums: bool = Fal
     notes_with_expression = apply_expression(notes, gm_patch, expression_level, is_drums)
     write_midi(midi_path, notes_with_expression, info.tempo, gm_patch, channel)
 
-    if is_drums:
-        drum_kit = var.get("drum_kit", None)
-        wav_ok = render_drum_pattern(notes, info.tempo, wav_path, kit_name=drum_kit)
-        if not wav_ok:
-            wav_ok = render_midi_to_wav(midi_path, wav_path)
-    else:
-        wav_ok = render_midi_to_wav(midi_path, wav_path)
+    drum_kit = var.get("drum_kit", None) if is_drums else None
+
+    # Fire WAV rendering in background — return to client immediately
+    _wav_executor.submit(_render_wav, list(notes), info.tempo, is_drums, drum_kit, midi_path, wav_path)
 
     return {
         "id": info.id,
@@ -228,7 +240,7 @@ def _process_variation(var: dict, gm_patch: int, slug: str, is_drums: bool = Fal
         "tempo": info.tempo,
         "note_count": info.note_count,
         "midi_url": f"/output/{slug}/{midi_path.name}",
-        "wav_url": f"/output/{slug}/{wav_path.name}" if wav_ok else None,
+        "wav_url": f"/output/{slug}/{wav_path.name}",
     }
 
 
