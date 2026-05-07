@@ -1235,13 +1235,12 @@
         <button class="generate" id="generateBtn" onclick="generate()">Generate</button>
       </div>
 
-      <div style="width:100%;max-width:580px;display:flex;justify-content:flex-end;margin-top:6px;margin-bottom:4px;">
-        <button id="autoPlayToggle" onclick="toggleAutoPlay()" title="Auto-play each variation as it arrives" style="background:none;border:none;font-size:0.73rem;cursor:pointer;padding:0;display:flex;align-items:center;gap:5px;letter-spacing:0.01em;color:var(--text-muted);transition:color 0.15s;">
-          <span id="autoPlayDot" style="font-size:0.55rem;transition:color 0.15s;">●</span> Auto-play
+      <div style="width:100%;max-width:580px;display:flex;justify-content:space-between;align-items:center;margin-top:8px;margin-bottom:20px;">
+        <span style="font-size:0.72rem;color:var(--text-dim);letter-spacing:0.02em;">All output is royalty free.</span>
+        <button id="autoPlayToggle" onclick="toggleAutoPlay()" title="Auto-play each variation as it arrives" style="background:none;border:none;font-size:0.72rem;cursor:pointer;padding:0;display:flex;align-items:center;gap:5px;letter-spacing:0.01em;color:var(--text-dim);transition:color 0.15s;">
+          <span id="autoPlayDot" style="font-size:0.5rem;transition:color 0.15s;">●</span> Auto-play
         </button>
       </div>
-
-      <p style="font-size:0.72rem;color:var(--text-dim);text-align:center;margin-bottom:16px;letter-spacing:0.02em;">All output is royalty free.</p>
 
       <div class="examples">
         <span class="example" onclick="useExample(this)">jazzy piano riff in D minor</span>
@@ -1388,7 +1387,7 @@
       const dot = document.getElementById("autoPlayDot");
       const btn = document.getElementById("autoPlayToggle");
       dot.textContent = autoPlayEnabled ? "●" : "○";
-      btn.style.color = autoPlayEnabled ? "var(--text-muted)" : "var(--text-dim)";
+      btn.style.color = autoPlayEnabled ? "var(--text-dim)" : "var(--border)";
     }
 
     function autoPlayVariation(idx) {
