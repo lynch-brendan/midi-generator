@@ -1237,8 +1237,8 @@
 
       <div style="width:100%;max-width:580px;display:flex;justify-content:space-between;align-items:center;margin-top:8px;margin-bottom:20px;">
         <span style="font-size:0.72rem;color:var(--text-dim);letter-spacing:0.02em;">All output is royalty free.</span>
-        <button id="autoPlayToggle" onclick="toggleAutoPlay()" title="Auto-play each variation as it arrives" style="background:none;border:none;font-size:0.72rem;cursor:pointer;padding:0;display:flex;align-items:center;gap:5px;letter-spacing:0.01em;color:var(--text-dim);transition:color 0.15s;">
-          <span id="autoPlayDot" style="font-size:0.5rem;transition:color 0.15s;">●</span> Auto-play
+        <button id="autoPlayToggle" onclick="toggleAutoPlay()" title="Toggle auto-play" style="background:none;border:1px solid var(--border);border-radius:20px;font-size:0.7rem;cursor:pointer;padding:4px 10px;display:flex;align-items:center;gap:5px;letter-spacing:0.01em;color:var(--text-muted);transition:color 0.15s,border-color 0.15s,background 0.15s;">
+          Auto-play <span id="autoPlayState" style="font-weight:600;">on</span>
         </button>
       </div>
 
@@ -1384,10 +1384,11 @@
 
     function toggleAutoPlay() {
       autoPlayEnabled = !autoPlayEnabled;
-      const dot = document.getElementById("autoPlayDot");
       const btn = document.getElementById("autoPlayToggle");
-      dot.textContent = autoPlayEnabled ? "●" : "○";
-      btn.style.color = autoPlayEnabled ? "var(--text-dim)" : "var(--border)";
+      const label = document.getElementById("autoPlayState");
+      label.textContent = autoPlayEnabled ? "on" : "off";
+      btn.style.color = autoPlayEnabled ? "var(--text-muted)" : "var(--text-dim)";
+      btn.style.borderColor = autoPlayEnabled ? "var(--border)" : "var(--border-soft)";
     }
 
     function autoPlayVariation(idx) {
