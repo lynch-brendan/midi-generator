@@ -4,6 +4,7 @@ Uses prompt caching on the system prompt to reduce costs on repeated calls.
 """
 import json
 import re
+import random
 from pathlib import Path
 from typing import Dict, Any, Generator
 
@@ -39,13 +40,7 @@ def generate_variations(prompt: str) -> Dict[str, Any]:
     client = anthropic.Anthropic()
     system_prompt = _load_system_prompt()
 
-    user_message = (
-        f'Generate 5 musical variations for: "{prompt}"\n\n'
-        "Choose the most appropriate instrument and key for this style. "
-        "Return the complete JSON object with all 5 variations, each with a full note sequence. "
-        "Aim for 12-24 notes per variation so each feels like a complete musical idea. "
-        "Remember: return ONLY raw JSON, no markdown."
-    )
+    user_message = _user_message(prompt)
 
     response = client.messages.create(
         model=MODEL,
@@ -98,9 +93,27 @@ def generate_variations(prompt: str) -> Dict[str, Any]:
     return data
 
 
+_CREATIVE_ANGLES = [
+    "Lean into contrast — some variations should feel almost opposite to each other.",
+    "Think about what a completely unexpected artist would do with this prompt.",
+    "Prioritize rhythmic surprises: syncopation, odd phrasing, displaced accents.",
+    "Push the tempo extremes — very slow AND very fast should both appear.",
+    "Find the most obscure, interesting era or scene that fits this prompt.",
+    "Make at least two variations feel emotionally opposite (tense vs. relaxed, dark vs. bright).",
+    "Think about register extremes — some ideas very high, some very low.",
+    "Consider a variation that strips everything down to its barest bones.",
+    "Find the groove — at least one variation should make people want to move.",
+    "Explore unusual key choices or modal colors that aren't the obvious pick.",
+    "Think across decades: one variation could feel vintage, one futuristic.",
+    "Vary the density sharply: some very sparse, some very dense.",
+]
+
+
 def _user_message(prompt: str) -> str:
+    angle = random.choice(_CREATIVE_ANGLES)
     return (
         f'Generate 5 musical variations for: "{prompt}"\n\n'
+        f"Creative direction for this session: {angle}\n\n"
         "Choose the most appropriate instrument and key for this style. "
         "Return the complete JSON object with all 5 variations, each with a full note sequence. "
         "Aim for 12-24 notes per variation so each feels like a complete musical idea. "
