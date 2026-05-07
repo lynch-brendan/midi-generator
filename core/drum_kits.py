@@ -77,25 +77,50 @@ def get_kit_names() -> List[str]:
         return list(_FALLBACK_KIT_NAMES)
 
 
+def _resolve_kit_name(requested: str, known: List[str]) -> str:
+    """
+    Find the best match for `requested` among `known` kit names.
+    Priority: exact → case-insensitive exact → best substring overlap.
+    """
+    if requested in known:
+        return requested
+    lower = requested.lower()
+    # Case-insensitive exact match
+    for k in known:
+        if k.lower() == lower:
+            return k
+    # Substring: requested is contained in a known name
+    for k in known:
+        if lower in k.lower():
+            return k
+    # Substring: known name is contained in requested
+    for k in known:
+        if k.lower() in lower:
+            return k
+    return requested  # no match found — will likely 404, that's OK
+
+
 def get_kit_dir(kit_name: str) -> Optional[Path]:
     """
     Return a local Path to the cached kit directory, downloading from R2 if needed.
+    Does case-insensitive / fuzzy matching so "Roland TR-808" finds "Roland Tr-808".
     Returns None if the kit cannot be obtained.
     """
-    kit_cache = CACHE_DIR / kit_name
+    if not _r2_available():
+        return None
+
+    # Resolve to the canonical name used in R2
+    canonical = _resolve_kit_name(kit_name, get_kit_names())
+    kit_cache = CACHE_DIR / canonical
 
     # Already cached?
     if kit_cache.exists() and any(kit_cache.iterdir()):
         return kit_cache
 
-    if not _r2_available():
-        return None
-
     try:
         client = _make_client()
-        prefix = f"drums/{kit_name}/"
+        prefix = f"drums/{canonical}/"
 
-        # List all objects under this prefix
         paginator = client.get_paginator("list_objects_v2")
         pages = paginator.paginate(Bucket=R2_BUCKET_NAME, Prefix=prefix)
 
@@ -107,7 +132,7 @@ def get_kit_dir(kit_name: str) -> Optional[Path]:
                     wav_keys.append(key)
 
         if not wav_keys:
-            print(f"  [drum_kits] No WAV files found in R2 for kit: {kit_name}")
+            print(f"  [drum_kits] No WAV files found in R2 for kit: {canonical}")
             return None
 
         kit_cache.mkdir(parents=True, exist_ok=True)
@@ -121,7 +146,7 @@ def get_kit_dir(kit_name: str) -> Optional[Path]:
         return kit_cache
 
     except Exception as e:
-        print(f"  [drum_kits] Could not download kit '{kit_name}' from R2: {e}")
+        print(f"  [drum_kits] Could not download kit '{canonical}' from R2: {e}")
         return None
 
 
