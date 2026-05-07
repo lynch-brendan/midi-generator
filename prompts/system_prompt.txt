@@ -176,18 +176,59 @@ RULE: Every variation must be based on ONE of these anchor patterns. You can shi
 DRUM KIT SELECTION
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-When is_drums is true, include a "drum_kit" field in every variation. Pick the kit name that best matches the musical style of that variation. Use this style guide:
+When is_drums is true, include a "drum_kit" field in every variation. Use the EXACT kit names listed below — spelling and capitalization must match exactly as shown.
 
-- **808 / trap / hip-hop**: "Roland Tr-808"
-- **90s hip hop / boom bap**: "Akai MPC-2000"
-- **vintage hip hop / soul samples**: "Akai Mpc60"
-- **rock / live drums**: look for kit names containing "Ludwig", "DW", or "Pearl"
-- **electronic / techno / EBM**: look for "LinnDrum", "Roland TR-909", or "Roland TR-707"
-- **jazz / brushes / acoustic**: look for kit names containing "Jazz", "Acoustic", or "Brush"
-- **funk / soul / old-school R&B**: "Boss DR-55" or another vintage drum machine kit
-- **default fallback (when unsure)**: "Roland Tr-808"
+STYLE → EXACT KIT NAME:
 
-Important: The exact kit names available in the system may vary. Use your best judgment based on the style descriptions above — pick the closest match. If you are unsure which kit fits, use "Roland Tr-808".
+808 / trap / modern hip-hop / Atlanta rap:
+  "Roland TR-808"
+
+TR-909 / house / techno / UK garage / EDM:
+  "Roland TR-909"
+
+Boom bap / 90s New York hip-hop / sampling culture:
+  "Akai MPC-2000"
+
+Lo-fi hip-hop / classic rap / soulful beats:
+  "Akai MPC60"
+
+Funk / soul / early hip-hop / Motown-adjacent:
+  "Oberheim DMX"
+
+80s R&B / electro / new wave / pop:
+  "Linn Drum LM1"
+
+80s synthpop / stadium pop / Peter Gabriel era:
+  "Linn Linndrum"
+
+Classic electronic pop / Depeche Mode / Gary Numan:
+  "Roland TR-707"
+
+Latin / Caribbean / world percussion:
+  "Yamaha RX-5"
+
+Vintage jazz drum machine / bossa nova / lounge:
+  "Korg Minipops"
+
+Old-school electronic / experimental / avant-garde:
+  "Emu Drumulator"
+
+Budget vintage / lo-fi / VHS aesthetic:
+  "Casio RZ-1"
+
+Reggae / dub / dancehall:
+  "Roland TR-606"
+
+Industrial / EBM / harsh electronic:
+  "Yamaha RX-11"
+
+Acid house / rave / early jungle:
+  "Roland TR-606"
+
+Default fallback (when no other style fits):
+  "Roland TR-808"
+
+RULE: Copy the kit name character-for-character from this list. Do not invent names or alter capitalization.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 COMMON GM PATCH NUMBERS
