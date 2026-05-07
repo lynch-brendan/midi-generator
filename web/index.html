@@ -999,6 +999,8 @@
       box-shadow: 0 4px 14px rgba(0,0,0,0.07);
       opacity: 0;
       pointer-events: none;
+      /* left % is the HORIZONTAL CENTER — translateX(-50%) shifts cloud left by half its width */
+      transform: translateX(-50%);
       transition: opacity 0.3s, border-color 0.15s, background 0.15s, box-shadow 0.15s;
     }
 
@@ -1009,14 +1011,18 @@
     }
 
     .thought-cloud.loading {
-      opacity: 0.22;
       pointer-events: none;
-      animation: pulse 1.5s ease-in-out infinite;
+      animation: cloudPulse 1.5s ease-in-out infinite;
     }
 
     @keyframes cloudPop {
-      from { opacity: 0; transform: scale(0.75) translateY(6px); }
-      to   { opacity: 1; transform: scale(1) translateY(0); }
+      from { opacity: 0; transform: translateX(-50%) scale(0.78) translateY(5px); }
+      to   { opacity: 1; transform: translateX(-50%) scale(1)    translateY(0);   }
+    }
+
+    @keyframes cloudPulse {
+      0%, 100% { opacity: 0.22; transform: translateX(-50%); }
+      50%      { opacity: 0.10; transform: translateX(-50%); }
     }
 
     .thought-cloud:hover  { border-color: var(--text-muted); box-shadow: 0 6px 18px rgba(0,0,0,0.1); }
@@ -1048,14 +1054,14 @@
 
     .cloud-play:hover { color: var(--text); }
 
-    /* Semicircle arc above character. Stage 480px, character-wrap 204px at bottom.
-       Speech bubble top ≈ 276px. All clouds must have bottom < 276px (gap ≥ 42px).
-       Clouds are max 158px wide — positions chosen so same-height pairs never overlap. */
-    .thought-cloud[data-idx="0"] { left:  3%; top: 188px; }  /* lower-left  */
-    .thought-cloud[data-idx="1"] { left:  7%; top: 105px; }  /* upper-left  */
-    .thought-cloud[data-idx="2"] { left: 36%; top:  55px; }  /* top-center  */
-    .thought-cloud[data-idx="3"] { left: 58%; top: 105px; }  /* upper-right */
-    .thought-cloud[data-idx="4"] { left: 65%; top: 188px; }  /* lower-right */
+    /* left % = horizontal CENTER of cloud (translateX(-50%) makes it so).
+       Stage 480px, character-wrap 204px at bottom. Speech bubble top ≈ 276px.
+       All cloud bottoms ≤ 232px → 44px+ clearance before speech bubble. */
+    .thought-cloud[data-idx="0"] { left: 16%; top: 188px; }  /* lower-left  */
+    .thought-cloud[data-idx="1"] { left: 22%; top: 105px; }  /* upper-left  */
+    .thought-cloud[data-idx="2"] { left: 50%; top:  55px; }  /* top-center  */
+    .thought-cloud[data-idx="3"] { left: 78%; top: 105px; }  /* upper-right */
+    .thought-cloud[data-idx="4"] { left: 84%; top: 188px; }  /* lower-right */
 
     /* -----------------------------------------------------------------------
        Variation panel (expanded detail, below stage)
@@ -1137,6 +1143,7 @@
         pointer-events: all;
         max-width: 100%;
         width: 100%;
+        transform: none;
         animation: none !important;
       }
 
@@ -1198,8 +1205,8 @@
             <line x1="72" y1="104" x2="68" y2="128" stroke="var(--border)" stroke-width="3" stroke-linecap="round"/>
             <line x1="88" y1="104" x2="92" y2="128" stroke="var(--border)" stroke-width="3" stroke-linecap="round"/>
           </svg>
-          <!-- Held instrument as HTML element — reliable cross-browser -->
-          <div id="charHeldInstrument" style="position:absolute;bottom:18px;right:14px;font-size:24px;opacity:0;transition:opacity 0.3s;pointer-events:none;"></div>
+          <!-- Held instrument: centered on character's chest (SVG body rect center y=88, SVG starts ~62px from character-wrap top) -->
+          <div id="charHeldInstrument" style="position:absolute;top:138px;left:50%;transform:translateX(-50%);font-size:30px;opacity:0;transition:opacity 0.3s;pointer-events:none;line-height:1;"></div>
         </div>
       </div>
 
