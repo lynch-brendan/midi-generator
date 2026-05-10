@@ -1395,16 +1395,20 @@
 
     let typewriterTimer = null;
 
-    const LOADING_PHRASES = [
-      "ooh, let me think on this one...",
-      "yeah I know exactly what to do here",
-      "oh this is a fun one, give me a sec",
-      "hmm, got a few ideas already...",
-      "oh I love this, one sec",
-      "yeah yeah, I know just the thing",
-      "ooh nice, give me a moment...",
-      "interesting — let me try something",
+    const LOADING_TEMPLATES = [
+      kw => `${kw}... yeah, I feel that`,
+      kw => `ooh, ${kw}... give me a sec`,
+      kw => `${kw}... I got something for this`,
+      kw => `yeah, ${kw}... let me try something`,
+      kw => `${kw}... interesting, hold on`,
+      kw => `ooh I love ${kw}... one sec`,
     ];
+
+    function promptKeyword(prompt) {
+      const stop = new Set(['a','an','the','some','with','and','for','of','in','on','at','to','by','is','are','be','that','this','it','i','me','my','we','you','your','can','could','would','want','need','make','like','just','very','really','something','anything','but','or','so','give','more','like']);
+      const words = prompt.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter(w => w.length > 2 && !stop.has(w));
+      return words.slice(0, 3).join(' ') || prompt.split(' ').slice(0, 2).join(' ').toLowerCase();
+    }
 
     function typeIntoBubble(text, delay = 52) {
       clearTimeout(typewriterTimer);
@@ -1994,7 +1998,9 @@
       btn.disabled = true;
       clearClouds();
       resetCharacter();
-      typeIntoBubble(LOADING_PHRASES[Math.floor(Math.random() * LOADING_PHRASES.length)]);
+      const kw = promptKeyword(prompt);
+      const tmpl = LOADING_TEMPLATES[Math.floor(Math.random() * LOADING_TEMPLATES.length)];
+      typeIntoBubble(tmpl(kw));
       createLoadingClouds();
 
       abortController = new AbortController();
