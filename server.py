@@ -11,6 +11,7 @@ import os
 import re
 from typing import Optional
 from concurrent.futures import ThreadPoolExecutor
+from sqlalchemy import text
 
 _wav_executor = ThreadPoolExecutor(max_workers=4)
 
@@ -48,10 +49,19 @@ WEB_DIR = Path(__file__).parent / "web"
 # ---------------------------------------------------------------------------
 try:
     from core.db import Base, engine, SessionLocal, get_db
-    from core.models import User, Folder, SavedFile
+    from core.models import User, Folder, SavedFile, Project
 
     if engine is not None:
         Base.metadata.create_all(bind=engine)
+        try:
+            with engine.connect() as _conn:
+                _conn.execute(text(
+                    "ALTER TABLE saved_files ADD COLUMN IF NOT EXISTS project_id VARCHAR "
+                    "REFERENCES projects(id) ON DELETE SET NULL"
+                ))
+                _conn.commit()
+        except Exception:
+            pass
         _db_available = True
     else:
         _db_available = False
@@ -174,6 +184,7 @@ def _check_and_increment_generation(user, db, ip: str) -> None:
 
 class GenerateRequest(BaseModel):
     prompt: str
+    history: list = []
 
 
 class CreateFolderRequest(BaseModel):
@@ -186,6 +197,17 @@ class SaveFileRequest(BaseModel):
     midi_url: str
     wav_url: Optional[str] = None
     folder_id: Optional[str] = None
+
+
+class SaveProjectFileRequest(BaseModel):
+    name: str
+    prompt: str
+    midi_url: str
+    wav_url: Optional[str] = None
+
+class SaveProjectRequest(BaseModel):
+    name: str
+    files: list[SaveProjectFileRequest] = []
 
 
 # ---------------------------------------------------------------------------
@@ -272,7 +294,7 @@ async def generate(req: GenerateRequest, request: Request, db=Depends(get_db)):
         try:
             for event in stream_thinking(req.prompt):
                 yield f"data: {json.dumps(event)}\n\n"
-            for event in stream_variations(req.prompt):
+            for event in stream_variations(req.prompt, req.history):
                 if event["type"] == "meta":
                     gm_patch = event["gm_patch"]
                     is_drums = event.get("is_drums", False)
@@ -738,6 +760,131 @@ async def delete_saved(file_id: str, request: Request, db=Depends(get_db)):
     db.delete(saved)
     db.commit()
     return JSONResponse({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# Project routes
+# ---------------------------------------------------------------------------
+
+@app.get("/api/projects")
+async def list_projects(request: Request, db=Depends(get_db)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    user = get_current_user(request, db)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    projects = db.query(Project).filter(Project.user_id == user.id).order_by(Project.created_at.desc()).all()
+    result = []
+    for proj in projects:
+        file_count = db.query(SavedFile).filter(SavedFile.project_id == proj.id).count()
+        result.append({
+            "id": proj.id,
+            "name": proj.name,
+            "created_at": proj.created_at.isoformat(),
+            "file_count": file_count,
+        })
+    return JSONResponse(result)
+
+
+@app.post("/api/projects")
+async def create_project(body: SaveProjectRequest, request: Request, db=Depends(get_db)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    user = get_current_user(request, db)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    if not body.name.strip():
+        raise HTTPException(status_code=400, detail="Project name is required")
+
+    import uuid as _uuid_mod
+    proj = Project(id=str(_uuid_mod.uuid4()), user_id=user.id, name=body.name.strip())
+    db.add(proj)
+    db.flush()
+
+    saved_ids = []
+    for f in body.files:
+        midi_url = f.midi_url
+        wav_url = f.wav_url
+
+        if r2_enabled():
+            midi_local = _url_to_local_path(f.midi_url)
+            if midi_local and midi_local.exists():
+                key = f"projects/{user.id}/{proj.id}/{midi_local.name}"
+                r2_midi = upload_to_r2(midi_local, key)
+                if r2_midi:
+                    midi_url = r2_midi
+
+            if f.wav_url:
+                wav_local = _url_to_local_path(f.wav_url)
+                if wav_local and wav_local.exists():
+                    key = f"projects/{user.id}/{proj.id}/{wav_local.name}"
+                    r2_wav = upload_to_r2(wav_local, key)
+                    if r2_wav:
+                        wav_url = r2_wav
+
+        saved = SavedFile(
+            id=str(_uuid_mod.uuid4()),
+            user_id=user.id,
+            project_id=proj.id,
+            name=f.name,
+            prompt=f.prompt,
+            midi_url=midi_url,
+            wav_url=wav_url,
+        )
+        db.add(saved)
+        saved_ids.append(saved.id)
+
+    db.commit()
+    db.refresh(proj)
+
+    return JSONResponse({
+        "id": proj.id,
+        "name": proj.name,
+        "created_at": proj.created_at.isoformat(),
+        "file_count": len(body.files),
+    })
+
+
+@app.delete("/api/projects/{project_id}")
+async def delete_project(project_id: str, request: Request, db=Depends(get_db)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    user = get_current_user(request, db)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    proj = db.query(Project).filter(Project.id == project_id, Project.user_id == user.id).first()
+    if proj is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    db.delete(proj)
+    db.commit()
+    return JSONResponse({"ok": True})
+
+
+@app.get("/api/projects/{project_id}/files")
+async def list_project_files(project_id: str, request: Request, db=Depends(get_db)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    user = get_current_user(request, db)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    proj = db.query(Project).filter(Project.id == project_id, Project.user_id == user.id).first()
+    if proj is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    files = db.query(SavedFile).filter(SavedFile.project_id == project_id).order_by(SavedFile.created_at).all()
+    return JSONResponse([{
+        "id": f.id,
+        "name": f.name,
+        "prompt": f.prompt,
+        "midi_url": f.midi_url,
+        "wav_url": f.wav_url,
+        "created_at": f.created_at.isoformat(),
+    } for f in files])
 
 
 # ---------------------------------------------------------------------------

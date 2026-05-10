@@ -142,13 +142,23 @@ def stream_thinking(prompt: str) -> Generator[Dict, None, None]:
             yield {"type": "thought", "token": text}
 
 
-def stream_variations(prompt: str) -> Generator[Dict, None, None]:
+def stream_variations(prompt: str, history: list = None) -> Generator[Dict, None, None]:
     """
     Stream Claude's response and yield parsed objects as they become available.
     Yields: one 'meta' dict first, then one 'variation' dict per variation, then 'done'.
+    Accepts an optional history list of {role, content} dicts for conversational follow-up.
     """
     client = anthropic.Anthropic()
     system_prompt = _load_system_prompt()
+
+    messages = []
+    if history:
+        for turn in history:
+            role = turn.get("role", "user")
+            content = turn.get("content", "")
+            if role in ("user", "assistant") and content:
+                messages.append({"role": role, "content": content})
+    messages.append({"role": "user", "content": _user_message(prompt)})
 
     buffer = ""
     meta_sent = False
@@ -158,7 +168,7 @@ def stream_variations(prompt: str) -> Generator[Dict, None, None]:
         model=MODEL,
         max_tokens=MAX_TOKENS,
         system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
-        messages=[{"role": "user", "content": _user_message(prompt)}],
+        messages=messages,
     ) as stream:
         for text in stream.text_stream:
             buffer += text

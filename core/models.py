@@ -36,6 +36,7 @@ class User(Base):
 
     folders = relationship("Folder", back_populates="user", cascade="all, delete-orphan")
     saved_files = relationship("SavedFile", back_populates="user", cascade="all, delete-orphan")
+    projects = relationship("Project", back_populates="user", cascade="all, delete-orphan")
 
 
 class Folder(Base):
@@ -56,6 +57,7 @@ class SavedFile(Base):
     id = Column(String, primary_key=True, default=_uuid)
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     folder_id = Column(String, ForeignKey("folders.id", ondelete="CASCADE"), nullable=True, index=True)
+    project_id = Column(String, ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True)
     name = Column(String, nullable=False)
     prompt = Column(Text, nullable=False)
     midi_url = Column(String, nullable=False)
@@ -64,3 +66,16 @@ class SavedFile(Base):
 
     user = relationship("User", back_populates="saved_files")
     folder = relationship("Folder", back_populates="saved_files")
+    project = relationship("Project", back_populates="saved_files")
+
+
+class Project(Base):
+    __tablename__ = "projects"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=_now, nullable=False)
+
+    user = relationship("User", back_populates="projects")
+    saved_files = relationship("SavedFile", back_populates="project", cascade="all, delete-orphan")

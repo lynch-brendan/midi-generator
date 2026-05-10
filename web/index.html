@@ -1178,6 +1178,349 @@
     @media (max-width: 860px) {
       .library-panel { width: 85vw; }
     }
+
+    /* -----------------------------------------------------------------------
+       Session panel (left drawer)
+    ----------------------------------------------------------------------- */
+
+    .session-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 300;
+      background: rgba(28,24,20,0.25);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s;
+      backdrop-filter: blur(1px);
+    }
+
+    .session-overlay.open { opacity: 1; pointer-events: all; }
+
+    .session-panel {
+      position: fixed;
+      top: 0;
+      left: 0;
+      z-index: 401;
+      width: 280px;
+      height: 100vh;
+      background: var(--bg-input);
+      border-right: 1px solid var(--border-soft);
+      padding: 72px 20px 24px;
+      overflow-y: auto;
+      transform: translateX(-100%);
+      transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 8px 0 32px rgba(0,0,0,0.06);
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .session-panel.visible { transform: translateX(0); }
+
+    .session-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .session-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .btn-session-clear {
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      font-size: 0.7rem;
+      cursor: pointer;
+      padding: 3px 6px;
+      border-radius: 4px;
+      transition: color 0.15s;
+      letter-spacing: 0.01em;
+    }
+
+    .btn-session-clear:hover { color: var(--text-muted); }
+
+    .session-items {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .session-item {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--border-soft);
+      background: var(--bg);
+      transition: background 0.1s;
+    }
+
+    .session-item:hover { background: var(--bg-card); }
+
+    .session-item-emoji { font-size: 1rem; flex-shrink: 0; }
+
+    .session-item-info { flex: 1; min-width: 0; }
+
+    .session-item-name {
+      font-size: 0.79rem;
+      font-weight: 500;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .session-item-meta {
+      font-size: 0.67rem;
+      color: var(--text-dim);
+      margin-top: 1px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .session-item-actions { display: flex; gap: 3px; flex-shrink: 0; }
+
+    .session-item-play, .session-item-remove {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 3px 5px;
+      border-radius: 4px;
+      font-size: 0.78rem;
+      transition: color 0.15s;
+      line-height: 1;
+    }
+
+    .session-item-play { color: var(--text-dim); }
+    .session-item-play:hover { color: var(--text); }
+    .session-item-remove { color: var(--border); }
+    .session-item-remove:hover { color: var(--red); }
+
+    .session-footer {
+      padding-top: 14px;
+      margin-top: 14px;
+      border-top: 1px solid var(--border-soft);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .btn-save-project {
+      width: 100%;
+      background: var(--accent);
+      color: var(--accent-fg);
+      border: none;
+      border-radius: 8px;
+      padding: 11px 16px;
+      font-size: 0.82rem;
+      font-weight: 500;
+      cursor: pointer;
+      letter-spacing: 0.02em;
+      transition: opacity 0.15s;
+      text-align: center;
+    }
+
+    .btn-save-project:hover { opacity: 0.85; }
+    .btn-save-project:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .session-empty {
+      color: var(--text-dim);
+      font-size: 0.78rem;
+      text-align: center;
+      padding: 32px 8px;
+      line-height: 1.7;
+    }
+
+    /* -----------------------------------------------------------------------
+       Heart button on clouds
+    ----------------------------------------------------------------------- */
+
+    .cloud-heart {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 0.82rem;
+      opacity: 0;
+      transition: opacity 0.15s, transform 0.12s;
+      padding: 3px 4px;
+      line-height: 1;
+      border-radius: 4px;
+      color: var(--text-dim);
+      z-index: 2;
+    }
+
+    .thought-cloud:hover .cloud-heart,
+    .thought-cloud.active .cloud-heart { opacity: 1; }
+    .cloud-heart.hearted { opacity: 1 !important; color: var(--accent); }
+    .cloud-heart.hearted:hover { transform: scale(1.2); }
+
+    @media (max-width: 640px) { .cloud-heart { opacity: 1; font-size: 0.9rem; } }
+
+    /* -----------------------------------------------------------------------
+       Reply bar (conversation follow-up)
+    ----------------------------------------------------------------------- */
+
+    .reply-bar {
+      width: 100%;
+      max-width: 580px;
+      margin-top: 10px;
+      padding: 11px 14px 10px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-soft);
+      border-radius: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      animation: fadeUp 0.22s ease both;
+    }
+
+    .reply-context {
+      font-size: 0.68rem;
+      color: var(--text-dim);
+      letter-spacing: 0.01em;
+    }
+
+    .reply-context em { font-style: normal; color: var(--text-muted); }
+
+    .reply-input-row {
+      display: flex;
+      gap: 7px;
+      align-items: center;
+    }
+
+    .reply-input-row input {
+      flex: 1;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 13px;
+      color: var(--text);
+      font-size: 0.87rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .reply-input-row input:focus { border-color: var(--text-muted); }
+    .reply-input-row input::placeholder { color: var(--text-dim); }
+
+    .reply-input-row button {
+      background: var(--accent);
+      color: var(--accent-fg);
+      border: none;
+      border-radius: 8px;
+      padding: 8px 13px;
+      cursor: pointer;
+      font-size: 0.87rem;
+      font-weight: 500;
+      transition: opacity 0.15s;
+      white-space: nowrap;
+    }
+
+    .reply-input-row button:hover { opacity: 0.8; }
+
+    .btn-new-convo {
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      font-size: 0.68rem;
+      cursor: pointer;
+      padding: 0;
+      text-align: left;
+      transition: color 0.15s;
+      letter-spacing: 0.01em;
+    }
+
+    .btn-new-convo:hover { color: var(--text-muted); }
+
+    /* -----------------------------------------------------------------------
+       Library — project section
+    ----------------------------------------------------------------------- */
+
+    .library-section-label {
+      font-size: 0.68rem;
+      font-weight: 600;
+      color: var(--text-dim);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+      margin-top: 20px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border-soft);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .library-section-label:first-child { margin-top: 0; }
+
+    #projectList { display: flex; flex-direction: column; gap: 3px; margin-bottom: 4px; }
+
+    .library-empty-projects {
+      color: var(--text-dim);
+      font-size: 0.74rem;
+      padding: 10px 4px;
+      line-height: 1.5;
+    }
+
+    /* -----------------------------------------------------------------------
+       Save project modal
+    ----------------------------------------------------------------------- */
+
+    .save-project-modal-box {
+      background: var(--bg-input);
+      border-radius: 16px;
+      padding: 28px 28px 24px;
+      width: 100%;
+      max-width: 340px;
+      position: relative;
+    }
+
+    .save-project-input {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      padding: 11px 14px;
+      color: var(--text);
+      font-size: 0.9rem;
+      outline: none;
+      margin: 16px 0 12px;
+      transition: border-color 0.15s;
+      box-sizing: border-box;
+    }
+
+    .save-project-input:focus { border-color: var(--text-muted); }
+    .save-project-input::placeholder { color: var(--text-dim); }
+
+    .btn-confirm-save-project {
+      width: 100%;
+      background: var(--accent);
+      color: var(--accent-fg);
+      border: none;
+      border-radius: 9px;
+      padding: 13px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      letter-spacing: 0.02em;
+      transition: opacity 0.15s;
+    }
+
+    .btn-confirm-save-project:hover { opacity: 0.85; }
+    .btn-confirm-save-project:disabled { opacity: 0.4; cursor: not-allowed; }
   </style>
 </head>
 <body>
@@ -1190,8 +1533,26 @@
     </div>
     <div class="top-bar-right">
       <a href="mailto:vowringscompany@gmail.com?subject=Muse feedback" style="font-size:0.78rem;color:var(--text-dim);text-decoration:none;transition:color 0.15s;" onmouseover="this.style.color='var(--text-muted)'" onmouseout="this.style.color='var(--text-dim)'">Send feedback</a>
+      <button id="sessionBtn" onclick="toggleSessionPanel()" style="display:none;background:none;border:1px solid var(--border);border-radius:7px;padding:6px 12px;color:var(--text-muted);font-size:0.78rem;cursor:pointer;transition:color 0.15s,border-color 0.15s;">♥ <span id="sessionCount">0</span></button>
       <button id="libraryBtn" onclick="toggleLibraryDrawer()" style="display:none;background:none;border:1px solid var(--border);border-radius:7px;padding:6px 12px;color:var(--text-muted);font-size:0.78rem;cursor:pointer;transition:color 0.15s,border-color 0.15s;">Library</button>
       <div id="authArea" style="display:flex;align-items:center;gap:12px;"></div>
+    </div>
+  </div>
+
+  <!-- Session panel overlay -->
+  <div class="session-overlay" id="sessionOverlay" onclick="closeSessionPanel()"></div>
+
+  <!-- Session panel (left drawer) -->
+  <div class="session-panel" id="sessionPanel">
+    <div class="session-header">
+      <span class="session-title">This session</span>
+      <button class="btn-session-clear" onclick="clearSession()" title="Clear session">clear</button>
+    </div>
+    <div class="session-items" id="sessionItems">
+      <p class="session-empty">Heart a variation to start<br>building your session.</p>
+    </div>
+    <div class="session-footer" id="sessionFooter" style="display:none;">
+      <button class="btn-save-project" id="btnSaveProject" onclick="openSaveProjectModal()">Save as project ↗</button>
     </div>
   </div>
 
@@ -1244,6 +1605,16 @@
         <button class="generate" id="generateBtn" onclick="generate()">Generate</button>
       </div>
 
+      <!-- Reply bar: appears after generation for conversational follow-up -->
+      <div id="replyBar" class="reply-bar" style="display:none;">
+        <div class="reply-context">continuing: <em id="replyContext"></em></div>
+        <div class="reply-input-row">
+          <input type="text" id="replyInput" placeholder="talk to muse — try it slower, more blues, different key…" />
+          <button onclick="reply()">↩ reply</button>
+        </div>
+        <button class="btn-new-convo" onclick="newConversation()">× start a new conversation</button>
+      </div>
+
       <p style="font-size:0.72rem;color:var(--text-dim);text-align:center;letter-spacing:0.02em;margin-top:6px;margin-bottom:8px;">All output is royalty free.</p>
 
       <div style="width:100%;max-width:580px;display:flex;justify-content:flex-end;align-items:center;margin-bottom:20px;">
@@ -1285,7 +1656,16 @@
   <div class="library-panel" id="libraryPanel">
       <div class="library-header">
         <span class="library-title">Library</span>
-        <button class="btn-new-folder" id="btnNewFolder" onclick="toggleNewFolderRow()">+ Folder</button>
+      </div>
+
+      <div class="library-section-label">
+        Projects
+      </div>
+      <div id="projectList"></div>
+      <p class="library-empty-projects" id="projectsEmpty" style="display:none">No projects yet. Heart some variations and save a session.</p>
+
+      <div class="library-section-label">
+        Folders <button class="btn-new-folder" id="btnNewFolder" onclick="toggleNewFolderRow()">+ New</button>
       </div>
 
       <div class="new-folder-inline-row" id="newFolderInlineRow">
@@ -1320,6 +1700,16 @@
 
   <!-- Toast -->
   <div class="toast hidden" id="successToast"></div>
+
+  <!-- Save project modal -->
+  <div class="modal-overlay hidden" id="saveProjectModal" onclick="handleSaveProjectOverlayClick(event)">
+    <div class="save-project-modal-box">
+      <button class="modal-close" onclick="closeSaveProjectModal()" title="Close">&times;</button>
+      <div class="modal-heading">Save as project</div>
+      <input type="text" class="save-project-input" id="projectNameInput" placeholder="e.g. Summer EP Track 3…" maxlength="80" />
+      <button class="btn-confirm-save-project" id="btnConfirmSaveProject" onclick="saveProject()">Save project</button>
+    </div>
+  </div>
 
   <!-- Save popover -->
   <div class="save-popover" id="savePopover" style="display:none">
@@ -1388,6 +1778,11 @@
     let usageInfo = null;
     let currentVariations = [];
     let activeCloudIdx = -1;
+    let sessionItems = [];        // hearted variations: [{...variation, sessionIdx}]
+    let conversationHistory = []; // [{role, content}] for Claude
+    let lastUserPrompt = "";
+    let projects = [];
+    let openProjectId = null;
 
     let autoPlayEnabled = true;
     let autoPlayWaitingForIdx = -1;
@@ -1505,7 +1900,7 @@
       renderAuthArea();
       if (currentUser) {
         document.getElementById("libraryBtn").style.display = "block";
-        await Promise.all([refreshFolders(), refreshUsage()]);
+        await Promise.all([refreshFolders(), refreshUsage(), loadProjects()]);
       }
       checkSubscribedParam();
     }
@@ -1821,12 +2216,16 @@
       const cloud = document.querySelector(`.thought-cloud[data-idx="${idx}"]`);
       if (!cloud) return;
       cloud.className = "thought-cloud visible";
-      cloud.innerHTML = `<span class="cloud-name">${escHtml(variation.name)}</span><button class="cloud-play" title="Play">▶</button>`;
+      cloud.innerHTML = `<span class="cloud-name">${escHtml(variation.name)}</span><button class="cloud-play" title="Play">▶</button><button class="cloud-heart" title="Add to session" onclick="heartCloud(event,${idx})">♥</button>`;
       cloud.addEventListener("click", () => selectCloud(idx));
       cloud.querySelector(".cloud-play").addEventListener("click", (e) => {
         e.stopPropagation();
         selectCloud(idx, true);
       });
+      // Restore heart state if this variation was already hearted
+      if (currentVariations[idx] && sessionItems.some(s => s.midi_url === currentVariations[idx].midi_url)) {
+        cloud.querySelector(".cloud-heart").classList.add("hearted");
+      }
 
       if (idx === 0) fadeSpeechBubble("check this out");
 
@@ -1994,9 +2393,16 @@
       }, durationMs);
     }
 
-    async function generate() {
-      const prompt = document.getElementById("prompt").value.trim();
+    async function generate(overridePrompt, overrideHistory) {
+      const prompt = overridePrompt || document.getElementById("prompt").value.trim();
       if (!prompt) return;
+
+      lastUserPrompt = prompt;
+      if (!overridePrompt) {
+        // Fresh generation — reset conversation
+        conversationHistory = [];
+        hideReplyBar();
+      }
 
       unlockAudio();
 
@@ -2014,7 +2420,7 @@
         const res = await fetch("/api/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt }),
+          body: JSON.stringify({ prompt, history: overrideHistory || [] }),
           signal: abortController.signal,
         });
 
@@ -2058,6 +2464,17 @@
             } else if (event.type === "done") {
               fadeSpeechBubble("what's next?");
               setGenStatus("");
+              // Update conversation history for follow-up
+              if (currentVariations.length > 0) {
+                const summary = currentVariations.map(v =>
+                  `"${v.name}" (${v.tempo}bpm${v.key ? ', ' + v.key : ''}${v.instrument ? ', ' + v.instrument : ''})`
+                ).join(', ');
+                conversationHistory.push(
+                  { role: 'user', content: lastUserPrompt },
+                  { role: 'assistant', content: `I generated 5 variations: ${summary}` }
+                );
+                showReplyBar(lastUserPrompt);
+              }
             } else if (event.type === "error") {
               throw new Error(event.message);
             }
@@ -2090,7 +2507,313 @@
       return String(str).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
     }
 
+    // ==========================================================================
+    // Heart / session panel
+    // ==========================================================================
+
+    function heartCloud(e, idx) {
+      e.stopPropagation();
+      const v = currentVariations[idx];
+      if (!v) return;
+
+      // Toggle: if already hearted, remove; else add
+      const existing = sessionItems.findIndex(s => s.midi_url === v.midi_url);
+      if (existing !== -1) {
+        sessionItems.splice(existing, 1);
+        updateCloudHeartState(idx, false);
+      } else {
+        sessionItems.push({ ...v, cloudIdx: idx });
+        updateCloudHeartState(idx, true);
+      }
+      renderSessionPanel();
+    }
+
+    function updateCloudHeartState(idx, hearted) {
+      const cloud = document.querySelector(`.thought-cloud[data-idx="${idx}"]`);
+      if (!cloud) return;
+      const btn = cloud.querySelector('.cloud-heart');
+      if (btn) btn.classList.toggle('hearted', hearted);
+    }
+
+    function renderSessionPanel() {
+      const container = document.getElementById('sessionItems');
+      const footer = document.getElementById('sessionFooter');
+      const sessionBtn = document.getElementById('sessionBtn');
+      const countEl = document.getElementById('sessionCount');
+
+      countEl.textContent = sessionItems.length;
+      sessionBtn.style.display = sessionItems.length > 0 ? 'block' : 'none';
+
+      if (sessionItems.length === 0) {
+        container.innerHTML = '<p class="session-empty">Heart a variation to start<br>building your session.</p>';
+        footer.style.display = 'none';
+        return;
+      }
+
+      footer.style.display = 'flex';
+      container.innerHTML = '';
+      sessionItems.forEach((item, i) => {
+        const emoji = getInstrumentEmoji(item.instrument || '');
+        const meta = [item.key, item.tempo ? item.tempo + ' BPM' : null].filter(Boolean).join(' · ');
+        const el = document.createElement('div');
+        el.className = 'session-item';
+        el.innerHTML = `
+          <span class="session-item-emoji">${emoji || '🎵'}</span>
+          <div class="session-item-info">
+            <div class="session-item-name">${escHtml(item.name)}</div>
+            ${meta ? `<div class="session-item-meta">${escHtml(meta)}</div>` : ''}
+          </div>
+          <div class="session-item-actions">
+            ${item.wav_url ? `<button class="session-item-play" title="Play" onclick="playSessionItem(${i})">▶</button>` : ''}
+            <button class="session-item-remove" title="Remove" onclick="removeSessionItem(${i})">✕</button>
+          </div>`;
+        container.appendChild(el);
+      });
+    }
+
+    function getInstrumentEmoji(name) {
+      const key = name.toLowerCase();
+      for (const [k, v] of Object.entries(INSTRUMENT_EMOJI)) {
+        if (key.includes(k)) return v;
+      }
+      return '🎵';
+    }
+
+    function playSessionItem(i) {
+      const item = sessionItems[i];
+      if (!item || !item.wav_url) return;
+      const audio = new Audio(item.wav_url);
+      audio.play().catch(() => {});
+    }
+
+    function removeSessionItem(i) {
+      const removed = sessionItems[i];
+      sessionItems.splice(i, 1);
+      // Un-heart the cloud if still visible
+      if (removed) {
+        document.querySelectorAll('.thought-cloud').forEach((cloud) => {
+          const v = currentVariations[parseInt(cloud.dataset.idx)];
+          if (v && v.midi_url === removed.midi_url) {
+            const btn = cloud.querySelector('.cloud-heart');
+            if (btn) btn.classList.remove('hearted');
+          }
+        });
+      }
+      renderSessionPanel();
+    }
+
+    function clearSession() {
+      if (sessionItems.length > 0 && !confirm('Clear all hearted variations from this session?')) return;
+      sessionItems = [];
+      conversationHistory = [];
+      hideReplyBar();
+      document.querySelectorAll('.cloud-heart.hearted').forEach(b => b.classList.remove('hearted'));
+      renderSessionPanel();
+      closeSessionPanel();
+    }
+
+    function toggleSessionPanel() {
+      const panel = document.getElementById('sessionPanel');
+      panel.classList.contains('visible') ? closeSessionPanel() : openSessionPanel();
+    }
+
+    function openSessionPanel() {
+      document.getElementById('sessionPanel').classList.add('visible');
+      document.getElementById('sessionOverlay').classList.add('open');
+    }
+
+    function closeSessionPanel() {
+      document.getElementById('sessionPanel').classList.remove('visible');
+      document.getElementById('sessionOverlay').classList.remove('open');
+    }
+
+    // ==========================================================================
+    // Save project modal
+    // ==========================================================================
+
+    function openSaveProjectModal() {
+      if (!currentUser) { location.href = '/auth/google'; return; }
+      document.getElementById('projectNameInput').value = '';
+      document.getElementById('saveProjectModal').classList.remove('hidden');
+      setTimeout(() => document.getElementById('projectNameInput').focus(), 50);
+    }
+
+    function closeSaveProjectModal() {
+      document.getElementById('saveProjectModal').classList.add('hidden');
+    }
+
+    function handleSaveProjectOverlayClick(e) {
+      if (e.target === document.getElementById('saveProjectModal')) closeSaveProjectModal();
+    }
+
+    async function saveProject() {
+      const name = document.getElementById('projectNameInput').value.trim();
+      if (!name) { document.getElementById('projectNameInput').focus(); return; }
+
+      const btn = document.getElementById('btnConfirmSaveProject');
+      btn.disabled = true;
+      btn.textContent = 'Saving…';
+
+      try {
+        const res = await fetch('/api/projects', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name,
+            files: sessionItems.map(v => ({
+              name: v.name,
+              prompt: v.prompt || lastUserPrompt,
+              midi_url: v.midi_url,
+              wav_url: v.wav_url || null,
+            })),
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          alert('Save failed: ' + (err.detail || 'Unknown error'));
+          return;
+        }
+        closeSaveProjectModal();
+        closeSessionPanel();
+        showToast(`Project "${name}" saved to library!`);
+        await loadProjects();
+        if (!document.getElementById('libraryPanel').classList.contains('visible')) {
+          toggleLibraryDrawer();
+        }
+      } catch (_) {
+        alert('Save failed. Please try again.');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Save project';
+      }
+    }
+
+    // ==========================================================================
+    // Projects in library
+    // ==========================================================================
+
+    async function loadProjects() {
+      if (!currentUser) return;
+      try {
+        const res = await fetch('/api/projects');
+        if (!res.ok) return;
+        projects = await res.json();
+      } catch (_) { projects = []; }
+      renderProjects();
+    }
+
+    function renderProjects() {
+      const list = document.getElementById('projectList');
+      const emptyMsg = document.getElementById('projectsEmpty');
+      if (!list) return;
+
+      if (projects.length === 0) {
+        list.innerHTML = '';
+        emptyMsg.style.display = 'block';
+        return;
+      }
+      emptyMsg.style.display = 'none';
+      list.innerHTML = '';
+
+      for (const proj of projects) {
+        const item = document.createElement('div');
+        item.className = 'folder-item' + (openProjectId === proj.id ? ' active' : '');
+        item.dataset.projectId = proj.id;
+        item.innerHTML = `
+          <div class="folder-item-left" onclick="toggleProject('${escAttr(proj.id)}')">
+            <span class="folder-icon">🎵</span>
+            <span class="folder-name">${escHtml(proj.name)}</span>
+          </div>
+          <span class="folder-count">${proj.file_count}</span>
+          <button class="btn-folder-delete" title="Delete project" onclick="deleteProject('${escAttr(proj.id)}', event)">&#x2715;</button>`;
+        list.appendChild(item);
+
+        if (openProjectId === proj.id) {
+          const filesContainer = document.createElement('div');
+          filesContainer.className = 'folder-files';
+          list.appendChild(filesContainer);
+          loadProjectFiles(proj.id, filesContainer);
+        }
+      }
+    }
+
+    async function toggleProject(projectId) {
+      openProjectId = openProjectId === projectId ? null : projectId;
+      renderProjects();
+    }
+
+    async function loadProjectFiles(projectId, container) {
+      container.innerHTML = `<p style="color:var(--text-dim);font-size:0.76rem;padding:8px 12px">Loading…</p>`;
+      try {
+        const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/files`);
+        if (!res.ok) throw new Error();
+        const files = await res.json();
+        if (files.length === 0) {
+          container.innerHTML = `<p style="color:var(--text-dim);font-size:0.76rem;padding:8px 12px">No files.</p>`;
+          return;
+        }
+        container.innerHTML = '';
+        for (const f of files) {
+          const el = document.createElement('div');
+          el.className = 'saved-file-item';
+          el.innerHTML = `
+            <div class="saved-file-name">${escHtml(f.name)}</div>
+            <div class="saved-file-prompt">${escHtml(f.prompt)}</div>
+            <div class="saved-file-actions">
+              <a href="${escHtml(f.midi_url)}" download>MIDI</a>
+              ${f.wav_url ? `<a href="${escHtml(f.wav_url)}" download>WAV</a>` : ''}
+              ${f.wav_url ? `<a href="${escHtml(f.wav_url)}">Play</a>` : ''}
+            </div>`;
+          container.appendChild(el);
+        }
+      } catch (_) {
+        container.innerHTML = `<p style="color:var(--red);font-size:0.76rem;padding:8px 12px">Failed to load.</p>`;
+      }
+    }
+
+    async function deleteProject(projectId, event) {
+      event.stopPropagation();
+      if (!confirm('Delete this project and all its files?')) return;
+      try {
+        await fetch(`/api/projects/${encodeURIComponent(projectId)}`, { method: 'DELETE' });
+        if (openProjectId === projectId) openProjectId = null;
+        await loadProjects();
+      } catch (_) {}
+    }
+
+    // ==========================================================================
+    // Conversation / reply bar
+    // ==========================================================================
+
+    function showReplyBar(promptText) {
+      const bar = document.getElementById('replyBar');
+      const ctx = document.getElementById('replyContext');
+      if (ctx) ctx.textContent = promptText;
+      if (bar) bar.style.display = 'flex';
+    }
+
+    function hideReplyBar() {
+      const bar = document.getElementById('replyBar');
+      if (bar) bar.style.display = 'none';
+    }
+
+    async function reply() {
+      const input = document.getElementById('replyInput');
+      const text = input.value.trim();
+      if (!text) { input.focus(); return; }
+      input.value = '';
+      // Pass current conversation history — generate() will add to it
+      await generate(text, conversationHistory);
+    }
+
+    function newConversation() {
+      conversationHistory = [];
+      hideReplyBar();
+      document.getElementById('prompt').focus();
+    }
+
     document.getElementById("prompt").addEventListener("keydown", e => { if (e.key === "Enter") generate(); });
+    document.getElementById("replyInput").addEventListener("keydown", e => { if (e.key === "Enter") reply(); });
     document.getElementById("newFolderNameInput").addEventListener("keydown", e => {
       if (e.key === "Enter") submitNewFolder();
       if (e.key === "Escape") document.getElementById("newFolderInlineRow").classList.remove("visible");
@@ -2098,6 +2821,10 @@
     document.getElementById("popoverNewFolderInput").addEventListener("keydown", e => {
       if (e.key === "Enter") popoverCreateFolder();
       if (e.key === "Escape") closeSavePopover();
+    });
+    document.getElementById("projectNameInput").addEventListener("keydown", e => {
+      if (e.key === "Enter") saveProject();
+      if (e.key === "Escape") closeSaveProjectModal();
     });
 
     document.addEventListener("dragstart", e => {
