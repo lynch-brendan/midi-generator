@@ -230,8 +230,8 @@ def _process_variation(var: dict, gm_patch: int, slug: str, is_drums: bool = Fal
 
     drum_kit = var.get("drum_kit", None) if is_drums else None
 
-    # Fire WAV rendering in background — return to client immediately
-    _wav_executor.submit(_render_wav, list(notes), info.tempo, is_drums, drum_kit, midi_path, wav_path)
+    future = _wav_executor.submit(_render_wav, list(notes), info.tempo, is_drums, drum_kit, midi_path, wav_path)
+    future.result(timeout=30)
 
     return {
         "id": info.id,
