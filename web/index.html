@@ -1427,15 +1427,34 @@
       const audio = panel.querySelector("audio");
       if (!audio) { advanceAutoPlay(idx); return; }
       audio.addEventListener("ended", () => advanceAutoPlay(idx), { once: true });
+
       let retries = 0;
-      function tryPlay() {
-        audio.play().catch(() => {
-          if (retries++ < 8 && audio.isConnected) {
-            setTimeout(() => { audio.load(); tryPlay(); }, 1000);
-          }
-        });
+      let retryPending = false;
+
+      function scheduleRetry() {
+        // Guard: only one pending retry at a time, and stop if element left DOM
+        if (retryPending || retries >= 8 || !audio.isConnected) return;
+        retryPending = true;
+        retries++;
+        setTimeout(() => {
+          retryPending = false;
+          if (!audio.isConnected) return;
+          audio.load();
+          attemptPlay();
+        }, 900);
       }
-      tryPlay();
+
+      function attemptPlay() {
+        // Listen for load error (404 / WAV not ready yet)
+        audio.addEventListener("error", scheduleRetry, { once: true });
+        audio.play().then(() => {
+          // Play started — remove error watcher so a mid-playback glitch
+          // doesn't accidentally restart the whole variation
+          audio.removeEventListener("error", scheduleRetry);
+        }).catch(scheduleRetry);
+      }
+
+      attemptPlay();
     }
 
     function advanceAutoPlay(fromIdx) {
