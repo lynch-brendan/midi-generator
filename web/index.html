@@ -1001,7 +1001,7 @@
       background: var(--bg-input);
       border: 1px solid var(--border);
       border-radius: 28px;
-      padding: 11px 14px 11px 18px;
+      padding: 11px 14px 30px 18px;
       cursor: pointer;
       max-width: 158px;
       overflow: hidden;
@@ -1342,32 +1342,59 @@
     }
 
     /* -----------------------------------------------------------------------
-       Heart button on clouds
+       Keep strip on clouds
     ----------------------------------------------------------------------- */
 
-    .cloud-heart {
+    .cloud-keep-strip {
       position: absolute;
-      top: 4px;
-      right: 4px;
-      background: none;
-      border: none;
-      cursor: pointer;
-      font-size: 0.82rem;
-      opacity: 0;
-      transition: opacity 0.15s, transform 0.12s;
-      padding: 3px 4px;
-      line-height: 1;
-      border-radius: 4px;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      padding: 5px 10px;
+      font-size: 0.65rem;
       color: var(--text-dim);
+      cursor: pointer;
+      border-top: 1px solid var(--border-soft);
+      background: transparent;
+      transition: background 0.15s, color 0.15s;
+      user-select: none;
+      letter-spacing: 0.02em;
       z-index: 2;
     }
 
-    .thought-cloud:hover .cloud-heart,
-    .thought-cloud.active .cloud-heart { opacity: 1; }
-    .cloud-heart.hearted { opacity: 1 !important; color: var(--accent); }
-    .cloud-heart.hearted:hover { transform: scale(1.2); }
+    .cloud-keep-strip:hover { color: var(--text-muted); background: var(--bg-card); }
+    .cloud-keep-strip.kept { background: var(--accent); color: var(--accent-fg); border-top-color: transparent; }
 
-    @media (max-width: 640px) { .cloud-heart { opacity: 1; font-size: 0.9rem; } }
+    /* -----------------------------------------------------------------------
+       First-time keep hint nudge
+    ----------------------------------------------------------------------- */
+
+    @keyframes hintSlide {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .keep-hint {
+      position: fixed;
+      background: var(--accent);
+      color: var(--accent-fg);
+      border-radius: 10px;
+      padding: 9px 16px;
+      font-size: 0.77rem;
+      font-weight: 500;
+      z-index: 600;
+      pointer-events: none;
+      transition: opacity 0.35s;
+      box-shadow: 0 4px 18px rgba(0,0,0,0.18);
+      white-space: nowrap;
+      animation: hintSlide 0.3s ease both;
+    }
+
+    .keep-hint b { font-weight: 700; }
 
     /* -----------------------------------------------------------------------
        Reply bar (conversation follow-up)
@@ -2216,18 +2243,19 @@
       const cloud = document.querySelector(`.thought-cloud[data-idx="${idx}"]`);
       if (!cloud) return;
       cloud.className = "thought-cloud visible";
-      cloud.innerHTML = `<span class="cloud-name">${escHtml(variation.name)}</span><button class="cloud-play" title="Play">▶</button><button class="cloud-heart" title="Add to session" onclick="heartCloud(event,${idx})">♥</button>`;
+      cloud.innerHTML = `<span class="cloud-name">${escHtml(variation.name)}</span><button class="cloud-play" title="Play">▶</button><div class="cloud-keep-strip" onclick="heartCloud(event,${idx})"><span>♥</span><span class="keep-label">keep this</span></div>`;
       cloud.addEventListener("click", () => selectCloud(idx));
       cloud.querySelector(".cloud-play").addEventListener("click", (e) => {
         e.stopPropagation();
         selectCloud(idx, true);
       });
-      // Restore heart state if this variation was already hearted
+      // Restore kept state if already in session
       if (currentVariations[idx] && sessionItems.some(s => s.midi_url === currentVariations[idx].midi_url)) {
-        cloud.querySelector(".cloud-heart").classList.add("hearted");
+        const strip = cloud.querySelector(".cloud-keep-strip");
+        if (strip) { strip.classList.add("kept"); strip.querySelector(".keep-label").textContent = "kept ✓"; }
       }
 
-      if (idx === 0) fadeSpeechBubble("check this out");
+      if (idx === 0) { fadeSpeechBubble("check this out"); showKeepHint(); }
 
       if (autoPlayEnabled) {
         if (idx === 0) {
@@ -2511,6 +2539,25 @@
     // Heart / session panel
     // ==========================================================================
 
+    function showKeepHint() {
+      if (localStorage.getItem('muse_hint_keep')) return;
+      localStorage.setItem('muse_hint_keep', '1');
+      const hint = document.createElement('div');
+      hint.className = 'keep-hint';
+      hint.innerHTML = '♥ tap <b>keep this</b> on any cloud to save ideas to your session';
+      document.body.appendChild(hint);
+      // Position below the thought stage, centered
+      const stage = document.getElementById('thoughtStage');
+      const rect = stage.getBoundingClientRect();
+      const w = Math.min(hint.offsetWidth || 340, window.innerWidth - 16);
+      hint.style.left = Math.max(8, rect.left + rect.width / 2 - w / 2) + 'px';
+      hint.style.top = (rect.bottom + 12) + 'px';
+      setTimeout(() => {
+        hint.style.opacity = '0';
+        setTimeout(() => hint.remove(), 400);
+      }, 4500);
+    }
+
     function heartCloud(e, idx) {
       e.stopPropagation();
       const v = currentVariations[idx];
@@ -2531,8 +2578,11 @@
     function updateCloudHeartState(idx, hearted) {
       const cloud = document.querySelector(`.thought-cloud[data-idx="${idx}"]`);
       if (!cloud) return;
-      const btn = cloud.querySelector('.cloud-heart');
-      if (btn) btn.classList.toggle('hearted', hearted);
+      const strip = cloud.querySelector('.cloud-keep-strip');
+      if (!strip) return;
+      strip.classList.toggle('kept', hearted);
+      const label = strip.querySelector('.keep-label');
+      if (label) label.textContent = hearted ? 'kept ✓' : 'keep this';
     }
 
     function renderSessionPanel() {
@@ -2594,8 +2644,8 @@
         document.querySelectorAll('.thought-cloud').forEach((cloud) => {
           const v = currentVariations[parseInt(cloud.dataset.idx)];
           if (v && v.midi_url === removed.midi_url) {
-            const btn = cloud.querySelector('.cloud-heart');
-            if (btn) btn.classList.remove('hearted');
+            const strip = cloud.querySelector('.cloud-keep-strip');
+            if (strip) { strip.classList.remove('kept'); const l = strip.querySelector('.keep-label'); if (l) l.textContent = 'keep this'; }
           }
         });
       }
@@ -2607,7 +2657,7 @@
       sessionItems = [];
       conversationHistory = [];
       hideReplyBar();
-      document.querySelectorAll('.cloud-heart.hearted').forEach(b => b.classList.remove('hearted'));
+      document.querySelectorAll('.cloud-keep-strip.kept').forEach(s => { s.classList.remove('kept'); const l = s.querySelector('.keep-label'); if (l) l.textContent = 'keep this'; });
       renderSessionPanel();
       closeSessionPanel();
     }
