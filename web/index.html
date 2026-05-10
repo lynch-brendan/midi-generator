@@ -1427,7 +1427,15 @@
       const audio = panel.querySelector("audio");
       if (!audio) { advanceAutoPlay(idx); return; }
       audio.addEventListener("ended", () => advanceAutoPlay(idx), { once: true });
-      audio.play().catch(() => {});
+      let retries = 0;
+      function tryPlay() {
+        audio.play().catch(() => {
+          if (retries++ < 8 && audio.isConnected) {
+            setTimeout(() => { audio.load(); tryPlay(); }, 1000);
+          }
+        });
+      }
+      tryPlay();
     }
 
     function advanceAutoPlay(fromIdx) {
