@@ -121,62 +121,6 @@ def _user_message(prompt: str) -> str:
     )
 
 
-VARIATION_ANGLES = random.sample(_CREATIVE_ANGLES, min(5, len(_CREATIVE_ANGLES)))
-
-
-def generate_single_variation(prompt: str, creative_direction: str, variation_number: int) -> Dict[str, Any]:
-    """Generate one variation with a specific creative direction. Returns parsed dict."""
-    client = anthropic.Anthropic()
-    system_prompt = _load_system_prompt()
-
-    user_content = (
-        f'Generate exactly 1 musical variation for: "{prompt}"\n\n'
-        f"Creative direction: {creative_direction}\n\n"
-        "Pick the most appropriate instrument and key for this prompt and direction. "
-        "Return a JSON object with this exact schema — ONE variation only:\n"
-        "{\n"
-        '  "instrument": "<chosen instrument>",\n'
-        '  "gm_patch": <0-127>,\n'
-        '  "is_drums": <true|false>,\n'
-        '  "key": "<key name>",\n'
-        '  "scale_notes": ["<note names>"],\n'
-        '  "variation": {\n'
-        f'    "id": {variation_number + 1},\n'
-        '    "name": "<evocative name>",\n'
-        '    "character": "<one sentence>",\n'
-        '    "tempo": <BPM>,\n'
-        '    "expression": "<none|subtle|moderate|expressive>",\n'
-        '    "notes": [{"pitch": <0-127>, "duration": <beats>, "velocity": <1-127>, "time": <beats>}]\n'
-        "  }\n"
-        "}\n\n"
-        "Aim for 16-28 notes. Return ONLY raw JSON, no markdown."
-    )
-
-    response = client.messages.create(
-        model=MODEL,
-        max_tokens=3000,
-        system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
-        messages=[{"role": "user", "content": user_content}],
-    )
-
-    raw_text = ""
-    for block in response.content:
-        if block.type == "text":
-            raw_text = block.text
-            break
-
-    if not raw_text:
-        raise ValueError("Empty response from Claude")
-
-    clean = _extract_json(raw_text)
-    data = json.loads(clean)
-
-    if "variation" not in data:
-        raise ValueError(f"Response missing 'variation' key. Keys: {list(data.keys())}")
-
-    return data
-
-
 def stream_thinking(prompt: str) -> Generator[Dict, None, None]:
     """Stream a brief 'thinking out loud' narrative before generation starts."""
     client = anthropic.Anthropic()

@@ -10,12 +10,9 @@ from datetime import date, datetime, timedelta, timezone
 import os
 import re
 from typing import Optional
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import queue
-import threading
+from concurrent.futures import ThreadPoolExecutor
 
 _wav_executor = ThreadPoolExecutor(max_workers=4)
-_gen_executor = ThreadPoolExecutor(max_workers=5)
 
 # {ip: {date: count}} — used for anonymous users only
 _rate_counts: dict = defaultdict(lambda: defaultdict(int))
@@ -30,7 +27,7 @@ APP_URL = os.environ.get("APP_URL", "http://localhost:8000")
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from core.claude_client import stream_variations, stream_thinking, generate_single_variation, VARIATION_ANGLES
+from core.claude_client import stream_variations, stream_thinking
 from core.midi_writer import write_midi
 from core.audio_renderer import render_midi_to_wav
 from core.expression import apply_expression
@@ -267,55 +264,27 @@ async def generate(req: GenerateRequest, request: Request, db=Depends(get_db)):
         _check_and_increment_generation(user, db, ip)
 
     slug = slugify(req.prompt)
-
-    def _run_one(creative_direction, idx):
-        """Generate + process one variation in a thread. Returns SSE-ready dict or raises."""
-        data = generate_single_variation(req.prompt, creative_direction, idx)
-        variation = data["variation"]
-        gm = data["gm_patch"]
-        drums = data.get("is_drums", False)
-        result = _process_variation(variation, gm, slug, drums)
-        result["instrument"] = data["instrument"]
-        result["key"] = data.get("key", "")
-        return result
+    gm_patch = 0
+    is_drums = False
 
     def event_stream():
+        nonlocal gm_patch, is_drums
         try:
-            # Stream thinking narrative first
             for event in stream_thinking(req.prompt):
                 yield f"data: {json.dumps(event)}\n\n"
-
-            # Launch all 5 variation calls in parallel
-            result_q = queue.Queue()
-
-            def worker(creative_direction, idx):
-                try:
-                    result = _run_one(creative_direction, idx)
-                    result_q.put({"ok": True, "result": result})
-                except Exception as e:
-                    result_q.put({"ok": False, "message": str(e)})
-
-            for i, direction in enumerate(VARIATION_ANGLES):
-                t = threading.Thread(target=worker, args=(direction, i), daemon=True)
-                t.start()
-
-            # Stream each result as it arrives
-            received = 0
-            first_instrument = None
-            while received < len(VARIATION_ANGLES):
-                item = result_q.get()
-                received += 1
-                if item["ok"]:
-                    result = item["result"]
-                    if first_instrument is None:
-                        first_instrument = result.get("instrument", "")
-                        yield f"data: {json.dumps({'type': 'meta', 'instrument': first_instrument, 'key': result.get('key', '')})}\n\n"
-                    yield f"data: {json.dumps({'type': 'variation', **result})}\n\n"
-                else:
-                    yield f"data: {json.dumps({'type': 'error', 'message': item['message']})}\n\n"
-
-            yield f"data: {json.dumps({'type': 'done', 'prompt': req.prompt})}\n\n"
-
+            for event in stream_variations(req.prompt):
+                if event["type"] == "meta":
+                    gm_patch = event["gm_patch"]
+                    is_drums = event.get("is_drums", False)
+                    yield f"data: {json.dumps(event)}\n\n"
+                elif event["type"] == "variation":
+                    try:
+                        result = _process_variation(event["variation"], gm_patch, slug, is_drums)
+                        yield f"data: {json.dumps({'type': 'variation', **result})}\n\n"
+                    except Exception as e:
+                        yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+                elif event["type"] == "done":
+                    yield f"data: {json.dumps(event)}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
