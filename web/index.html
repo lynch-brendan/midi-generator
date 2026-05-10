@@ -1952,6 +1952,11 @@
       setSpeechBubble("Let me think…");
       createLoadingClouds(); // instant visual feedback
 
+      const promptInput = document.getElementById("prompt");
+      const originalPrompt = prompt;
+      let thinkingText = "";
+      let thinkingActive = false;
+
       abortController = new AbortController();
 
       try {
@@ -1990,7 +1995,19 @@
           for (const line of lines) {
             if (!line.startsWith("data: ")) continue;
             const event = JSON.parse(line.slice(6));
-            if (event.type === "meta") {
+            if (event.type === "thought") {
+              thinkingText += event.token;
+              thinkingActive = true;
+              promptInput.value = thinkingText;
+              promptInput.style.color = "var(--text-muted)";
+              promptInput.style.fontStyle = "italic";
+            } else if (event.type === "meta") {
+              if (thinkingActive) {
+                promptInput.value = originalPrompt;
+                promptInput.style.color = "";
+                promptInput.style.fontStyle = "";
+                thinkingActive = false;
+              }
               setCharacterInstrument(event.instrument);
               setGenStatus(`${event.instrument} · ${event.key}`);
             } else if (event.type === "variation") {
@@ -2006,6 +2023,11 @@
           }
         }
       } catch (err) {
+        if (thinkingActive) {
+          promptInput.value = originalPrompt;
+          promptInput.style.color = "";
+          promptInput.style.fontStyle = "";
+        }
         if (err.name !== "AbortError") {
           clearClouds();
           setSpeechBubble("what else do you want to hear?");

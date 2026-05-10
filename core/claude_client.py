@@ -121,6 +121,26 @@ def _user_message(prompt: str) -> str:
     )
 
 
+def stream_thinking(prompt: str) -> Generator[Dict, None, None]:
+    """Stream a brief 'thinking out loud' narrative before generation starts."""
+    client = anthropic.Anthropic()
+    with client.messages.stream(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=120,
+        messages=[{
+            "role": "user",
+            "content": (
+                f'You\'re a creative musician. Someone asked you for: "{prompt}". '
+                "Think out loud in 1-2 casual sentences about what musical ideas, "
+                "artists, or feelings immediately come to mind. Be specific and vivid — "
+                "mention real artists, eras, or techniques. No lists, no punctuation at the start, just flowing thought."
+            ),
+        }],
+    ) as stream:
+        for text in stream.text_stream:
+            yield {"type": "thought", "token": text}
+
+
 def stream_variations(prompt: str) -> Generator[Dict, None, None]:
     """
     Stream Claude's response and yield parsed objects as they become available.
