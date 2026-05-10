@@ -2508,7 +2508,7 @@
         const res = await fetch("/api/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt, history: overrideHistory || [] }),
+          body: JSON.stringify({ prompt, history: (overrideHistory || []).slice(-4) }),
           signal: abortController.signal,
         });
 
@@ -2766,12 +2766,15 @@
 
     async function saveProject() {
       if (!currentUser) { location.href = '/auth/google'; return; }
-      const nameInput = document.getElementById('sessionNameInput');
+
+      const fromModal = !document.getElementById('saveProjectModal').classList.contains('hidden');
+      const nameInput = document.getElementById(fromModal ? 'projectNameInput' : 'sessionNameInput');
+      const btn = document.getElementById(fromModal ? 'btnConfirmSaveProject' : 'btnSaveSession');
+
       const name = nameInput.value.trim();
       if (!name) { nameInput.focus(); nameInput.style.borderColor = 'var(--red)'; setTimeout(() => nameInput.style.borderColor = '', 1200); return; }
       if (sessionItems.length === 0) { showToast('Add some variations to your session first.'); return; }
 
-      const btn = document.getElementById('btnSaveSession');
       btn.disabled = true;
       btn.textContent = 'Saving…';
 
@@ -2791,21 +2794,19 @@
         });
         if (!res.ok) {
           const err = await res.json();
-          alert('Save failed: ' + (err.detail || 'Unknown error'));
+          showToast('Save failed: ' + (err.detail || 'Unknown error'));
           return;
         }
         nameInput.value = '';
-        closeSessionPanel();
+        if (fromModal) closeSaveProjectModal(); else closeSessionPanel();
         showToast(`"${name}" saved to library!`);
         await loadProjects();
-        if (!document.getElementById('libraryPanel').classList.contains('visible')) {
-          toggleLibraryDrawer();
-        }
+        if (!document.getElementById('libraryPanel').classList.contains('visible')) toggleLibraryDrawer();
       } catch (_) {
-        alert('Save failed. Please try again.');
+        showToast('Save failed. Please try again.');
       } finally {
         btn.disabled = false;
-        btn.textContent = 'Save project';
+        btn.textContent = fromModal ? 'Save project' : 'Save ↗';
       }
     }
 

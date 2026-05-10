@@ -304,7 +304,7 @@ async def generate(req: GenerateRequest, request: Request, db=Depends(get_db)):
                         result = _process_variation(event["variation"], gm_patch, slug, is_drums)
                         yield f"data: {json.dumps({'type': 'variation', **result})}\n\n"
                     except Exception as e:
-                        yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+                        print(f"  [warn] variation failed, skipping: {e}")
                 elif event["type"] == "done":
                     yield f"data: {json.dumps(event)}\n\n"
         except Exception as e:
