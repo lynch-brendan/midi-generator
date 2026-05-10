@@ -1263,6 +1263,47 @@
 
     .btn-session-clear:hover { color: var(--text-muted); }
 
+    .session-name-row {
+      display: flex;
+      gap: 7px;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+
+    .session-name-input {
+      flex: 1;
+      min-width: 0;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 7px 10px;
+      font-size: 0.79rem;
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .session-name-input:focus { border-color: var(--text-muted); }
+    .session-name-input::placeholder { color: var(--text-dim); }
+
+    .btn-save-session {
+      background: var(--accent);
+      color: var(--accent-fg);
+      border: none;
+      border-radius: 7px;
+      padding: 7px 11px;
+      font-size: 0.78rem;
+      font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+      transition: opacity 0.15s;
+      letter-spacing: 0.01em;
+    }
+
+    .btn-save-session:hover { opacity: 0.8; }
+    .btn-save-session:disabled { opacity: 0.4; cursor: not-allowed; }
+
     .session-items {
       flex: 1;
       display: flex;
@@ -1589,15 +1630,17 @@
   <!-- Session panel (left drawer) -->
   <div class="session-panel" id="sessionPanel">
     <div class="session-header">
-      <span class="session-title">This session</span>
+      <span class="session-title">Session</span>
       <button class="btn-session-clear" onclick="clearSession()" title="Clear session">clear</button>
+    </div>
+    <div class="session-name-row">
+      <input type="text" class="session-name-input" id="sessionNameInput" placeholder="name your session…" maxlength="60" />
+      <button class="btn-save-session" id="btnSaveSession" onclick="saveProject()">Save ↗</button>
     </div>
     <div class="session-items" id="sessionItems">
       <p class="session-empty">Heart a variation to start<br>building your session.</p>
     </div>
-    <div class="session-footer" id="sessionFooter" style="display:none;">
-      <button class="btn-save-project" id="btnSaveProject" onclick="openSaveProjectModal()">Save as project ↗</button>
-    </div>
+    <div id="sessionFooter" style="display:none;"></div>
   </div>
 
   <!-- Library drawer overlay -->
@@ -2722,10 +2765,13 @@
     }
 
     async function saveProject() {
-      const name = document.getElementById('projectNameInput').value.trim();
-      if (!name) { document.getElementById('projectNameInput').focus(); return; }
+      if (!currentUser) { location.href = '/auth/google'; return; }
+      const nameInput = document.getElementById('sessionNameInput');
+      const name = nameInput.value.trim();
+      if (!name) { nameInput.focus(); nameInput.style.borderColor = 'var(--red)'; setTimeout(() => nameInput.style.borderColor = '', 1200); return; }
+      if (sessionItems.length === 0) { showToast('Add some variations to your session first.'); return; }
 
-      const btn = document.getElementById('btnConfirmSaveProject');
+      const btn = document.getElementById('btnSaveSession');
       btn.disabled = true;
       btn.textContent = 'Saving…';
 
@@ -2748,9 +2794,9 @@
           alert('Save failed: ' + (err.detail || 'Unknown error'));
           return;
         }
-        closeSaveProjectModal();
+        nameInput.value = '';
         closeSessionPanel();
-        showToast(`Project "${name}" saved to library!`);
+        showToast(`"${name}" saved to library!`);
         await loadProjects();
         if (!document.getElementById('libraryPanel').classList.contains('visible')) {
           toggleLibraryDrawer();
@@ -2889,6 +2935,7 @@
 
     document.getElementById("prompt").addEventListener("keydown", e => { if (e.key === "Enter") generate(); });
     document.getElementById("replyInput").addEventListener("keydown", e => { if (e.key === "Enter") reply(); });
+    document.getElementById("sessionNameInput").addEventListener("keydown", e => { if (e.key === "Enter") saveProject(); });
     document.getElementById("newFolderNameInput").addEventListener("keydown", e => {
       if (e.key === "Enter") submitNewFolder();
       if (e.key === "Escape") document.getElementById("newFolderInlineRow").classList.remove("visible");
