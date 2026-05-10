@@ -1394,34 +1394,27 @@
     let audioUnlocked = false;
 
     let typewriterTimer = null;
+    let typewriterQueue = "";
 
-    const LOADING_TEMPLATES = [
-      kw => `${kw}... yeah, I feel that`,
-      kw => `ooh, ${kw}... give me a sec`,
-      kw => `${kw}... I got something for this`,
-      kw => `yeah, ${kw}... let me try something`,
-      kw => `${kw}... interesting, hold on`,
-      kw => `ooh I love ${kw}... one sec`,
-    ];
-
-    function promptKeyword(prompt) {
-      const stop = new Set(['a','an','the','some','with','and','for','of','in','on','at','to','by','is','are','be','that','this','it','i','me','my','we','you','your','can','could','would','want','need','make','like','just','very','really','something','anything','but','or','so','give','more','like']);
-      const words = prompt.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter(w => w.length > 2 && !stop.has(w));
-      return words.slice(0, 3).join(' ') || prompt.split(' ').slice(0, 2).join(' ').toLowerCase();
+    function clearTypewriter() {
+      clearTimeout(typewriterTimer);
+      typewriterTimer = null;
+      typewriterQueue = "";
     }
 
-    function typeIntoBubble(text, delay = 52) {
-      clearTimeout(typewriterTimer);
+    function drainTypewriter() {
+      typewriterTimer = null;
+      if (!typewriterQueue) return;
       const el = document.getElementById("speechBubble");
       if (!el) return;
-      el.textContent = "";
-      let i = 0;
-      function next() {
-        if (i >= text.length) return;
-        el.textContent += text[i++];
-        typewriterTimer = setTimeout(next, delay);
-      }
-      next();
+      el.textContent += typewriterQueue[0];
+      typewriterQueue = typewriterQueue.slice(1);
+      typewriterTimer = setTimeout(drainTypewriter, 52);
+    }
+
+    function queueTypewriter(text) {
+      typewriterQueue += text;
+      if (!typewriterTimer) drainTypewriter();
     }
 
     function unlockAudio() {
@@ -1776,7 +1769,7 @@
     }
 
     function fadeSpeechBubble(text) {
-      clearTimeout(typewriterTimer);
+      clearTypewriter();
       const el = document.getElementById("speechBubble");
       if (!el) return;
       el.style.opacity = "0";
@@ -1998,9 +1991,8 @@
       btn.disabled = true;
       clearClouds();
       resetCharacter();
-      const kw = promptKeyword(prompt);
-      const tmpl = LOADING_TEMPLATES[Math.floor(Math.random() * LOADING_TEMPLATES.length)];
-      typeIntoBubble(tmpl(kw));
+      clearTypewriter();
+      setSpeechBubble("");
       createLoadingClouds();
 
       abortController = new AbortController();
@@ -2041,7 +2033,9 @@
           for (const line of lines) {
             if (!line.startsWith("data: ")) continue;
             const event = JSON.parse(line.slice(6));
-            if (event.type === "meta") {
+            if (event.type === "thought") {
+              queueTypewriter(event.token);
+            } else if (event.type === "meta") {
               setCharacterInstrument(event.instrument);
               setGenStatus(`${event.instrument}`);
             } else if (event.type === "variation") {

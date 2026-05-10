@@ -123,7 +123,7 @@ def _user_message(prompt: str) -> str:
 
 
 def stream_thinking(prompt: str) -> Generator[Dict, None, None]:
-    """Stream a single casual thinking thought into the speech bubble."""
+    """Stream a funny one-liner reaction to the user's prompt into the speech bubble."""
     client = anthropic.Anthropic()
     with client.messages.stream(
         model="claude-haiku-4-5-20251001",
@@ -131,11 +131,10 @@ def stream_thinking(prompt: str) -> Generator[Dict, None, None]:
         messages=[{
             "role": "user",
             "content": (
-                f'Someone asked a musician for: "{prompt}". '
-                "Write one short casual thought the musician is having while thinking — like they\'re muttering to themselves. "
-                "Mention a specific artist, mood, or technique. Lowercase, no punctuation at the end. "
-                'Examples: "hmmm... maybe some miles davis vibes", "something dark, like early portishead", "yeah this wants a real slow groove". '
-                "Output only the thought, nothing else."
+                f'A musician just got this request: "{prompt}". '
+                "Write their ONE punchy reaction — 5-12 words, all lowercase, like a text message. "
+                "Be specific and funny about exactly what was asked for. No quotes, no period at the end. "
+                'Examples: "dark jazz piano?? this is literally my moment" / "lofi beats say less" / "upbeat summer vibes?? i was born for this" / "jazz fusion bold choice i respect it" / "sad guitar ok i\'ll need a minute"'
             ),
         }],
     ) as stream:
