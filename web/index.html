@@ -1382,6 +1382,21 @@
 
     let autoPlayEnabled = true;
     let autoPlayWaitingForIdx = -1;
+    let audioUnlocked = false;
+
+    function unlockAudio() {
+      if (audioUnlocked) return;
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const buf = ctx.createBuffer(1, 1, 22050);
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.connect(ctx.destination);
+        src.start(0);
+        ctx.close();
+      } catch (_) {}
+      audioUnlocked = true;
+    }
 
     function toggleAutoPlay() {
       autoPlayEnabled = !autoPlayEnabled;
@@ -1927,6 +1942,8 @@
     async function generate() {
       const prompt = document.getElementById("prompt").value.trim();
       if (!prompt) return;
+
+      unlockAudio();
 
       const btn = document.getElementById("generateBtn");
       btn.disabled = true;
