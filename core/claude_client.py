@@ -122,18 +122,19 @@ def _user_message(prompt: str) -> str:
 
 
 def stream_thinking(prompt: str) -> Generator[Dict, None, None]:
-    """Stream a brief 'thinking out loud' narrative before generation starts."""
+    """Stream short producer-brain fragments separated by | for the speech bubble."""
     client = anthropic.Anthropic()
     with client.messages.stream(
         model="claude-haiku-4-5-20251001",
-        max_tokens=120,
+        max_tokens=80,
         messages=[{
             "role": "user",
             "content": (
-                f'You\'re a creative musician. Someone asked you for: "{prompt}". '
-                "Think out loud in 1-2 casual sentences about what musical ideas, "
-                "artists, or feelings immediately come to mind. Be specific and vivid — "
-                "mention real artists, eras, or techniques. No lists, no punctuation at the start, just flowing thought."
+                f'You\'re a music producer. Someone asked you for: "{prompt}". '
+                "Reply with 3-4 short, specific thought fragments separated by | — each is 3-7 words, producer-brain style. "
+                "Be vivid: mention real artists, moods, or techniques. "
+                'Example format: "late night miles davis | something darker | yeah. low end. lots of space | maybe odd meters". '
+                "Output ONLY the fragments separated by |, nothing else."
             ),
         }],
     ) as stream:

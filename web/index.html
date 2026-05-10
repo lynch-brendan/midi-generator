@@ -909,6 +909,7 @@
       margin-bottom: 10px;
       box-shadow: 0 2px 10px rgba(0,0,0,0.06);
       letter-spacing: -0.01em;
+      transition: opacity 0.3s ease;
     }
 
     .speech-bubble::after {
@@ -1392,6 +1393,11 @@
     let autoPlayWaitingForIdx = -1;
     let audioUnlocked = false;
 
+    let thoughtFragments = [];
+    let thoughtCycleIdx = 0;
+    let thoughtCycleTimer = null;
+    let thoughtBuffer = "";
+
     function unlockAudio() {
       if (audioUnlocked) return;
       try {
@@ -1416,12 +1422,12 @@
     }
 
     function autoPlayVariation(idx) {
-      selectCloud(idx, true);
+      selectCloud(idx, false);
       const panel = document.getElementById("variationPanel");
       const audio = panel.querySelector("audio");
-      if (audio) {
-        audio.addEventListener("ended", () => advanceAutoPlay(idx), { once: true });
-      }
+      if (!audio) { advanceAutoPlay(idx); return; }
+      audio.addEventListener("ended", () => advanceAutoPlay(idx), { once: true });
+      audio.play().catch(() => {});
     }
 
     function advanceAutoPlay(fromIdx) {
@@ -1743,12 +1749,34 @@
       if (el) el.textContent = text;
     }
 
+    function fadeSpeechBubble(text) {
+      const el = document.getElementById("speechBubble");
+      if (!el) return;
+      el.style.opacity = "0";
+      setTimeout(() => { el.textContent = text; el.style.opacity = "1"; }, 300);
+    }
+
+    function startThoughtCycle() {
+      if (thoughtCycleTimer) clearInterval(thoughtCycleTimer);
+      thoughtCycleTimer = setInterval(() => {
+        if (thoughtFragments.length < 2) return;
+        thoughtCycleIdx = (thoughtCycleIdx + 1) % thoughtFragments.length;
+        fadeSpeechBubble(thoughtFragments[thoughtCycleIdx]);
+      }, 2500);
+    }
+
+    function stopThoughtCycle() {
+      clearInterval(thoughtCycleTimer);
+      thoughtCycleTimer = null;
+    }
+
     function setGenStatus(text) {
       const el = document.getElementById("genStatus");
       if (el) el.textContent = text;
     }
 
     function clearClouds() {
+      stopThoughtCycle();
       document.querySelectorAll(".thought-cloud").forEach(c => c.remove());
       const panel = document.getElementById("variationPanel");
       panel.innerHTML = "";
@@ -1960,10 +1988,9 @@
       setSpeechBubble("Let me think…");
       createLoadingClouds(); // instant visual feedback
 
-      const promptInput = document.getElementById("prompt");
-      const originalPrompt = prompt;
-      let thinkingText = "";
-      let thinkingActive = false;
+      thoughtFragments = [];
+      thoughtCycleIdx = 0;
+      thoughtBuffer = "";
 
       abortController = new AbortController();
 
@@ -2004,17 +2031,28 @@
             if (!line.startsWith("data: ")) continue;
             const event = JSON.parse(line.slice(6));
             if (event.type === "thought") {
-              thinkingText += event.token;
-              thinkingActive = true;
-              promptInput.value = thinkingText;
-              promptInput.style.color = "var(--text-muted)";
-              promptInput.style.fontStyle = "italic";
+              thoughtBuffer += event.token;
+              const parts = thoughtBuffer.split("|");
+              for (let i = 0; i < parts.length - 1; i++) {
+                const frag = parts[i].trim();
+                if (frag) {
+                  thoughtFragments.push(frag);
+                  if (thoughtFragments.length === 1) {
+                    fadeSpeechBubble(frag);
+                    startThoughtCycle();
+                  }
+                }
+              }
+              thoughtBuffer = parts[parts.length - 1];
             } else if (event.type === "meta") {
-              if (thinkingActive) {
-                promptInput.value = originalPrompt;
-                promptInput.style.color = "";
-                promptInput.style.fontStyle = "";
-                thinkingActive = false;
+              if (thoughtBuffer.trim()) {
+                const frag = thoughtBuffer.trim();
+                thoughtFragments.push(frag);
+                if (thoughtFragments.length === 1) {
+                  fadeSpeechBubble(frag);
+                  startThoughtCycle();
+                }
+                thoughtBuffer = "";
               }
               setCharacterInstrument(event.instrument);
               setGenStatus(`${event.instrument} · ${event.key}`);
@@ -2023,6 +2061,7 @@
               currentVariations.push({ ...event, prompt });
               populateCloud(idx, event);
             } else if (event.type === "done") {
+              stopThoughtCycle();
               setSpeechBubble("what else do you want to hear?");
               setGenStatus("");
             } else if (event.type === "error") {
@@ -2031,11 +2070,7 @@
           }
         }
       } catch (err) {
-        if (thinkingActive) {
-          promptInput.value = originalPrompt;
-          promptInput.style.color = "";
-          promptInput.style.fontStyle = "";
-        }
+        stopThoughtCycle();
         if (err.name !== "AbortError") {
           clearClouds();
           setSpeechBubble("what else do you want to hear?");
