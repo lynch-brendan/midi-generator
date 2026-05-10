@@ -1393,10 +1393,7 @@
     let autoPlayWaitingForIdx = -1;
     let audioUnlocked = false;
 
-    let thoughtFragments = [];
-    let thoughtCycleIdx = 0;
-    let thoughtCycleTimer = null;
-    let thoughtBuffer = "";
+    let thoughtText = "";
 
     function unlockAudio() {
       if (audioUnlocked) return;
@@ -1756,19 +1753,6 @@
       setTimeout(() => { el.textContent = text; el.style.opacity = "1"; }, 300);
     }
 
-    function startThoughtCycle() {
-      if (thoughtCycleTimer) clearInterval(thoughtCycleTimer);
-      thoughtCycleTimer = setInterval(() => {
-        if (thoughtFragments.length < 2) return;
-        thoughtCycleIdx = (thoughtCycleIdx + 1) % thoughtFragments.length;
-        fadeSpeechBubble(thoughtFragments[thoughtCycleIdx]);
-      }, 2500);
-    }
-
-    function stopThoughtCycle() {
-      clearInterval(thoughtCycleTimer);
-      thoughtCycleTimer = null;
-    }
 
     function setGenStatus(text) {
       const el = document.getElementById("genStatus");
@@ -1776,7 +1760,6 @@
     }
 
     function clearClouds() {
-      stopThoughtCycle();
       document.querySelectorAll(".thought-cloud").forEach(c => c.remove());
       const panel = document.getElementById("variationPanel");
       panel.innerHTML = "";
@@ -1809,7 +1792,7 @@
         selectCloud(idx, true);
       });
 
-      if (idx === 0) setSpeechBubble("here's some ideas");
+      if (idx === 0) fadeSpeechBubble("check this out");
 
       if (autoPlayEnabled) {
         if (idx === 0) {
@@ -1988,9 +1971,7 @@
       setSpeechBubble("Let me think…");
       createLoadingClouds(); // instant visual feedback
 
-      thoughtFragments = [];
-      thoughtCycleIdx = 0;
-      thoughtBuffer = "";
+      thoughtText = "";
 
       abortController = new AbortController();
 
@@ -2005,7 +1986,7 @@
         if (!res.ok) {
           const err = await res.json();
           clearClouds();
-          setSpeechBubble("what else do you want to hear?");
+          setSpeechBubble("what's next?");
           if (res.status === 402 && err.detail && err.detail.code === "limit_reached") {
             openUpgradeModal(); btn.disabled = false; abortController = null; return;
           }
@@ -2031,29 +2012,9 @@
             if (!line.startsWith("data: ")) continue;
             const event = JSON.parse(line.slice(6));
             if (event.type === "thought") {
-              thoughtBuffer += event.token;
-              const parts = thoughtBuffer.split("|");
-              for (let i = 0; i < parts.length - 1; i++) {
-                const frag = parts[i].trim();
-                if (frag) {
-                  thoughtFragments.push(frag);
-                  if (thoughtFragments.length === 1) {
-                    fadeSpeechBubble(frag);
-                    startThoughtCycle();
-                  }
-                }
-              }
-              thoughtBuffer = parts[parts.length - 1];
+              thoughtText += event.token;
+              setSpeechBubble(thoughtText);
             } else if (event.type === "meta") {
-              if (thoughtBuffer.trim()) {
-                const frag = thoughtBuffer.trim();
-                thoughtFragments.push(frag);
-                if (thoughtFragments.length === 1) {
-                  fadeSpeechBubble(frag);
-                  startThoughtCycle();
-                }
-                thoughtBuffer = "";
-              }
               setCharacterInstrument(event.instrument);
               setGenStatus(`${event.instrument} · ${event.key}`);
             } else if (event.type === "variation") {
@@ -2061,8 +2022,7 @@
               currentVariations.push({ ...event, prompt });
               populateCloud(idx, event);
             } else if (event.type === "done") {
-              stopThoughtCycle();
-              setSpeechBubble("what else do you want to hear?");
+              fadeSpeechBubble("what's next?");
               setGenStatus("");
             } else if (event.type === "error") {
               throw new Error(event.message);
@@ -2070,10 +2030,9 @@
           }
         }
       } catch (err) {
-        stopThoughtCycle();
         if (err.name !== "AbortError") {
           clearClouds();
-          setSpeechBubble("what else do you want to hear?");
+          setSpeechBubble("what's next?");
           setGenStatus("Something went wrong — try again?");
         }
       } finally {
