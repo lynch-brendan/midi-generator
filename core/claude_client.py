@@ -121,46 +121,18 @@ def _user_message(prompt: str) -> str:
     )
 
 
-VARIATION_ANGLES = [
-    (
-        "melodic",
-        "Pick the single best MELODIC SOLO instrument for this prompt (trumpet, sax, violin, flute, oboe, clarinet, cello, trombone — not piano, not bass, not drums). "
-        "Generate a single-line melody with real phrasing, breath marks, and dynamic shape.",
-    ),
-    (
-        "harmonic",
-        "Pick the single best HARMONIC/CHORDAL instrument for this prompt (piano, guitar, vibraphone, organ, harpsichord, marimba — not bass, not drums). "
-        "Use rich chord voicings, interesting extensions, and a distinct rhythmic strum or comping pattern.",
-    ),
-    (
-        "bass",
-        "Pick the single best BASS or LOW-END instrument for this prompt (electric bass, upright bass, fretless bass, tuba, baritone sax). "
-        "Write a bass line that locks with the implied rhythm, uses the low register, and has its own melodic personality.",
-    ),
-    (
-        "rhythmic",
-        "Pick the single best RHYTHMIC or PERCUSSIVE approach for this prompt. "
-        "If drums/percussion fits, use is_drums=true. Otherwise pick marimba, pizzicato strings, or muted guitar. "
-        "Focus entirely on rhythmic groove, syncopation, and feel.",
-    ),
-    (
-        "wildcard",
-        "Pick the most UNEXPECTED, SURPRISING instrument that could still work for this prompt — "
-        "something that shouldn't obviously fit but creates an interesting contrast or reinterpretation. "
-        "Think: baroque harpsichord for a funk prompt, tuba for a delicate ballad, flute for a metal riff.",
-    ),
-]
+VARIATION_ANGLES = random.sample(_CREATIVE_ANGLES, min(5, len(_CREATIVE_ANGLES)))
 
 
-def generate_single_variation(prompt: str, angle_name: str, angle_brief: str, variation_number: int) -> Dict[str, Any]:
-    """Generate one variation with a specific instrument angle. Returns parsed dict."""
+def generate_single_variation(prompt: str, creative_direction: str, variation_number: int) -> Dict[str, Any]:
+    """Generate one variation with a specific creative direction. Returns parsed dict."""
     client = anthropic.Anthropic()
     system_prompt = _load_system_prompt()
 
     user_content = (
         f'Generate exactly 1 musical variation for: "{prompt}"\n\n'
-        f"Instrument angle: {angle_brief}\n\n"
-        f"Creative direction: {random.choice(_CREATIVE_ANGLES)}\n\n"
+        f"Creative direction: {creative_direction}\n\n"
+        "Pick the most appropriate instrument and key for this prompt and direction. "
         "Return a JSON object with this exact schema — ONE variation only:\n"
         "{\n"
         '  "instrument": "<chosen instrument>",\n'

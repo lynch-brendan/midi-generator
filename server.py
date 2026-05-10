@@ -268,9 +268,9 @@ async def generate(req: GenerateRequest, request: Request, db=Depends(get_db)):
 
     slug = slugify(req.prompt)
 
-    def _run_one(angle_name, angle_brief, idx):
+    def _run_one(creative_direction, idx):
         """Generate + process one variation in a thread. Returns SSE-ready dict or raises."""
-        data = generate_single_variation(req.prompt, angle_name, angle_brief, idx)
+        data = generate_single_variation(req.prompt, creative_direction, idx)
         variation = data["variation"]
         gm = data["gm_patch"]
         drums = data.get("is_drums", False)
@@ -288,15 +288,15 @@ async def generate(req: GenerateRequest, request: Request, db=Depends(get_db)):
             # Launch all 5 variation calls in parallel
             result_q = queue.Queue()
 
-            def worker(angle_name, angle_brief, idx):
+            def worker(creative_direction, idx):
                 try:
-                    result = _run_one(angle_name, angle_brief, idx)
+                    result = _run_one(creative_direction, idx)
                     result_q.put({"ok": True, "result": result})
                 except Exception as e:
                     result_q.put({"ok": False, "message": str(e)})
 
-            for i, (angle_name, angle_brief) in enumerate(VARIATION_ANGLES):
-                t = threading.Thread(target=worker, args=(angle_name, angle_brief, i), daemon=True)
+            for i, direction in enumerate(VARIATION_ANGLES):
+                t = threading.Thread(target=worker, args=(direction, i), daemon=True)
                 t.start()
 
             # Stream each result as it arrives
