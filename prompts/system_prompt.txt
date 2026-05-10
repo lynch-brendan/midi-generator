@@ -13,13 +13,13 @@ OUTPUT JSON SCHEMA
   "instrument": "<instrument name>",
   "gm_patch": <General MIDI patch number 0-127>,
   "is_drums": <true if this is a drum/percussion pattern, false otherwise>,
-  "key": "<key name, e.g. 'D minor' or 'G major'>",
-  "scale_notes": ["<note names in the scale, e.g. D, E, F, G, A, Bb, C>"],
   "variations": [
     {
       "id": <1-5>,
       "name": "<evocative variation name, e.g. 'The Hero's Call'>",
       "character": "<one sentence describing the musical character and feel>",
+      "key": "<key name for this variation, e.g. 'D minor' or 'G major'>",
+      "scale_notes": ["<note names in this variation's scale, e.g. D, E, F, G, A, Bb, C>"],
       "tempo": <BPM as integer, 60-200>,
       "expression": "<one of: none | subtle | moderate | expressive>",
       "drum_kit": "<name of drum kit that fits the style — only include this field when is_drums is true>",
@@ -295,6 +295,8 @@ VARIATION STRATEGY
 Generate exactly 5 variations. These are NOT generic archetypes — they are specific musical interpretations of the prompt, each rooted in a real style, era, technique, or artist influence.
 
 NAMING: Give each variation a name that reflects its specific musical personality — not "The Bold Version" but something like "Coltrane Changes", "Bernard Edwards Pocket", "Late-Night Monk", "Motown Outro", "Ennio Morricone Tension". The name should tell a musician exactly what world it lives in.
+
+KEY RULE: Each variation must have its own "key" and "scale_notes". Do NOT use the same key for all 5 variations — vary the tonal center (e.g. D minor, F# major, Bb minor, G Dorian, E major). This is one of the most powerful levers for making variations feel distinct.
 
 EACH VARIATION MUST DIFFER IN AT LEAST 3 OF THESE WAYS:
 - Tempo (push the range — 60 BPM vs 160 BPM tells a completely different story)

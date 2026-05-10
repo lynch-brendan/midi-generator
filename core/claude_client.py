@@ -114,7 +114,8 @@ def _user_message(prompt: str) -> str:
     return (
         f'Generate 5 musical variations for: "{prompt}"\n\n'
         f"Creative direction for this session: {angle}\n\n"
-        "Choose the most appropriate instrument and key for this style. "
+        "Choose the most appropriate instrument for this style. "
+        "Each variation must have its own key and scale_notes — vary the tonal center across the 5 variations. "
         "Return the complete JSON object with all 5 variations, each with a full note sequence. "
         "Aim for 12-24 notes per variation so each feels like a complete musical idea. "
         "Remember: return ONLY raw JSON, no markdown."
@@ -165,12 +166,12 @@ def stream_variations(prompt: str) -> Generator[Dict, None, None]:
 
             if not meta_sent:
                 meta_match = re.search(
-                    r'"instrument"\s*:\s*"([^"]+)".*?"gm_patch"\s*:\s*(\d+).*?"is_drums"\s*:\s*(true|false).*?"key"\s*:\s*"([^"]+)"',
+                    r'"instrument"\s*:\s*"([^"]+)".*?"gm_patch"\s*:\s*(\d+).*?"is_drums"\s*:\s*(true|false)',
                     buffer, re.DOTALL
                 )
                 if not meta_match:
                     meta_match = re.search(
-                        r'"instrument"\s*:\s*"([^"]+)".*?"gm_patch"\s*:\s*(\d+).*?"key"\s*:\s*"([^"]+)"',
+                        r'"instrument"\s*:\s*"([^"]+)".*?"gm_patch"\s*:\s*(\d+)',
                         buffer, re.DOTALL
                     )
                     if meta_match:
@@ -179,7 +180,6 @@ def stream_variations(prompt: str) -> Generator[Dict, None, None]:
                             "type": "meta",
                             "instrument": meta_match.group(1),
                             "gm_patch": int(meta_match.group(2)),
-                            "key": meta_match.group(3),
                             "is_drums": is_drums,
                         }
                         meta_sent = True
@@ -189,7 +189,6 @@ def stream_variations(prompt: str) -> Generator[Dict, None, None]:
                         "instrument": meta_match.group(1),
                         "gm_patch": int(meta_match.group(2)),
                         "is_drums": meta_match.group(3) == "true",
-                        "key": meta_match.group(4),
                     }
                     meta_sent = True
 

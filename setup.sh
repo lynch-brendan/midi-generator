@@ -3,10 +3,9 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOUNDFONT_DIR="$SCRIPT_DIR/soundfonts"
-SOUNDFONT_PATH="$SOUNDFONT_DIR/GeneralUser.sf2"
-SOUNDFONT_URL="https://github.com/generalmidi/generalmidi/raw/master/GeneralUser_GS_1.471.sf2"
-# Fallback: well-known direct download
-SOUNDFONT_URL_ALT="https://archive.org/download/generaluser-gs-soundfont/GeneralUser_GS_v1.471.sf2"
+SOUNDFONT_PATH="$SOUNDFONT_DIR/MuseScore_General.sf2"
+SOUNDFONT_URL="https://ftp.osuosl.org/pub/musescore/soundfont/MuseScore_General/MuseScore_General.sf2"
+SOUNDFONT_URL_ALT=""
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -56,16 +55,14 @@ mkdir -p "$SOUNDFONT_DIR"
 if [ -f "$SOUNDFONT_PATH" ]; then
     echo "  ✓ Soundfont already present: $SOUNDFONT_PATH"
 else
-    echo "  Downloading GeneralUser GS soundfont (~30 MB)..."
+    echo "  Downloading MuseScore General soundfont (~206 MB)..."
     if command -v curl &>/dev/null; then
-        curl -L --progress-bar -o "$SOUNDFONT_PATH" "$SOUNDFONT_URL_ALT" || \
         curl -L --progress-bar -o "$SOUNDFONT_PATH" "$SOUNDFONT_URL"
     elif command -v wget &>/dev/null; then
-        wget -q --show-progress -O "$SOUNDFONT_PATH" "$SOUNDFONT_URL_ALT" || \
         wget -q --show-progress -O "$SOUNDFONT_PATH" "$SOUNDFONT_URL"
     else
         echo "  ERROR: Neither curl nor wget found. Download manually:"
-        echo "  $SOUNDFONT_URL_ALT"
+        echo "  $SOUNDFONT_URL"
         echo "  → save to: $SOUNDFONT_PATH"
         exit 1
     fi
@@ -74,7 +71,7 @@ else
         echo "  ✓ Soundfont downloaded: $SOUNDFONT_PATH"
     else
         echo "  ERROR: Soundfont download failed. Download manually from:"
-        echo "  $SOUNDFONT_URL_ALT"
+        echo "  $SOUNDFONT_URL"
         exit 1
     fi
 fi

@@ -9,7 +9,9 @@ from pathlib import Path
 
 
 SOUNDFONT_PATHS = [
-    # Written by setup.sh
+    # Primary — downloaded by Dockerfile / setup.sh
+    Path(__file__).parent.parent / "soundfonts" / "MuseScore_General.sf2",
+    # Legacy fallback
     Path(__file__).parent.parent / "soundfonts" / "GeneralUser.sf2",
     # Common system locations
     Path("/usr/share/sounds/sf2/FluidR3_GM.sf2"),
