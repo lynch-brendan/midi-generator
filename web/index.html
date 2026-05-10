@@ -1453,12 +1453,25 @@
       if (!autoPlayEnabled) return;
       const nextIdx = fromIdx + 1;
       if (nextIdx >= 5) return;
+      if (document.hidden) {
+        autoPlayWaitingForIdx = nextIdx;
+        return;
+      }
       if (currentVariations[nextIdx]) {
         autoPlayVariation(nextIdx);
       } else {
         autoPlayWaitingForIdx = nextIdx;
       }
     }
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden || !autoPlayEnabled) return;
+      if (autoPlayWaitingForIdx >= 0 && currentVariations[autoPlayWaitingForIdx]) {
+        const idx = autoPlayWaitingForIdx;
+        autoPlayWaitingForIdx = -1;
+        autoPlayVariation(idx);
+      }
+    });
 
     // ==========================================================================
     // Auth
