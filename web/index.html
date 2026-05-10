@@ -1773,7 +1773,10 @@
         selectCloud(idx, true);
       });
 
-      if (idx === 0) setSpeechBubble("here's some ideas");
+      if (idx === 0) {
+        setSpeechBubble("here's some ideas");
+        if (variation.instrument) setCharacterInstrument(variation.instrument);
+      }
 
       if (autoPlayEnabled) {
         if (idx === 0) {
@@ -1801,7 +1804,7 @@
       panel.innerHTML = `
         <div class="vp-header">
           <span class="vp-name">${escHtml(v.name)}</span>
-          <span class="vp-tempo">${v.tempo} BPM · ${v.note_count} notes</span>
+          <span class="vp-tempo">${v.instrument ? escHtml(v.instrument) + ' · ' : ''}${v.tempo} BPM · ${v.note_count} notes</span>
         </div>
         <p class="vp-character">${escHtml(v.character)}</p>
         <div class="vp-actions">
