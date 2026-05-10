@@ -1393,7 +1393,32 @@
     let autoPlayWaitingForIdx = -1;
     let audioUnlocked = false;
 
-    let thoughtText = "";
+    let typewriterTimer = null;
+
+    const LOADING_PHRASES = [
+      "ooh, let me think on this one...",
+      "yeah I know exactly what to do here",
+      "oh this is a fun one, give me a sec",
+      "hmm, got a few ideas already...",
+      "oh I love this, one sec",
+      "yeah yeah, I know just the thing",
+      "ooh nice, give me a moment...",
+      "interesting — let me try something",
+    ];
+
+    function typeIntoBubble(text, delay = 52) {
+      clearTimeout(typewriterTimer);
+      const el = document.getElementById("speechBubble");
+      if (!el) return;
+      el.textContent = "";
+      let i = 0;
+      function next() {
+        if (i >= text.length) return;
+        el.textContent += text[i++];
+        typewriterTimer = setTimeout(next, delay);
+      }
+      next();
+    }
 
     function unlockAudio() {
       if (audioUnlocked) return;
@@ -1747,6 +1772,7 @@
     }
 
     function fadeSpeechBubble(text) {
+      clearTimeout(typewriterTimer);
       const el = document.getElementById("speechBubble");
       if (!el) return;
       el.style.opacity = "0";
@@ -1820,7 +1846,7 @@
       panel.innerHTML = `
         <div class="vp-header">
           <span class="vp-name">${escHtml(v.name)}</span>
-          <span class="vp-tempo">${v.tempo} BPM · ${v.note_count} notes</span>
+          <span class="vp-tempo">${v.tempo} BPM · ${v.key ? escHtml(v.key) + ' · ' : ''}${v.note_count} notes</span>
         </div>
         <p class="vp-character">${escHtml(v.character)}</p>
         <div class="vp-actions">
@@ -1968,10 +1994,8 @@
       btn.disabled = true;
       clearClouds();
       resetCharacter();
-      setSpeechBubble("Let me think…");
-      createLoadingClouds(); // instant visual feedback
-
-      thoughtText = "";
+      typeIntoBubble(LOADING_PHRASES[Math.floor(Math.random() * LOADING_PHRASES.length)]);
+      createLoadingClouds();
 
       abortController = new AbortController();
 
@@ -2011,12 +2035,9 @@
           for (const line of lines) {
             if (!line.startsWith("data: ")) continue;
             const event = JSON.parse(line.slice(6));
-            if (event.type === "thought") {
-              thoughtText += event.token;
-              setSpeechBubble(thoughtText);
-            } else if (event.type === "meta") {
+            if (event.type === "meta") {
               setCharacterInstrument(event.instrument);
-              setGenStatus(`${event.instrument} · ${event.key}`);
+              setGenStatus(`${event.instrument}`);
             } else if (event.type === "variation") {
               const idx = currentVariations.length;
               currentVariations.push({ ...event, prompt });

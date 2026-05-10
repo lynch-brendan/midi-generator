@@ -27,7 +27,7 @@ APP_URL = os.environ.get("APP_URL", "http://localhost:8000")
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from core.claude_client import stream_variations, stream_thinking
+from core.claude_client import stream_variations
 from core.midi_writer import write_midi
 from core.audio_renderer import render_midi_to_wav
 from core.expression import apply_expression
@@ -270,8 +270,6 @@ async def generate(req: GenerateRequest, request: Request, db=Depends(get_db)):
     def event_stream():
         nonlocal gm_patch, is_drums
         try:
-            for event in stream_thinking(req.prompt):
-                yield f"data: {json.dumps(event)}\n\n"
             for event in stream_variations(req.prompt):
                 if event["type"] == "meta":
                     gm_patch = event["gm_patch"]
