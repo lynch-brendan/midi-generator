@@ -3003,6 +3003,14 @@
         const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/files`);
         if (!res.ok) throw new Error();
         const files = await res.json();
+        // Clear current generation state
+        clearClouds();
+        conversationHistory = [];
+        hideReplyBar();
+        resetCharacter();
+        setSpeechBubble("I'll play any instrument — what do you want to hear?");
+        document.getElementById('prompt').value = '';
+        // Load session
         sessionItems = files.map(f => ({
           name: f.name,
           prompt: f.prompt || '',
