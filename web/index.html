@@ -1217,7 +1217,7 @@
 
     .session-panel.visible { transform: translateX(0); }
 
-    /* On desktop: persistent right panel, no overlay */
+    /* On desktop: persistent right panel, always visible, no overlay */
     @media (min-width: 900px) {
       .session-panel {
         left: auto;
@@ -1225,13 +1225,14 @@
         top: 56px;
         height: calc(100vh - 56px);
         padding: 24px 20px;
-        transform: translateX(100%);
+        transform: translateX(0);
         border-right: none;
         border-left: 1px solid var(--border-soft);
         box-shadow: -6px 0 24px rgba(0,0,0,0.05);
         z-index: 200;
       }
       .session-overlay { display: none !important; }
+      .main-content { padding-right: calc(280px + 24px); }
     }
 
     .session-header {
@@ -1924,6 +1925,12 @@
         src.start(0);
         ctx.close();
       } catch (_) {}
+      // Also unlock HTML5 audio by playing a silent data URI
+      try {
+        const a = new Audio("data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=");
+        a.volume = 0;
+        a.play().catch(() => {});
+      } catch (_) {}
       audioUnlocked = true;
     }
 
@@ -1941,6 +1948,13 @@
       const panel = document.getElementById("variationPanel");
       const audio = panel.querySelector("audio");
       if (audio) {
+        // Retry play after canplay in case play() fired before data was ready
+        const tryPlay = () => audio.play().catch(() => {});
+        if (audio.readyState >= 3) {
+          tryPlay();
+        } else {
+          audio.addEventListener("canplay", tryPlay, { once: true });
+        }
         audio.addEventListener("ended", () => advanceAutoPlay(idx), { once: true });
       }
     }
@@ -2672,11 +2686,7 @@
       countEl.textContent = sessionItems.length;
       sessionBtn.style.display = sessionItems.length > 0 ? 'block' : 'none';
 
-      // On desktop, auto-open when first item is kept; auto-close when cleared
-      if (isDesktop()) {
-        if (sessionItems.length > 0) openSessionPanel();
-        else closeSessionPanel();
-      }
+      // On desktop the panel is always visible — nothing to do
 
       if (sessionItems.length === 0) {
         container.innerHTML = '<p class="session-empty">Heart a variation to start<br>building your session.</p>';
@@ -2692,8 +2702,8 @@
         const el = document.createElement('div');
         el.className = 'session-item';
         el.innerHTML = `
-          <span class="session-item-emoji">${emoji || '🎵'}</span>
-          <div class="session-item-info">
+          <span class="session-item-emoji" onclick="openSessionItemDetail(${i})" style="cursor:pointer">${emoji || '🎵'}</span>
+          <div class="session-item-info" onclick="openSessionItemDetail(${i})" style="cursor:pointer">
             <div class="session-item-name">${escHtml(item.name)}</div>
             ${meta ? `<div class="session-item-meta">${escHtml(meta)}</div>` : ''}
           </div>
@@ -2713,6 +2723,35 @@
         if (key.includes(k)) return v;
       }
       return '🎵';
+    }
+
+    function openSessionItemDetail(i) {
+      const item = sessionItems[i];
+      if (!item) return;
+      // If still in the current cloud set, use selectCloud so the cloud highlights too
+      const cloudIdx = currentVariations.findIndex(v => v && v.midi_url === item.midi_url);
+      if (cloudIdx !== -1) {
+        selectCloud(cloudIdx);
+        if (!isDesktop()) closeSessionPanel();
+        return;
+      }
+      // Otherwise render a standalone detail view from the stored session item
+      const panel = document.getElementById('variationPanel');
+      panel.style.display = 'block';
+      panel.className = 'variation-panel';
+      panel.innerHTML = `
+        <div class="vp-header">
+          <span class="vp-name">${escHtml(item.name)}</span>
+          <span class="vp-tempo">${item.tempo ? item.tempo + ' BPM' : ''}${item.key ? ' · ' + escHtml(item.key) : ''}</span>
+        </div>
+        ${item.character ? `<p class="vp-character">${escHtml(item.character)}</p>` : ''}
+        <div class="vp-actions">
+          ${item.wav_url ? `<audio controls src="${escHtml(item.wav_url)}"></audio>` : ''}
+          ${item.midi_url ? `<a class="download" href="${escHtml(item.midi_url)}" download>MIDI</a>` : ''}
+          ${item.wav_url ? `<a class="download" href="${escHtml(item.wav_url)}" download>WAV</a>` : ''}
+        </div>`;
+      panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      if (!isDesktop()) closeSessionPanel();
     }
 
     let sessionAudio = null;
