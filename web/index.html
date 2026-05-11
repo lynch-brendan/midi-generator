@@ -2931,16 +2931,16 @@
           showToast('Save failed: ' + (err.detail || 'Unknown error'));
           return;
         }
-        nameInput.value = '';
-        if (fromModal) closeSaveProjectModal(); else closeSessionPanel();
-        showToast(`"${name}" saved to library!`);
+        if (fromModal) closeSaveProjectModal();
+        btn.textContent = fromModal ? 'Saved ✓' : 'Saved ✓';
+        setTimeout(() => {
+          btn.textContent = fromModal ? 'Save project' : 'Save ↗';
+        }, 2000);
         await loadProjects();
-        if (!document.getElementById('libraryPanel').classList.contains('visible')) toggleLibraryDrawer();
       } catch (_) {
         showToast('Save failed. Please try again.');
       } finally {
         btn.disabled = false;
-        btn.textContent = fromModal ? 'Save project' : 'Save ↗';
       }
     }
 
@@ -2976,11 +2976,11 @@
         item.className = 'folder-item' + (openProjectId === proj.id ? ' active' : '');
         item.dataset.projectId = proj.id;
         item.innerHTML = `
-          <div class="folder-item-left" onclick="toggleProject('${escAttr(proj.id)}')">
+          <div class="folder-item-left" onclick="loadProjectAsSession('${escAttr(proj.id)}', '${escAttr(proj.name)}')" style="cursor:pointer" title="Load into session">
             <span class="folder-icon">🎵</span>
             <span class="folder-name">${escHtml(proj.name)}</span>
           </div>
-          <span class="folder-count">${proj.file_count}</span>
+          <span class="folder-count" onclick="toggleProject('${escAttr(proj.id)}')" style="cursor:pointer" title="Show files">${proj.file_count}</span>
           <button class="btn-folder-delete" title="Delete project" onclick="deleteProject('${escAttr(proj.id)}', event)">&#x2715;</button>`;
         list.appendChild(item);
 
@@ -2996,6 +2996,30 @@
     async function toggleProject(projectId) {
       openProjectId = openProjectId === projectId ? null : projectId;
       renderProjects();
+    }
+
+    async function loadProjectAsSession(projectId, projectName) {
+      try {
+        const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/files`);
+        if (!res.ok) throw new Error();
+        const files = await res.json();
+        sessionItems = files.map(f => ({
+          name: f.name,
+          prompt: f.prompt || '',
+          midi_url: f.midi_url,
+          wav_url: f.wav_url || null,
+          instrument: '',
+          tempo: null,
+          key: null,
+          character: '',
+        }));
+        document.getElementById('sessionNameInput').value = projectName;
+        renderSessionPanel();
+        closeLibraryDrawer();
+        openSessionPanel();
+      } catch (_) {
+        showToast('Failed to load project.');
+      }
     }
 
     async function loadProjectFiles(projectId, container) {
