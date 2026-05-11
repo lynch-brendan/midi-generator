@@ -1348,7 +1348,7 @@
 
     .session-item-actions { display: flex; gap: 3px; flex-shrink: 0; }
 
-    .session-item-play, .session-item-remove {
+    .session-item-play, .session-item-remove, .session-item-dl {
       background: none;
       border: none;
       cursor: pointer;
@@ -1361,6 +1361,9 @@
 
     .session-item-play { color: var(--text-dim); }
     .session-item-play:hover { color: var(--text); }
+    .session-item-play.playing { color: var(--accent); }
+    .session-item-dl { color: var(--text-dim); font-size: 0.72rem; }
+    .session-item-dl:hover { color: var(--text); }
     .session-item-remove { color: var(--border); }
     .session-item-remove:hover { color: var(--red); }
 
@@ -2680,7 +2683,9 @@
             ${meta ? `<div class="session-item-meta">${escHtml(meta)}</div>` : ''}
           </div>
           <div class="session-item-actions">
-            ${item.wav_url ? `<button class="session-item-play" title="Play" onclick="playSessionItem(${i})">▶</button>` : ''}
+            ${item.wav_url ? `<button class="session-item-play" id="session-play-${i}" title="Play / Pause" onclick="playSessionItem(${i})">▶</button>` : ''}
+            ${item.midi_url ? `<a class="session-item-dl" href="${escHtml(item.midi_url)}" download title="Download MIDI">MIDI</a>` : ''}
+            ${item.wav_url ? `<a class="session-item-dl" href="${escHtml(item.wav_url)}" download title="Download WAV">WAV</a>` : ''}
             <button class="session-item-remove" title="Remove" onclick="removeSessionItem(${i})">✕</button>
           </div>`;
         container.appendChild(el);
@@ -2695,11 +2700,43 @@
       return '🎵';
     }
 
+    let sessionAudio = null;
+    let sessionAudioIdx = -1;
+
     function playSessionItem(i) {
       const item = sessionItems[i];
       if (!item || !item.wav_url) return;
-      const audio = new Audio(item.wav_url);
-      audio.play().catch(() => {});
+
+      const btn = document.getElementById(`session-play-${i}`);
+
+      // Pause if already playing this one
+      if (sessionAudio && sessionAudioIdx === i && !sessionAudio.paused) {
+        sessionAudio.pause();
+        if (btn) { btn.textContent = '▶'; btn.classList.remove('playing'); }
+        return;
+      }
+
+      // Stop any other playing session audio
+      if (sessionAudio && !sessionAudio.paused) {
+        sessionAudio.pause();
+        const oldBtn = document.getElementById(`session-play-${sessionAudioIdx}`);
+        if (oldBtn) { oldBtn.textContent = '▶'; oldBtn.classList.remove('playing'); }
+      }
+
+      // Resume or start fresh
+      if (sessionAudio && sessionAudioIdx === i) {
+        sessionAudio.play().catch(() => {});
+      } else {
+        sessionAudio = new Audio(item.wav_url);
+        sessionAudioIdx = i;
+        sessionAudio.play().catch(() => {});
+        sessionAudio.addEventListener('ended', () => {
+          if (btn) { btn.textContent = '▶'; btn.classList.remove('playing'); }
+          sessionAudioIdx = -1;
+        });
+      }
+
+      if (btn) { btn.textContent = '⏸'; btn.classList.add('playing'); }
     }
 
     function removeSessionItem(i) {

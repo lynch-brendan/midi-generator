@@ -105,6 +105,16 @@ web/privacy.html           — Privacy policy
 - `git push origin main` is all that's needed
 - Railway reads `PORT` env var, runs `python server.py`
 
+## Soundfont
+- MuseScore General SF2 (~206MB, MIT licensed) — downloaded at Docker build time from OSUOSL mirror
+- Stored at `soundfonts/MuseScore_General.sf2`; `audio_renderer.py` falls back to other locations if missing
+- Run `setup.sh` to download locally for dev
+
+## Key/scale design
+- Each variation has its own `key` and `scale_notes` (not global) — intentional, varied tonal centers
+- System prompt KEY RULE enforces no two variations share the same key
+- `key` shown in session panel item meta line and in detail panel
+
 ## Code conventions
 - No JS framework — vanilla JS only, no build step
 - Keep all frontend in `web/index.html` (one file)
