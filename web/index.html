@@ -144,7 +144,7 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 12px 24px 140px;
+      padding: 40px 24px 140px;
     }
 
     /* -----------------------------------------------------------------------
@@ -1264,45 +1264,63 @@
 
     .btn-session-clear:hover { color: var(--text-muted); }
 
-    .session-name-row {
+    /* Session title bar — top center of page */
+    .session-title-bar {
+      position: fixed;
+      top: 56px;
+      left: 0;
+      right: 0;
       display: flex;
-      gap: 7px;
+      justify-content: center;
       align-items: center;
-      margin-bottom: 14px;
+      padding: 6px 16px;
+      z-index: 300;
+      pointer-events: none;
+    }
+
+    .session-title-bar-inner {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      pointer-events: all;
     }
 
     .session-name-input {
-      flex: 1;
-      min-width: 0;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 7px;
-      padding: 7px 10px;
-      font-size: 0.79rem;
-      color: var(--text);
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid var(--border);
+      border-radius: 0;
+      padding: 4px 6px;
+      font-size: 0.82rem;
+      color: var(--text-muted);
       outline: none;
-      transition: border-color 0.15s;
+      width: 180px;
+      transition: border-color 0.15s, color 0.15s;
+      text-align: center;
     }
 
-    .session-name-input:focus { border-color: var(--text-muted); }
-    .session-name-input::placeholder { color: var(--text-dim); }
+    .session-name-input:focus {
+      border-bottom-color: var(--text-muted);
+      color: var(--text);
+    }
+
+    .session-name-input::placeholder { color: var(--border); }
 
     .btn-save-session {
-      background: var(--accent);
-      color: var(--accent-fg);
-      border: none;
-      border-radius: 7px;
-      padding: 7px 11px;
-      font-size: 0.78rem;
+      background: none;
+      color: var(--text-dim);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 0.75rem;
       font-weight: 500;
       cursor: pointer;
       white-space: nowrap;
-      flex-shrink: 0;
-      transition: opacity 0.15s;
+      transition: color 0.15s, border-color 0.15s;
       letter-spacing: 0.01em;
     }
 
-    .btn-save-session:hover { opacity: 0.8; }
+    .btn-save-session:hover { color: var(--text-muted); border-color: var(--text-dim); }
     .btn-save-session:disabled { opacity: 0.4; cursor: not-allowed; }
 
     .session-items {
@@ -1642,15 +1660,19 @@
   <!-- Session panel overlay -->
   <div class="session-overlay" id="sessionOverlay" onclick="closeSessionPanel()"></div>
 
-  <!-- Session panel (left drawer) -->
+  <!-- Session title bar — top center -->
+  <div class="session-title-bar">
+    <div class="session-title-bar-inner">
+      <input type="text" class="session-name-input" id="sessionNameInput" placeholder="Session 1" maxlength="60" />
+      <button class="btn-save-session" id="btnSaveSession" onclick="saveProject()">Save ↗</button>
+    </div>
+  </div>
+
+  <!-- Session panel (right on desktop, left drawer on mobile) -->
   <div class="session-panel" id="sessionPanel">
     <div class="session-header">
-      <span class="session-title">Session</span>
+      <span class="session-title">Kept</span>
       <button class="btn-session-clear" onclick="clearSession()" title="Clear session">clear</button>
-    </div>
-    <div class="session-name-row">
-      <input type="text" class="session-name-input" id="sessionNameInput" placeholder="name your session…" maxlength="60" />
-      <button class="btn-save-session" id="btnSaveSession" onclick="saveProject()">Save ↗</button>
     </div>
     <div class="session-items" id="sessionItems">
       <p class="session-empty">Heart a variation to start<br>building your session.</p>
