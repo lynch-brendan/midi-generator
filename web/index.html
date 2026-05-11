@@ -1455,6 +1455,17 @@
       animation: hintSlide 0.3s ease both;
     }
 
+    .keep-hint::before {
+      content: '';
+      position: absolute;
+      top: -7px;
+      left: var(--arrow-left, 50%);
+      transform: translateX(-50%);
+      border: 7px solid transparent;
+      border-top: none;
+      border-bottom-color: var(--accent);
+    }
+
     .keep-hint b { font-weight: 700; }
 
     /* -----------------------------------------------------------------------
@@ -2603,18 +2614,22 @@
     // ==========================================================================
 
     function showKeepHint() {
-      if (localStorage.getItem('muse_hint_keep')) return;
-      localStorage.setItem('muse_hint_keep', '1');
       const hint = document.createElement('div');
       hint.className = 'keep-hint';
       hint.innerHTML = '♥ tap <b>keep this</b> on any cloud to save ideas to your session';
       document.body.appendChild(hint);
-      // Position below the thought stage, centered
-      const stage = document.getElementById('thoughtStage');
-      const rect = stage.getBoundingClientRect();
-      const w = Math.min(hint.offsetWidth || 340, window.innerWidth - 16);
-      hint.style.left = Math.max(8, rect.left + rect.width / 2 - w / 2) + 'px';
-      hint.style.top = (rect.bottom + 12) + 'px';
+      // Position below the first cloud bubble
+      const firstCloud = document.querySelector('.thought-cloud');
+      const target = firstCloud || document.getElementById('thoughtStage');
+      const rect = target.getBoundingClientRect();
+      const hintW = hint.offsetWidth || 340;
+      const centerX = rect.left + rect.width / 2;
+      const left = Math.max(8, Math.min(centerX - hintW / 2, window.innerWidth - hintW - 8));
+      hint.style.left = left + 'px';
+      hint.style.top = (rect.bottom + 10) + 'px';
+      // Adjust arrow to point at cloud center
+      const arrowOffset = Math.max(16, Math.min(centerX - left, hintW - 16));
+      hint.style.setProperty('--arrow-left', arrowOffset + 'px');
       setTimeout(() => {
         hint.style.opacity = '0';
         setTimeout(() => hint.remove(), 400);
