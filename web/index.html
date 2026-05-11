@@ -145,6 +145,7 @@
       flex-direction: column;
       align-items: center;
       padding: 40px 24px 140px;
+      transition: padding-right 0.28s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
     /* -----------------------------------------------------------------------
@@ -1217,7 +1218,7 @@
 
     .session-panel.visible { transform: translateX(0); }
 
-    /* On desktop: persistent right panel, always visible, no overlay */
+    /* On desktop: slides in from right, no overlay needed */
     @media (min-width: 900px) {
       .session-panel {
         left: auto;
@@ -1225,14 +1226,13 @@
         top: 56px;
         height: calc(100vh - 56px);
         padding: 24px 20px;
-        transform: translateX(0);
+        transform: translateX(100%);
         border-right: none;
         border-left: 1px solid var(--border-soft);
         box-shadow: -6px 0 24px rgba(0,0,0,0.05);
         z-index: 200;
       }
       .session-overlay { display: none !important; }
-      .main-content { padding-right: calc(280px + 24px); }
     }
 
     .session-header {
@@ -2708,7 +2708,11 @@
       countEl.textContent = sessionItems.length;
       sessionBtn.style.display = sessionItems.length > 0 ? 'block' : 'none';
 
-      // On desktop the panel is always visible — nothing to do
+      // On desktop, slide in when items exist, slide away when cleared
+      if (isDesktop()) {
+        if (sessionItems.length > 0) openSessionPanel();
+        else closeSessionPanel();
+      }
 
       if (sessionItems.length === 0) {
         container.innerHTML = '<p class="session-empty">Heart a variation to start<br>building your session.</p>';
@@ -2850,12 +2854,19 @@
 
     function openSessionPanel() {
       document.getElementById('sessionPanel').classList.add('visible');
-      if (!isDesktop()) document.getElementById('sessionOverlay').classList.add('open');
+      if (isDesktop()) {
+        document.querySelector('.main-content').style.paddingRight = 'calc(280px + 24px)';
+      } else {
+        document.getElementById('sessionOverlay').classList.add('open');
+      }
     }
 
     function closeSessionPanel() {
       document.getElementById('sessionPanel').classList.remove('visible');
       document.getElementById('sessionOverlay').classList.remove('open');
+      if (isDesktop()) {
+        document.querySelector('.main-content').style.paddingRight = '';
+      }
     }
 
     // ==========================================================================
