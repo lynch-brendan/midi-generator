@@ -145,7 +145,11 @@
       flex-direction: column;
       align-items: center;
       padding: 40px 24px 160px;
-      transition: padding-left 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: padding-left 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+                  padding-bottom 0.18s ease;
+    }
+    body.panel-open .main-content {
+      padding-bottom: 260px;
     }
 
     /* -----------------------------------------------------------------------
@@ -2025,11 +2029,20 @@
       if (el) el.textContent = text;
     }
 
+    function openVariationPanel() {
+      document.getElementById("variationPanel").style.display = "flex";
+      document.body.classList.add("panel-open");
+    }
+    function closeVariationPanel() {
+      document.getElementById("variationPanel").style.display = "none";
+      document.body.classList.remove("panel-open");
+    }
+
     function clearClouds() {
       document.querySelectorAll(".thought-cloud").forEach(c => c.remove());
       const panel = document.getElementById("variationPanel");
       panel.innerHTML = "";
-      panel.style.display = "none";
+      closeVariationPanel();
       currentVariations = [];
       activeCloudIdx = -1;
       autoPlayWaitingForIdx = -1;
@@ -2087,7 +2100,7 @@
 
       const panel = document.getElementById("variationPanel");
       const saveVisible = currentUser ? "visible" : "";
-      panel.style.display = "flex";
+      openVariationPanel();
       panel.className = "variation-panel";
       panel.innerHTML = `
         <div class="vp-header">
@@ -2102,7 +2115,7 @@
           ${v.wav_url ? `<a class="download" href="${escHtml(v.wav_url)}" download draggable="true" data-mime="audio/wav">WAV</a>` : ""}
           <button class="more-like">More like this</button>
         </div>
-        <button class="vp-close" onclick="document.getElementById('variationPanel').style.display='none'">✕</button>
+        <button class="vp-close" onclick="closeVariationPanel()">✕</button>
       `;
       panel.querySelector(".more-like").addEventListener("click", () => {
         const refined = `${v.prompt} — more like: "${v.name}", ${v.tempo} BPM, ${v.character}`;
@@ -2452,7 +2465,6 @@
       }
       // Otherwise render a standalone detail view from the stored session item
       const panel = document.getElementById('variationPanel');
-      panel.style.display = 'flex';
       panel.className = 'variation-panel';
       panel.innerHTML = `
         <div class="vp-header">
@@ -2464,7 +2476,8 @@
           ${item.midi_url ? `<a class="download" href="${escHtml(item.midi_url)}" download>MIDI</a>` : ''}
           ${item.wav_url ? `<a class="download" href="${escHtml(item.wav_url)}" download>WAV</a>` : ''}
         </div>
-        <button class="vp-close" onclick="document.getElementById('variationPanel').style.display='none'">✕</button>`;
+        <button class="vp-close" onclick="closeVariationPanel()">✕</button>`;
+      openVariationPanel();
       if (!isDesktop()) closeSessionPanel();
     }
 
@@ -2535,7 +2548,7 @@
       resetCharacter();
       setSpeechBubble("I'll play any instrument — what do you want to hear?");
       document.getElementById('prompt').value = '';
-      document.getElementById('variationPanel').style.display = 'none';
+      closeVariationPanel();
       sessionCounter++;
       const nameInput = document.getElementById('sessionNameInput');
       nameInput.value = '';
