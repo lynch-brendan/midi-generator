@@ -393,7 +393,7 @@
       opacity: 0.75;
     }
 
-    a.download, button.more-like, button.save-file {
+    a.download, button.more-like {
       color: var(--text-muted);
       font-size: 0.76rem;
       border: 1px solid var(--border);
@@ -410,14 +410,12 @@
     a.download:active { cursor: grabbing; }
     a.download.dragging { opacity: 0.4; border-color: var(--text-muted); }
 
-    a.download:hover, button.more-like:hover, button.save-file:hover {
+    a.download:hover, button.more-like:hover {
       color: var(--text);
       border-color: var(--text-muted);
       background: var(--bg-input);
     }
 
-    button.save-file { display: none; }
-    button.save-file.visible { display: inline-block; }
 
     /* -----------------------------------------------------------------------
        Library drawer (slide-out overlay)
@@ -1223,6 +1221,19 @@
     .btn-save-session:hover { color: var(--text-muted); border-color: var(--text-dim); }
     .btn-save-session:disabled { opacity: 0.4; cursor: not-allowed; }
 
+    .btn-new-session {
+      background: none;
+      color: var(--text-dim);
+      border: none;
+      padding: 0 8px 0 0;
+      font-size: 0.75rem;
+      font-family: inherit;
+      cursor: pointer;
+      transition: color 0.15s;
+      white-space: nowrap;
+    }
+    .btn-new-session:hover { color: var(--text-muted); }
+
     .session-items {
       flex: 1;
       display: flex;
@@ -1563,6 +1574,7 @@
   <!-- Session title bar — top center -->
   <div class="session-title-bar">
     <div class="session-title-bar-inner">
+      <button class="btn-new-session" onclick="newSession()" title="Start a new session">+ New</button>
       <input type="text" class="session-name-input" id="sessionNameInput" placeholder="Session 1" maxlength="60" />
       <button class="btn-save-session" id="btnSaveSession" onclick="saveProject()">Save ↗</button>
     </div>
@@ -2475,6 +2487,27 @@
       renderSessionPanel();
     }
 
+    let sessionCounter = 1;
+
+    function newSession() {
+      sessionItems = [];
+      conversationHistory = [];
+      hideReplyBar();
+      clearClouds();
+      resetCharacter();
+      setSpeechBubble("I'll play any instrument — what do you want to hear?");
+      document.getElementById('prompt').value = '';
+      document.getElementById('variationPanel').style.display = 'none';
+      sessionCounter++;
+      const nameInput = document.getElementById('sessionNameInput');
+      nameInput.value = '';
+      nameInput.placeholder = `Session ${sessionCounter}`;
+      const title = document.getElementById('sessionPanelTitle');
+      if (title) title.textContent = `Session ${sessionCounter}`;
+      renderSessionPanel();
+      closeSessionPanel();
+    }
+
     function clearSession() {
       if (sessionItems.length > 0 && !confirm('Clear all hearted variations from this session?')) return;
       sessionItems = [];
@@ -2737,14 +2770,7 @@
       const title = document.getElementById("sessionPanelTitle");
       if (title) title.textContent = e.target.value.trim() || "Session 1";
     });
-    document.getElementById("newFolderNameInput").addEventListener("keydown", e => {
-      if (e.key === "Enter") submitNewFolder();
-      if (e.key === "Escape") document.getElementById("newFolderInlineRow").classList.remove("visible");
-    });
-    document.getElementById("popoverNewFolderInput").addEventListener("keydown", e => {
-      if (e.key === "Enter") popoverCreateFolder();
-      if (e.key === "Escape") closeSavePopover();
-    });
+
     document.getElementById("projectNameInput").addEventListener("keydown", e => {
       if (e.key === "Enter") saveProject();
       if (e.key === "Escape") closeSaveProjectModal();
