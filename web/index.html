@@ -1575,7 +1575,6 @@
   <!-- Session title bar — top center -->
   <div class="session-title-bar">
     <div class="session-title-bar-inner">
-      <button class="btn-new-session" onclick="newSession()" title="Start a new session">+ New</button>
       <input type="text" class="session-name-input" id="sessionNameInput" placeholder="Session 1" maxlength="60" />
       <button class="btn-save-session" id="btnSaveSession" onclick="saveProject()">Save ↗</button>
     </div>
@@ -1700,6 +1699,7 @@
       </div>
       <div id="projectList"></div>
       <p class="library-empty-projects" id="projectsEmpty" style="display:none">No projects yet. Heart some variations and save a session.</p>
+      <button class="btn-new-session" onclick="newSession();closeLibraryDrawer();" style="margin-top:12px;padding:6px 0;font-size:0.78rem;">+ New Session</button>
 
     </div>
 
