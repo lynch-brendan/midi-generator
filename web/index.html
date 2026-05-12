@@ -1400,68 +1400,29 @@
     .keep-hint b { font-weight: 700; }
 
     /* -----------------------------------------------------------------------
-       Reply bar (conversation follow-up)
+       Context pill (shown below input when conversation history is active)
     ----------------------------------------------------------------------- */
 
-    .reply-bar {
-      width: 100%;
-      max-width: 580px;
-      margin-top: 10px;
-      padding: 11px 14px 10px;
-      background: var(--bg-card);
-      border: 1px solid var(--border-soft);
-      border-radius: 10px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      animation: fadeUp 0.22s ease both;
-    }
-
-    .reply-context {
-      font-size: 0.68rem;
-      color: var(--text-dim);
-      letter-spacing: 0.01em;
-    }
-
-    .reply-context em { font-style: normal; color: var(--text-muted); }
-
-    .reply-input-row {
-      display: flex;
-      gap: 7px;
+    .context-pill {
+      display: none;
       align-items: center;
+      gap: 6px;
+      margin-top: 6px;
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      animation: fadeUp 0.18s ease both;
     }
 
-    .reply-input-row input {
-      flex: 1;
-      background: var(--bg-input);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 8px 13px;
-      color: var(--text);
-      font-size: 0.87rem;
-      outline: none;
-      transition: border-color 0.15s;
-    }
-
-    .reply-input-row input:focus { border-color: var(--text-muted); }
-    .reply-input-row input::placeholder { color: var(--text-dim); }
-
-    .reply-input-row button {
-      background: var(--accent);
-      color: var(--accent-fg);
-      border: none;
-      border-radius: 8px;
-      padding: 8px 13px;
-      cursor: pointer;
-      font-size: 0.87rem;
-      font-weight: 500;
-      transition: opacity 0.15s;
+    .context-pill em {
+      font-style: normal;
+      color: var(--text-muted);
+      max-width: 300px;
+      overflow: hidden;
+      text-overflow: ellipsis;
       white-space: nowrap;
     }
 
-    .reply-input-row button:hover { opacity: 0.8; }
-
-    .btn-new-convo {
+    .context-pill-clear {
       background: none;
       border: none;
       color: var(--text-dim);
@@ -1473,7 +1434,7 @@
       letter-spacing: 0.01em;
     }
 
-    .btn-new-convo:hover { color: var(--text-muted); }
+    .context-pill-clear:hover { color: var(--text-muted); }
 
     /* -----------------------------------------------------------------------
        Library — project section
@@ -1641,14 +1602,10 @@
         <button class="generate" id="generateBtn" onclick="generate()">Generate</button>
       </div>
 
-      <!-- Reply bar: appears after generation for conversational follow-up -->
-      <div id="replyBar" class="reply-bar" style="display:none;">
-        <div class="reply-context">continuing: <em id="replyContext"></em></div>
-        <div class="reply-input-row">
-          <input type="text" id="replyInput" placeholder="talk to muse — try it slower, more blues, different key…" />
-          <button onclick="reply()">↩ reply</button>
-        </div>
-        <button class="btn-new-convo" onclick="newConversation()">× start a new conversation</button>
+      <!-- Context pill: appears below input when conversation history is active -->
+      <div id="contextPill" class="context-pill">
+        ↩ continuing from <em id="contextPillText"></em>
+        <button class="context-pill-clear" onclick="newConversation()">× clear</button>
       </div>
 
       <p style="font-size:0.72rem;color:var(--text-dim);text-align:center;letter-spacing:0.02em;margin-top:6px;margin-bottom:8px;">All output is royalty free.</p>
@@ -2186,15 +2143,17 @@
     }
 
     async function generate(overridePrompt, overrideHistory) {
-      const prompt = overridePrompt || document.getElementById("prompt").value.trim();
+      const promptInput = document.getElementById("prompt");
+      const prompt = overridePrompt || promptInput.value.trim();
       if (!prompt) return;
 
       lastUserPrompt = prompt;
-      if (!overridePrompt) {
-        // Fresh generation — reset conversation
+      const isReply = !overridePrompt && conversationHistory.length > 0;
+      if (!overridePrompt && !isReply) {
         conversationHistory = [];
         hideReplyBar();
       }
+      if (promptInput) promptInput.value = '';
 
       unlockAudio();
 
@@ -2212,7 +2171,7 @@
         const res = await fetch("/api/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt, history: (overrideHistory || []).slice(-4) }),
+          body: JSON.stringify({ prompt, history: (overrideHistory || (isReply ? conversationHistory : [])).slice(-4) }),
           signal: abortController.signal,
         });
 
@@ -2727,28 +2686,23 @@
     }
 
     // ==========================================================================
-    // Conversation / reply bar
+    // Context pill
     // ==========================================================================
 
     function showReplyBar(promptText) {
-      const bar = document.getElementById('replyBar');
-      const ctx = document.getElementById('replyContext');
-      if (ctx) ctx.textContent = promptText;
-      if (bar) bar.style.display = 'flex';
+      const pill = document.getElementById('contextPill');
+      const label = document.getElementById('contextPillText');
+      if (label) label.textContent = `"${promptText}"`;
+      if (pill) pill.style.display = 'flex';
+      const input = document.getElementById('prompt');
+      if (input) input.placeholder = 'talk to muse — try it slower, more blues, different key…';
     }
 
     function hideReplyBar() {
-      const bar = document.getElementById('replyBar');
-      if (bar) bar.style.display = 'none';
-    }
-
-    async function reply() {
-      const input = document.getElementById('replyInput');
-      const text = input.value.trim();
-      if (!text) { input.focus(); return; }
-      input.value = '';
-      // Pass current conversation history — generate() will add to it
-      await generate(text, conversationHistory);
+      const pill = document.getElementById('contextPill');
+      if (pill) pill.style.display = 'none';
+      const input = document.getElementById('prompt');
+      if (input) input.placeholder = 'e.g. funky bass riff in E minor';
     }
 
     function newConversation() {
@@ -2758,7 +2712,6 @@
     }
 
     document.getElementById("prompt").addEventListener("keydown", e => { if (e.key === "Enter") generate(); });
-    document.getElementById("replyInput").addEventListener("keydown", e => { if (e.key === "Enter") reply(); });
     document.getElementById("sessionNameInput").addEventListener("keydown", e => { if (e.key === "Enter") saveProject(); });
     document.getElementById("sessionNameInput").addEventListener("input", e => {
       const title = document.getElementById("sessionPanelTitle");
