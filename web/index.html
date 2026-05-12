@@ -2032,6 +2032,15 @@
     function openVariationPanel() {
       document.getElementById("variationPanel").style.display = "flex";
       document.body.classList.add("panel-open");
+      // Scroll prompt input above the panel on any screen size/OS
+      setTimeout(() => {
+        const promptEl = document.getElementById("prompt");
+        const panelEl = document.getElementById("variationPanel");
+        const panelH = panelEl.offsetHeight || 80;
+        const rect = promptEl.getBoundingClientRect();
+        const overlap = rect.bottom - (window.innerHeight - panelH - 20);
+        if (overlap > 0) window.scrollBy({ top: overlap, behavior: "smooth" });
+      }, 80);
     }
     function closeVariationPanel() {
       document.getElementById("variationPanel").style.display = "none";
