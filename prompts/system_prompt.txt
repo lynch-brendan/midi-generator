@@ -379,13 +379,27 @@ JAZZ (SWING):
   This should feel light and swinging, not heavy
 
 DEMBOW (reggaeton):
-  Kick:  0.0, 1.5, 2.0, 4.0, 5.5, 6.0  ← 1.5/5.5 are the dembow hits; 2.0/6.0 are beat 3 — all are required
-  Snare: 1.0, 3.0, 5.0, 7.0  (locked backbeat on beats 2 and 4)
-  CHH:   every 0.5 beats throughout, velocity alternating 65/85
-  Kick velocity: beat 1 hits (0.0, 4.0) = 108; dembow hits (1.5, 5.5) = 90; beat 3 hits (2.0, 6.0) = 100
-  NO open hats, NO crash except bar 1, NO swing — completely straight
-  THE SOUND: kick(0.0) snare(1.0) kick(1.5) kick(2.0) snare(3.0) = "BUM da bum-BUM da" per bar
-  This five-hit kick pattern is what makes it reggaeton. Do not simplify it to a plain 4/4.
+  GM pitches: kick=36, snare=38, CHH=42
+  THE EXACT NOTE ARRAY — use this as your template, repeat for 2-4 bars (add 4.0 per bar):
+
+  BAR 1 (times 0.0–3.5):
+    {"pitch":36,"time":0.0,"duration":0.25,"velocity":108},
+    {"pitch":42,"time":0.0,"duration":0.25,"velocity":65},
+    {"pitch":42,"time":0.5,"duration":0.25,"velocity":85},
+    {"pitch":38,"time":1.0,"duration":0.25,"velocity":100},
+    {"pitch":42,"time":1.0,"duration":0.25,"velocity":65},
+    {"pitch":36,"time":1.5,"duration":0.25,"velocity":90},
+    {"pitch":42,"time":1.5,"duration":0.25,"velocity":85},
+    {"pitch":36,"time":2.0,"duration":0.25,"velocity":100},
+    {"pitch":42,"time":2.0,"duration":0.25,"velocity":65},
+    {"pitch":42,"time":2.5,"duration":0.25,"velocity":85},
+    {"pitch":38,"time":3.0,"duration":0.25,"velocity":100},
+    {"pitch":42,"time":3.0,"duration":0.25,"velocity":65},
+    {"pitch":42,"time":3.5,"duration":0.25,"velocity":85},
+
+  BAR 2 = same but every time +4.0. Bar 3 = +8.0. Bar 4 = +12.0.
+  DO NOT omit the kick at 1.5 (or 5.5, 9.5, 13.5). That hit IS the dembow.
+  NO open hats, NO crash except bar 1 beat 1, NO swing — completely straight.
 
 REGGAE (ONE-DROP):
   Kick:  2.0, 6.0 ONLY (beat 3 of each bar — the "one-drop")
