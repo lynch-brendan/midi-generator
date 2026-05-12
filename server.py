@@ -5,8 +5,7 @@ from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse, RedirectResponse, JSONResponse
 from pydantic import BaseModel
-from collections import defaultdict
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 import os
 import re
 from typing import Optional
@@ -15,12 +14,9 @@ from sqlalchemy import text
 
 _wav_executor = ThreadPoolExecutor(max_workers=4)
 
-# {ip: {date: count}} — used for anonymous users only
-_rate_counts: dict = defaultdict(lambda: defaultdict(int))
-ANON_DAILY_LIMIT = 3
-
 # Configurable generation limits (env-overridable)
-FREE_LIFETIME_LIMIT = int(os.environ.get("FREE_LIFETIME_LIMIT", "10"))
+ANON_LIFETIME_LIMIT = int(os.environ.get("ANON_LIFETIME_LIMIT", "5"))
+FREE_LIFETIME_LIMIT = int(os.environ.get("FREE_LIFETIME_LIMIT", "15"))
 CREATOR_MONTHLY_LIMIT = int(os.environ.get("CREATOR_MONTHLY_LIMIT", "300"))
 PRO_MONTHLY_LIMIT = int(os.environ.get("PRO_MONTHLY_LIMIT", "1000"))
 
@@ -108,18 +104,8 @@ def _check_and_increment_generation(user, db, ip: str) -> None:
         if user.email.lower() in admin_emails:
             return
 
-    # Anonymous path — IP-based daily limit (existing behaviour)
+    # Anonymous path — handled in the generate endpoint (needs request/response for cookie)
     if user is None or not _stripe_enabled():
-        if user is None:
-            today = date.today()
-            admin_ips = {x.strip() for x in os.environ.get("ADMIN_IPS", "").split(",") if x.strip()}
-            if ip not in admin_ips:
-                if _rate_counts[ip][today] >= ANON_DAILY_LIMIT:
-                    raise HTTPException(
-                        status_code=429,
-                        detail=f"Limit of {ANON_DAILY_LIMIT} generations per day reached. Sign in for more!"
-                    )
-                _rate_counts[ip][today] += 1
         return  # logged-in but Stripe disabled — no quota enforcement
 
     # Reset monthly counter if the reset date has passed
@@ -185,18 +171,6 @@ def _check_and_increment_generation(user, db, ip: str) -> None:
 class GenerateRequest(BaseModel):
     prompt: str
     history: list = []
-
-
-class CreateFolderRequest(BaseModel):
-    name: str
-
-
-class SaveFileRequest(BaseModel):
-    name: str
-    prompt: str
-    midi_url: str
-    wav_url: Optional[str] = None
-    folder_id: Optional[str] = None
 
 
 class SaveProjectFileRequest(BaseModel):
@@ -275,14 +249,23 @@ async def generate(req: GenerateRequest, request: Request, db=Depends(get_db)):
     user = get_current_user(request, db) if db is not None else None
 
     # Check admin bypass only for anonymous / old path
-    if user is None:
-        admin_ips = {x.strip() for x in os.environ.get("ADMIN_IPS", "").split(",") if x.strip()}
-        if ip in admin_ips:
-            # Skip all rate limiting for admins
-            pass
-        else:
-            _check_and_increment_generation(user, db, ip)
-    else:
+    admin_ips = {x.strip() for x in os.environ.get("ADMIN_IPS", "").split(",") if x.strip()}
+    is_admin_ip = ip in admin_ips
+
+    # Anonymous cookie-based lifetime check
+    anon_count = 0
+    if user is None and not is_admin_ip:
+        try:
+            anon_count = int(request.cookies.get("anon_gens", "0"))
+        except ValueError:
+            anon_count = 0
+        if anon_count >= ANON_LIFETIME_LIMIT:
+            raise HTTPException(
+                status_code=429,
+                detail=f"You've used your {ANON_LIFETIME_LIMIT} free generations. Sign in for more!"
+            )
+
+    if not is_admin_ip:
         _check_and_increment_generation(user, db, ip)
 
     slug = slugify(req.prompt)
@@ -310,7 +293,10 @@ async def generate(req: GenerateRequest, request: Request, db=Depends(get_db)):
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    response = StreamingResponse(event_stream(), media_type="text/event-stream")
+    if user is None and not is_admin_ip:
+        response.set_cookie("anon_gens", str(anon_count + 1), max_age=60 * 60 * 24 * 365, samesite="lax")
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -590,176 +576,6 @@ async def stripe_cancel(request: Request, db=Depends(get_db)):
 # Folder routes
 # ---------------------------------------------------------------------------
 
-@app.get("/api/folders")
-async def list_folders(request: Request, db=Depends(get_db)):
-    if db is None:
-        raise HTTPException(status_code=503, detail="Database not configured")
-    user = get_current_user(request, db)
-    if user is None:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
-    folders = db.query(Folder).filter(Folder.user_id == user.id).order_by(Folder.created_at).all()
-    result = []
-    for folder in folders:
-        file_count = db.query(SavedFile).filter(SavedFile.folder_id == folder.id).count()
-        result.append({
-            "id": folder.id,
-            "name": folder.name,
-            "created_at": folder.created_at.isoformat(),
-            "file_count": file_count,
-        })
-    return JSONResponse(result)
-
-
-@app.post("/api/folders")
-async def create_folder(body: CreateFolderRequest, request: Request, db=Depends(get_db)):
-    if db is None:
-        raise HTTPException(status_code=503, detail="Database not configured")
-    user = get_current_user(request, db)
-    if user is None:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
-    if not body.name.strip():
-        raise HTTPException(status_code=400, detail="Folder name is required")
-
-    import uuid
-    folder = Folder(id=str(uuid.uuid4()), user_id=user.id, name=body.name.strip())
-    db.add(folder)
-    db.commit()
-    db.refresh(folder)
-    return JSONResponse({
-        "id": folder.id,
-        "name": folder.name,
-        "created_at": folder.created_at.isoformat(),
-        "file_count": 0,
-    })
-
-
-@app.delete("/api/folders/{folder_id}")
-async def delete_folder(folder_id: str, request: Request, db=Depends(get_db)):
-    if db is None:
-        raise HTTPException(status_code=503, detail="Database not configured")
-    user = get_current_user(request, db)
-    if user is None:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
-    folder = db.query(Folder).filter(Folder.id == folder_id, Folder.user_id == user.id).first()
-    if folder is None:
-        raise HTTPException(status_code=404, detail="Folder not found")
-
-    db.delete(folder)
-    db.commit()
-    return JSONResponse({"ok": True})
-
-
-# ---------------------------------------------------------------------------
-# Save / library routes
-# ---------------------------------------------------------------------------
-
-@app.post("/api/save")
-async def save_file(body: SaveFileRequest, request: Request, db=Depends(get_db)):
-    if db is None:
-        raise HTTPException(status_code=503, detail="Database not configured")
-    user = get_current_user(request, db)
-    if user is None:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
-    # Validate folder ownership if provided
-    if body.folder_id:
-        folder = db.query(Folder).filter(
-            Folder.id == body.folder_id, Folder.user_id == user.id
-        ).first()
-        if folder is None:
-            raise HTTPException(status_code=404, detail="Folder not found")
-
-    midi_url = body.midi_url
-    wav_url = body.wav_url
-
-    # Optionally upload to R2
-    if r2_enabled():
-        midi_local = _url_to_local_path(body.midi_url)
-        if midi_local and midi_local.exists():
-            key = f"saved/{user.id}/{midi_local.name}"
-            r2_midi = upload_to_r2(midi_local, key)
-            if r2_midi:
-                midi_url = r2_midi
-
-        if body.wav_url:
-            wav_local = _url_to_local_path(body.wav_url)
-            if wav_local and wav_local.exists():
-                key = f"saved/{user.id}/{wav_local.name}"
-                r2_wav = upload_to_r2(wav_local, key)
-                if r2_wav:
-                    wav_url = r2_wav
-
-    import uuid
-    saved = SavedFile(
-        id=str(uuid.uuid4()),
-        user_id=user.id,
-        folder_id=body.folder_id or None,
-        name=body.name,
-        prompt=body.prompt,
-        midi_url=midi_url,
-        wav_url=wav_url,
-    )
-    db.add(saved)
-    db.commit()
-    db.refresh(saved)
-
-    return JSONResponse({
-        "id": saved.id,
-        "name": saved.name,
-        "prompt": saved.prompt,
-        "midi_url": saved.midi_url,
-        "wav_url": saved.wav_url,
-        "folder_id": saved.folder_id,
-        "created_at": saved.created_at.isoformat(),
-    })
-
-
-@app.get("/api/saved")
-async def list_saved(request: Request, folder_id: Optional[str] = None, db=Depends(get_db)):
-    if db is None:
-        raise HTTPException(status_code=503, detail="Database not configured")
-    user = get_current_user(request, db)
-    if user is None:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
-    query = db.query(SavedFile).filter(SavedFile.user_id == user.id)
-    if folder_id is not None:
-        query = query.filter(SavedFile.folder_id == folder_id)
-    files = query.order_by(SavedFile.created_at.desc()).all()
-
-    result = [
-        {
-            "id": f.id,
-            "name": f.name,
-            "prompt": f.prompt,
-            "midi_url": f.midi_url,
-            "wav_url": f.wav_url,
-            "folder_id": f.folder_id,
-            "created_at": f.created_at.isoformat(),
-        }
-        for f in files
-    ]
-    return JSONResponse(result)
-
-
-@app.delete("/api/saved/{file_id}")
-async def delete_saved(file_id: str, request: Request, db=Depends(get_db)):
-    if db is None:
-        raise HTTPException(status_code=503, detail="Database not configured")
-    user = get_current_user(request, db)
-    if user is None:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
-    saved = db.query(SavedFile).filter(SavedFile.id == file_id, SavedFile.user_id == user.id).first()
-    if saved is None:
-        raise HTTPException(status_code=404, detail="File not found")
-
-    db.delete(saved)
-    db.commit()
-    return JSONResponse({"ok": True})
 
 
 # ---------------------------------------------------------------------------

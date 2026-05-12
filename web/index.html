@@ -474,19 +474,6 @@
       text-transform: uppercase;
     }
 
-    .btn-new-folder {
-      background: none;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 4px 10px;
-      color: var(--text-dim);
-      font-size: 0.73rem;
-      cursor: pointer;
-      transition: color 0.15s, border-color 0.15s;
-    }
-
-    .btn-new-folder:hover { color: var(--text); border-color: var(--text-muted); }
-
     .folder-list {
       display: flex;
       flex-direction: column;
@@ -622,127 +609,6 @@
       text-align: center;
       padding: 28px 0;
     }
-
-    /* -----------------------------------------------------------------------
-       New folder inline
-    ----------------------------------------------------------------------- */
-
-    .new-folder-inline {
-      display: flex;
-      gap: 6px;
-      margin-top: 10px;
-    }
-
-    .new-folder-inline input {
-      flex: 1;
-      background: var(--bg-input);
-      border: 1px solid var(--border);
-      border-radius: 7px;
-      padding: 7px 10px;
-      color: var(--text);
-      font-size: 0.78rem;
-      outline: none;
-    }
-
-    .new-folder-inline input:focus { border-color: var(--text-muted); }
-    .new-folder-inline input::placeholder { color: var(--text-dim); }
-
-    .new-folder-inline button {
-      background: var(--accent);
-      color: var(--accent-fg);
-      border: none;
-      border-radius: 7px;
-      padding: 7px 12px;
-      font-size: 0.78rem;
-      font-weight: 500;
-      cursor: pointer;
-      transition: opacity 0.15s;
-    }
-
-    .new-folder-inline button:hover { opacity: 0.8; }
-
-    .new-folder-inline-row { display: none; }
-    .new-folder-inline-row.visible { display: flex; }
-
-    /* -----------------------------------------------------------------------
-       Save popover
-    ----------------------------------------------------------------------- */
-
-    .save-popover {
-      position: fixed;
-      z-index: 200;
-      background: var(--bg-input);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 10px;
-      min-width: 210px;
-      box-shadow: 0 8px 28px rgba(0,0,0,0.1);
-    }
-
-    .save-popover-title {
-      font-size: 0.72rem;
-      color: var(--text-dim);
-      margin-bottom: 8px;
-      padding-bottom: 8px;
-      border-bottom: 1px solid var(--border-soft);
-    }
-
-    .popover-folder-list {
-      display: flex;
-      flex-direction: column;
-      gap: 1px;
-      max-height: 200px;
-      overflow-y: auto;
-      margin-bottom: 8px;
-    }
-
-    .popover-folder-option {
-      padding: 7px 10px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 0.82rem;
-      color: var(--text-muted);
-      transition: background 0.1s;
-    }
-
-    .popover-folder-option:hover { background: var(--bg-card); }
-    .popover-folder-option.no-folder { color: var(--text-dim); font-style: italic; }
-
-    .popover-new-folder {
-      display: flex;
-      gap: 6px;
-      margin-top: 6px;
-      padding-top: 8px;
-      border-top: 1px solid var(--border-soft);
-    }
-
-    .popover-new-folder input {
-      flex: 1;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 6px 10px;
-      color: var(--text);
-      font-size: 0.78rem;
-      outline: none;
-    }
-
-    .popover-new-folder input:focus { border-color: var(--text-muted); }
-    .popover-new-folder input::placeholder { color: var(--text-dim); }
-
-    .popover-new-folder button {
-      background: var(--accent);
-      color: var(--accent-fg);
-      border: none;
-      border-radius: 6px;
-      padding: 6px 10px;
-      font-size: 0.78rem;
-      font-weight: 500;
-      cursor: pointer;
-      transition: opacity 0.15s;
-    }
-
-    .popover-new-folder button:hover { opacity: 0.8; }
 
     /* -----------------------------------------------------------------------
        Modals
@@ -1684,7 +1550,7 @@
       <span class="top-bar-sub">your ai musician</span>
     </div>
     <div class="top-bar-right">
-      <a href="mailto:vowringscompany@gmail.com?subject=Muse feedback" style="font-size:0.78rem;color:var(--text-dim);text-decoration:none;transition:color 0.15s;" onmouseover="this.style.color='var(--text-muted)'" onmouseout="this.style.color='var(--text-dim)'">Send feedback</a>
+      <a href="mailto:hello@museaimusician.com?subject=Muse feedback" style="font-size:0.78rem;color:var(--text-dim);text-decoration:none;transition:color 0.15s;" onmouseover="this.style.color='var(--text-muted)'" onmouseout="this.style.color='var(--text-dim)'">Send feedback</a>
       <button id="sessionBtn" onclick="toggleSessionPanel()" style="display:none;background:none;border:1px solid var(--border);border-radius:7px;padding:6px 12px;color:var(--text-muted);font-size:0.78rem;cursor:pointer;transition:color 0.15s,border-color 0.15s;">♥ <span id="sessionCount">0</span></button>
       <button id="libraryBtn" onclick="toggleLibraryDrawer()" style="display:none;background:none;border:1px solid var(--border);border-radius:7px;padding:6px 12px;color:var(--text-muted);font-size:0.78rem;cursor:pointer;transition:color 0.15s,border-color 0.15s;">Library</button>
       <div id="authArea" style="display:flex;align-items:center;gap:12px;"></div>
@@ -1822,19 +1688,6 @@
       <div id="projectList"></div>
       <p class="library-empty-projects" id="projectsEmpty" style="display:none">No projects yet. Heart some variations and save a session.</p>
 
-      <div class="library-section-label">
-        Folders <button class="btn-new-folder" id="btnNewFolder" onclick="toggleNewFolderRow()">+ New</button>
-      </div>
-
-      <div class="new-folder-inline-row" id="newFolderInlineRow">
-        <div class="new-folder-inline">
-          <input type="text" id="newFolderNameInput" placeholder="Folder name" />
-          <button onclick="submitNewFolder()">Create</button>
-        </div>
-      </div>
-
-      <div class="folder-list" id="folderList"></div>
-      <p class="library-empty" id="libraryEmpty" style="display:none">No folders yet.</p>
     </div>
 
   <!-- Upgrade / sign-in modal -->
@@ -1869,14 +1722,6 @@
     </div>
   </div>
 
-  <!-- Save popover -->
-  <div class="save-popover" id="savePopover" style="display:none">
-    <div class="save-popover-title">Save to folder</div>
-    <div class="popover-folder-list" id="popoverFolderList"></div>
-    <div class="popover-new-folder">
-      <input type="text" id="popoverNewFolderInput" placeholder="New folder…" />
-      <button onclick="popoverCreateFolder()">Create</button>
-    </div>
   </div>
 
   <script>
@@ -1929,9 +1774,6 @@
     }
 
     let currentUser = null;
-    let folders = [];
-    let openFolderId = null;
-    let activeSaveContext = null;
     let abortController = null;
     let usageInfo = null;
     let currentVariations = [];
@@ -2071,7 +1913,7 @@
       renderAuthArea();
       if (currentUser) {
         document.getElementById("libraryBtn").style.display = "block";
-        await Promise.all([refreshFolders(), refreshUsage(), loadProjects()]);
+        await Promise.all([refreshUsage(), loadProjects()]);
       }
       checkSubscribedParam();
     }
@@ -2109,230 +1951,9 @@
       renderAuthArea();
       closeLibraryDrawer();
       document.getElementById("libraryBtn").style.display = "none";
-      document.querySelectorAll("button.save-file").forEach(b => b.classList.remove("visible"));
       clearClouds();
     }
 
-    // ==========================================================================
-    // Folders / library
-    // ==========================================================================
-
-    async function refreshFolders() {
-      if (!currentUser) return;
-      try {
-        const res = await fetch("/api/folders");
-        if (!res.ok) return;
-        folders = await res.json();
-      } catch (_) { folders = []; }
-      renderFolderList();
-    }
-
-    function renderFolderList() {
-      const list = document.getElementById("folderList");
-      const emptyMsg = document.getElementById("libraryEmpty");
-
-      if (folders.length === 0) {
-        list.innerHTML = "";
-        emptyMsg.style.display = "block";
-        return;
-      }
-      emptyMsg.style.display = "none";
-      list.innerHTML = "";
-
-      for (const folder of folders) {
-        const item = document.createElement("div");
-        item.className = "folder-item" + (openFolderId === folder.id ? " active" : "");
-        item.dataset.folderId = folder.id;
-        item.innerHTML = `
-          <div class="folder-item-left" onclick="toggleFolder('${escAttr(folder.id)}')">
-            <span class="folder-icon">&#x1F4C1;</span>
-            <span class="folder-name">${escHtml(folder.name)}</span>
-          </div>
-          <span class="folder-count">${folder.file_count}</span>
-          <button class="btn-folder-delete" title="Delete folder" onclick="deleteFolder('${escAttr(folder.id)}', event)">&#x2715;</button>`;
-        list.appendChild(item);
-
-        if (openFolderId === folder.id) {
-          const filesContainer = document.createElement("div");
-          filesContainer.className = "folder-files";
-          filesContainer.id = `folder-files-${folder.id}`;
-          list.appendChild(filesContainer);
-          loadFolderFiles(folder.id, filesContainer);
-        }
-      }
-    }
-
-    async function toggleFolder(folderId) {
-      openFolderId = openFolderId === folderId ? null : folderId;
-      renderFolderList();
-    }
-
-    async function loadFolderFiles(folderId, container) {
-      container.innerHTML = `<p style="color:var(--text-dim);font-size:0.76rem;padding:8px 12px">Loading…</p>`;
-      try {
-        const res = await fetch(`/api/saved?folder_id=${encodeURIComponent(folderId)}`);
-        if (!res.ok) throw new Error();
-        const files = await res.json();
-        if (files.length === 0) {
-          container.innerHTML = `<p style="color:var(--text-dim);font-size:0.76rem;padding:8px 12px">No files saved here.</p>`;
-          return;
-        }
-        container.innerHTML = "";
-        for (const f of files) {
-          const el = document.createElement("div");
-          el.className = "saved-file-item";
-          el.innerHTML = `
-            <div class="saved-file-name">${escHtml(f.name)}</div>
-            <div class="saved-file-prompt">${escHtml(f.prompt)}</div>
-            <div class="saved-file-actions">
-              <a href="${escHtml(f.midi_url)}" download>MIDI</a>
-              ${f.wav_url ? `<a href="${escHtml(f.wav_url)}" download>WAV</a>` : ""}
-              ${f.wav_url ? `<a href="${escHtml(f.wav_url)}">Play</a>` : ""}
-              <button class="btn-file-delete" title="Delete" onclick="deleteFile('${escAttr(f.id)}', '${escAttr(folderId)}')">&#x2715;</button>
-            </div>`;
-          container.appendChild(el);
-        }
-      } catch (_) {
-        container.innerHTML = `<p style="color:var(--red);font-size:0.76rem;padding:8px 12px">Failed to load.</p>`;
-      }
-    }
-
-    function toggleNewFolderRow() {
-      const row = document.getElementById("newFolderInlineRow");
-      row.classList.toggle("visible");
-      if (row.classList.contains("visible")) document.getElementById("newFolderNameInput").focus();
-    }
-
-    async function submitNewFolder() {
-      const input = document.getElementById("newFolderNameInput");
-      const name = input.value.trim();
-      if (!name) return;
-      try {
-        const res = await fetch("/api/folders", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name }),
-        });
-        if (!res.ok) return;
-        input.value = "";
-        document.getElementById("newFolderInlineRow").classList.remove("visible");
-        await refreshFolders();
-      } catch (_) {}
-    }
-
-    async function deleteFolder(folderId, event) {
-      event.stopPropagation();
-      if (!confirm("Delete this folder and all its saved files?")) return;
-      try {
-        await fetch(`/api/folders/${encodeURIComponent(folderId)}`, { method: "DELETE" });
-        if (openFolderId === folderId) openFolderId = null;
-        await refreshFolders();
-      } catch (_) {}
-    }
-
-    async function deleteFile(fileId, folderId) {
-      if (!confirm("Remove this saved file?")) return;
-      try {
-        await fetch(`/api/saved/${encodeURIComponent(fileId)}`, { method: "DELETE" });
-        await refreshFolders();
-      } catch (_) {}
-    }
-
-    // ==========================================================================
-    // Save popover
-    // ==========================================================================
-
-    let popoverCloseListener = null;
-
-    function openSavePopover(button, variation) {
-      activeSaveContext = variation;
-      const popover = document.getElementById("savePopover");
-      const rect = button.getBoundingClientRect();
-      popover.style.display = "block";
-      popover.style.top = (rect.bottom + window.scrollY + 6) + "px";
-      const left = Math.min(rect.left + window.scrollX, window.innerWidth - 240);
-      popover.style.left = Math.max(8, left) + "px";
-      renderPopoverFolders();
-      document.getElementById("popoverNewFolderInput").value = "";
-      if (popoverCloseListener) document.removeEventListener("click", popoverCloseListener);
-      popoverCloseListener = (e) => {
-        if (!popover.contains(e.target) && e.target !== button) closeSavePopover();
-      };
-      setTimeout(() => document.addEventListener("click", popoverCloseListener), 0);
-    }
-
-    function closeSavePopover() {
-      document.getElementById("savePopover").style.display = "none";
-      activeSaveContext = null;
-      if (popoverCloseListener) {
-        document.removeEventListener("click", popoverCloseListener);
-        popoverCloseListener = null;
-      }
-    }
-
-    function renderPopoverFolders() {
-      const list = document.getElementById("popoverFolderList");
-      list.innerHTML = "";
-      const noFolder = document.createElement("div");
-      noFolder.className = "popover-folder-option no-folder";
-      noFolder.textContent = "No folder (unsorted)";
-      noFolder.onclick = () => saveFileToFolder(null);
-      list.appendChild(noFolder);
-      for (const folder of folders) {
-        const opt = document.createElement("div");
-        opt.className = "popover-folder-option";
-        opt.textContent = folder.name;
-        opt.onclick = () => saveFileToFolder(folder.id);
-        list.appendChild(opt);
-      }
-    }
-
-    async function popoverCreateFolder() {
-      const input = document.getElementById("popoverNewFolderInput");
-      const name = input.value.trim();
-      if (!name) return;
-      try {
-        const res = await fetch("/api/folders", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name }),
-        });
-        if (!res.ok) return;
-        const newFolder = await res.json();
-        input.value = "";
-        await refreshFolders();
-        renderPopoverFolders();
-        saveFileToFolder(newFolder.id);
-      } catch (_) {}
-    }
-
-    async function saveFileToFolder(folderId) {
-      if (!activeSaveContext) return;
-      const context = activeSaveContext;
-      closeSavePopover();
-      try {
-        const res = await fetch("/api/save", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: context.name,
-            prompt: context.prompt,
-            midi_url: context.midi_url,
-            wav_url: context.wav_url || null,
-            folder_id: folderId || null,
-          }),
-        });
-        if (!res.ok) {
-          const err = await res.json();
-          alert("Save failed: " + (err.detail || "Unknown error"));
-          return;
-        }
-        openFolderId = folderId;
-        await refreshFolders();
-      } catch (_) {
-        alert("Save failed. Please try again.");
-      }
-    }
 
     // ==========================================================================
     // Generation
@@ -2436,7 +2057,6 @@
           <a class="download" href="${escHtml(v.midi_url)}" download draggable="true" data-mime="audio/midi">MIDI</a>
           ${v.wav_url ? `<a class="download" href="${escHtml(v.wav_url)}" download draggable="true" data-mime="audio/wav">WAV</a>` : ""}
           <button class="more-like">More like this</button>
-          <button class="save-file ${saveVisible}" data-name="${escAttr(v.name)}" data-prompt="${escAttr(v.prompt)}" data-midi="${escAttr(v.midi_url)}" data-wav="${escAttr(v.wav_url || "")}">Save</button>
         </div>
         <button class="vp-close" onclick="document.getElementById('variationPanel').style.display='none'">✕</button>
       `;
@@ -2446,17 +2066,6 @@
         if (abortController) abortController.abort();
         generate();
       });
-      panel.querySelector(".save-file").addEventListener("click", function(e) {
-        e.stopPropagation();
-        if (!currentUser) return;
-        openSavePopover(this, {
-          name: this.dataset.name,
-          prompt: this.dataset.prompt,
-          midi_url: this.dataset.midi,
-          wav_url: this.dataset.wav || null,
-        });
-      });
-
       if (autoPlay) {
         const audio = panel.querySelector("audio");
         if (audio) audio.play().catch(() => {});
