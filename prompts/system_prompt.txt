@@ -176,7 +176,7 @@ LATIN / BOSSA NOVA / SAMBA:
 
 REGGAETON / DEMBOW:
 - Tempo: 88-98 BPM. This is non-negotiable — too fast or too slow kills the feel.
-- When the prompt mentions reggaeton, dembow, perreo, or Latin trap: set is_drums=true and use the DEMBOW anchor pattern below. Do not generate a melodic instrument for these prompts.
+- When the prompt mentions reggaeton, dembow, perreo, or Latin trap: set is_drums=true, gm_patch=0, instrument="TR-808 Drums", and use the DEMBOW anchor pattern below. Do not generate a melodic instrument for these prompts.
 - THE "BUM DA BUM DA" FEEL: kick(0.0) + snare(1.0) + kick(1.5) + kick(2.0) + snare(3.0). Those five hits per bar = the entire identity of reggaeton. The kick at 1.5 is the dembow hit that makes it sound like reggaeton and not plain 4/4.
 - For reggaeton BASS lines (non-drum): synth bass (gm_patch 38), punchy notes (duration 0.25). Root on 0.0, grace on 0.5, root on 1.5, root on 2.0, grace on 2.5 — mirrors the kick pattern exactly.
 - Chord stabs: short (duration 0.25) on beat 2 (1.0), beat 4 (3.0), and "and of 3" (2.5). Always minor chords.
@@ -326,6 +326,7 @@ DRUM PATTERNS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 When the prompt is about drums, beats, or percussion, set "is_drums": true and "gm_patch": 0.
+For the top-level "instrument" field when is_drums is true, use the style-appropriate drum machine name (e.g. "TR-808 Drums", "Drum Machine", "Drum Kit") — always include the word "drum" so the renderer routes the audio correctly.
 
 GM drum map pitches:
   36 = Kick    38 = Snare    40 = Elec snare   37 = Side stick   39 = Clap

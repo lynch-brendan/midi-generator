@@ -179,19 +179,27 @@ def stream_variations(prompt: str, history: list = None) -> Generator[Dict, None
                     buffer, re.DOTALL
                 )
                 if not meta_match:
-                    meta_match = re.search(
-                        r'"instrument"\s*:\s*"([^"]+)".*?"gm_patch"\s*:\s*(\d+)',
-                        buffer, re.DOTALL
-                    )
-                    if meta_match:
-                        is_drums = any(w in meta_match.group(1).lower() for w in ["drum", "percussion", "beat"])
-                        yield {
-                            "type": "meta",
-                            "instrument": meta_match.group(1),
-                            "gm_patch": int(meta_match.group(2)),
-                            "is_drums": is_drums,
-                        }
-                        meta_sent = True
+                    # Only fall back to partial match once we've seen "variations" —
+                    # meaning is_drums won't appear later (it comes before variations in the schema).
+                    # This prevents mis-detecting drums when gm_patch arrives but is_drums hasn't yet.
+                    if '"variations"' in buffer:
+                        meta_match = re.search(
+                            r'"instrument"\s*:\s*"([^"]+)".*?"gm_patch"\s*:\s*(\d+)',
+                            buffer, re.DOTALL
+                        )
+                        if meta_match:
+                            instr_lower = meta_match.group(1).lower()
+                            is_drums = any(w in instr_lower for w in [
+                                "drum", "percussion", "beat",
+                                "808", "909", "606", "707", "cr-78", "linn", "tr-",
+                            ])
+                            yield {
+                                "type": "meta",
+                                "instrument": meta_match.group(1),
+                                "gm_patch": int(meta_match.group(2)),
+                                "is_drums": is_drums,
+                            }
+                            meta_sent = True
                 else:
                     yield {
                         "type": "meta",
