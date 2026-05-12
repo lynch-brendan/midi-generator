@@ -1121,6 +1121,7 @@
         z-index: 200;
       }
       .session-overlay { display: none !important; }
+      .session-panel { z-index: 300; }
     }
 
     .session-header {
@@ -2527,19 +2528,12 @@
 
     function openSessionPanel() {
       document.getElementById('sessionPanel').classList.add('visible');
-      if (isDesktop()) {
-        document.querySelector('.main-content').style.paddingLeft = 'calc(280px + 24px)';
-      } else {
-        document.getElementById('sessionOverlay').classList.add('open');
-      }
+      if (!isDesktop()) document.getElementById('sessionOverlay').classList.add('open');
     }
 
     function closeSessionPanel() {
       document.getElementById('sessionPanel').classList.remove('visible');
       document.getElementById('sessionOverlay').classList.remove('open');
-      if (isDesktop()) {
-        document.querySelector('.main-content').style.paddingLeft = '';
-      }
     }
 
     // ==========================================================================
