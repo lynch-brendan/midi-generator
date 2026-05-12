@@ -1871,6 +1871,56 @@
     });
 
     // ==========================================================================
+    // Session persistence (localStorage)
+    // ==========================================================================
+
+    const STORAGE_KEY = 'muse_session_v1';
+    const SESSION_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
+    function saveSessionToStorage() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+          currentVariations,
+          sessionItems,
+          conversationHistory,
+          lastUserPrompt,
+          savedAt: Date.now(),
+        }));
+      } catch (e) {}
+    }
+
+    function clearSessionStorage() {
+      try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+    }
+
+    function restoreSessionFromStorage() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const data = JSON.parse(raw);
+        if (!data.savedAt || Date.now() - data.savedAt > SESSION_TTL) {
+          clearSessionStorage();
+          return;
+        }
+        if (data.currentVariations && data.currentVariations.length > 0) {
+          currentVariations = data.currentVariations;
+          createLoadingClouds();
+          currentVariations.forEach((v, i) => { if (v) populateCloud(i, v); });
+          fadeSpeechBubble("what's next?");
+        }
+        if (data.sessionItems && data.sessionItems.length > 0) {
+          sessionItems = data.sessionItems;
+          renderSessionPanel();
+        }
+        if (data.conversationHistory) conversationHistory = data.conversationHistory;
+        if (data.lastUserPrompt) {
+          lastUserPrompt = data.lastUserPrompt;
+          if (conversationHistory.length > 0) showReplyBar(lastUserPrompt);
+        }
+      } catch (e) {}
+    }
+
+    // ==========================================================================
     // Auth
     // ==========================================================================
 
@@ -2244,6 +2294,7 @@
                   { role: 'assistant', content: `I generated 5 variations: ${summary}` }
                 );
                 showReplyBar(lastUserPrompt);
+                saveSessionToStorage();
               }
             } else if (event.type === "error") {
               throw new Error(event.message);
@@ -2319,6 +2370,7 @@
         updateCloudHeartState(idx, true);
       }
       renderSessionPanel();
+      saveSessionToStorage();
     }
 
     function updateCloudHeartState(idx, hearted) {
@@ -2464,6 +2516,7 @@
         });
       }
       renderSessionPanel();
+      saveSessionToStorage();
     }
 
     let sessionCounter = 1;
@@ -2471,6 +2524,7 @@
     function newSession() {
       sessionItems = [];
       conversationHistory = [];
+      clearSessionStorage();
       hideReplyBar();
       clearClouds();
       resetCharacter();
@@ -2756,6 +2810,7 @@
     });
 
     initAuth();
+    restoreSessionFromStorage();
   </script>
 
 </body>
