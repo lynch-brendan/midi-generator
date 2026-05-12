@@ -1893,6 +1893,8 @@
       try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
     }
 
+    let _restoringSession = false;
+
     function restoreSessionFromStorage() {
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
@@ -1904,8 +1906,10 @@
         }
         if (data.currentVariations && data.currentVariations.length > 0) {
           currentVariations = data.currentVariations;
+          _restoringSession = true;
           createLoadingClouds();
           currentVariations.forEach((v, i) => { if (v) populateCloud(i, v); });
+          _restoringSession = false;
           fadeSpeechBubble("what's next?");
         }
         if (data.sessionItems && data.sessionItems.length > 0) {
@@ -2059,14 +2063,15 @@
         if (strip) { strip.classList.add("kept"); strip.querySelector(".keep-label").textContent = "kept ✓"; }
       }
 
-      if (idx === 0) { fadeSpeechBubble("check this out"); showKeepHint(); }
-
-      if (autoPlayEnabled) {
-        if (idx === 0) {
-          autoPlayVariation(0);
-        } else if (autoPlayWaitingForIdx === idx) {
-          autoPlayWaitingForIdx = -1;
-          autoPlayVariation(idx);
+      if (!_restoringSession) {
+        if (idx === 0) { fadeSpeechBubble("check this out"); showKeepHint(); }
+        if (autoPlayEnabled) {
+          if (idx === 0) {
+            autoPlayVariation(0);
+          } else if (autoPlayWaitingForIdx === idx) {
+            autoPlayWaitingForIdx = -1;
+            autoPlayVariation(idx);
+          }
         }
       }
     }
