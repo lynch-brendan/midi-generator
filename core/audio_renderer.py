@@ -2,9 +2,11 @@
 Render MIDI files to WAV using FluidSynth + a SF2 soundfont.
 FluidSynth must be installed on the system (brew install fluidsynth / apt install fluidsynth).
 """
+import array
 import os
 import shutil
 import subprocess
+import wave
 from pathlib import Path
 
 
@@ -45,6 +47,53 @@ def _find_soundfont() -> Path:
     )
 
 
+def trim_trailing_silence(wav_path: Path, threshold: float = 0.005, padding: float = 0.3) -> None:
+    """Trim trailing silence from a WAV file in-place.
+
+    threshold: amplitude fraction (0–1) below which samples are considered silent
+    padding:   seconds of audio to keep after the last loud sample
+    """
+    try:
+        with wave.open(str(wav_path), "rb") as wf:
+            n_channels = wf.getnchannels()
+            sampwidth = wf.getsampwidth()
+            framerate = wf.getframerate()
+            n_frames = wf.getnframes()
+            raw = wf.readframes(n_frames)
+
+        if sampwidth == 2:
+            samples = array.array("h", raw)
+            max_val = 32768
+        elif sampwidth == 4:
+            samples = array.array("i", raw)
+            max_val = 2147483648
+        else:
+            return  # unsupported width, leave file alone
+
+        # Scan backwards for last sample above threshold
+        last_active = 0
+        for i in range(len(samples) - 1, -1, -1):
+            if abs(samples[i]) / max_val > threshold:
+                last_active = i
+                break
+
+        padding_samples = int(framerate * padding) * n_channels
+        end = min(last_active + padding_samples, len(samples))
+        end -= end % n_channels  # align to frame boundary
+
+        if end >= len(samples):
+            return  # nothing to trim
+
+        with wave.open(str(wav_path), "wb") as wf:
+            wf.setnchannels(n_channels)
+            wf.setsampwidth(sampwidth)
+            wf.setframerate(framerate)
+            wf.writeframes(samples[:end].tobytes())
+
+    except Exception as e:
+        print(f"  [warn] silence trim failed for {wav_path.name}: {e}")
+
+
 def render_midi_to_wav(midi_path: Path, wav_path: Path) -> bool:
     """
     Render a MIDI file to WAV. Returns True on success, False on failure.
@@ -72,7 +121,10 @@ def render_midi_to_wav(midi_path: Path, wav_path: Path) -> bool:
             print(f"  [warn] fluidsynth error for {midi_path.name}: {result.stderr.decode().strip()}")
             return False
 
-        return wav_path.exists()
+        if wav_path.exists():
+            trim_trailing_silence(wav_path)
+            return True
+        return False
 
     except RuntimeError as e:
         print(f"  [warn] {e}")
