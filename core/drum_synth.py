@@ -19,6 +19,28 @@ _BUNDLED = Path(__file__).parent.parent / "samples" / "drums"
 _FL_STUDIO = Path("/Applications/FL Studio 21.app/Contents/Resources/FL/Data/Patches/Packs/All drum packs/Roland Tr-808")
 SAMPLES_DIR = _BUNDLED if _BUNDLED.exists() else _FL_STUDIO
 
+# GM pitch → stereo pan (-1.0 full left, 0.0 center, 1.0 full right)
+# Mimics a standard drum kit viewed from the drummer's perspective
+GM_DRUM_PAN = {
+    36: 0.0,    # kick — center
+    35: 0.0,    # kick variant — center
+    38: 0.05,   # snare — slightly right
+    40: 0.05,   # snare variant
+    37: -0.1,   # rim — slightly left
+    39: -0.1,   # clap — slightly left
+    42: -0.4,   # closed hi-hat — left
+    44: -0.4,   # pedal hi-hat — left
+    46: 0.4,    # open hi-hat — right
+    49: 0.5,    # crash — far right
+    51: 0.45,   # ride — right
+    41: -0.35,  # low tom — left
+    43: -0.2,   # low-mid tom
+    45: -0.05,  # mid tom — near center
+    47: 0.15,   # mid-high tom
+    48: 0.25,   # high-mid tom
+    50: 0.4,    # high tom — right
+}
+
 # GM pitch → sample filename in SAMPLES_DIR
 GM_TO_SAMPLE = {
     36: "TR-808Kick01.wav",
@@ -41,6 +63,17 @@ GM_TO_SAMPLE = {
 }
 
 _sample_cache: Dict[str, List[float]] = {}
+
+
+def _add_early_reflections(buf: List[float]) -> List[float]:
+    # Short delay taps simulate a small live room without washing out the transients
+    taps = [(7, 0.15), (14, 0.10), (23, 0.06)]
+    out = list(buf)
+    for delay_ms, gain in taps:
+        delay_samples = int(delay_ms * SAMPLE_RATE / 1000)
+        for i in range(delay_samples, len(out)):
+            out[i] += buf[i - delay_samples] * gain
+    return out
 
 
 def _load_sample(filename: str, samples_dir: Path = None) -> Optional[List[float]]:
@@ -137,7 +170,8 @@ def render_drum_pattern(
         last_beat = max((float(n["time"]) + float(n.get("duration", 0.1))) for n in notes)
         total_samples = int((last_beat / beats_per_second + 1.0) * SAMPLE_RATE)
 
-        buffer = [0.0] * total_samples
+        buf_l = [0.0] * total_samples
+        buf_r = [0.0] * total_samples
 
         for note in notes:
             pitch = int(note["pitch"])
@@ -153,23 +187,39 @@ def render_drum_pattern(
             if not sample_data:
                 continue
 
+            pan = GM_DRUM_PAN.get(pitch, 0.0)
+            gain_l = (1.0 - pan) / 2.0
+            gain_r = (1.0 + pan) / 2.0
+
             for i, s in enumerate(sample_data):
                 idx = start_sample + i
                 if idx < total_samples:
-                    buffer[idx] += s * velocity
+                    v = s * velocity
+                    buf_l[idx] += v * gain_l
+                    buf_r[idx] += v * gain_r
 
-        # Normalize
-        peak = max(abs(s) for s in buffer) if buffer else 1.0
+        # Add a light room feel via early reflections
+        buf_l = _add_early_reflections(buf_l)
+        buf_r = _add_early_reflections(buf_r)
+
+        # Normalize both channels together so the stereo image is preserved
+        peak = max((max(abs(s) for s in buf_l) if buf_l else 0.0),
+                   (max(abs(s) for s in buf_r) if buf_r else 0.0))
         if peak > 0.9:
-            buffer = [s / peak * 0.9 for s in buffer]
+            scale = 0.9 / peak
+            buf_l = [s * scale for s in buf_l]
+            buf_r = [s * scale for s in buf_r]
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with wave.open(str(output_path), "w") as wf:
-            wf.setnchannels(1)
+            wf.setnchannels(2)
             wf.setsampwidth(2)
             wf.setframerate(SAMPLE_RATE)
-            for s in buffer:
-                wf.writeframes(struct.pack("<h", int(max(-32767, min(32767, s * 32767)))))
+            for l, r in zip(buf_l, buf_r):
+                wf.writeframes(struct.pack("<hh",
+                    int(max(-32767, min(32767, l * 32767))),
+                    int(max(-32767, min(32767, r * 32767))),
+                ))
 
         return True
 

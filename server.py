@@ -188,15 +188,15 @@ class SaveProjectRequest(BaseModel):
 # Existing generation logic
 # ---------------------------------------------------------------------------
 
-def _render_wav(notes, tempo, is_drums, drum_kit, midi_path, wav_path):
+def _render_wav(notes, tempo, is_drums, drum_kit, midi_path, wav_path, gm_patch=None):
     """Runs in background thread — renders WAV after MIDI is written."""
     try:
         if is_drums:
             ok = render_drum_pattern(notes, tempo, wav_path, kit_name=drum_kit)
             if not ok:
-                render_midi_to_wav(midi_path, wav_path)
+                render_midi_to_wav(midi_path, wav_path, gm_patch=gm_patch)
         else:
-            render_midi_to_wav(midi_path, wav_path)
+            render_midi_to_wav(midi_path, wav_path, gm_patch=gm_patch)
     except Exception as e:
         print(f"  [warn] background WAV render failed for {wav_path.name}: {e}")
 
@@ -226,7 +226,7 @@ def _process_variation(var: dict, gm_patch: int, slug: str, is_drums: bool = Fal
 
     drum_kit = var.get("drum_kit", None) if is_drums else None
 
-    future = _wav_executor.submit(_render_wav, list(notes), info.tempo, is_drums, drum_kit, midi_path, wav_path)
+    future = _wav_executor.submit(_render_wav, list(notes), info.tempo, is_drums, drum_kit, midi_path, wav_path, gm_patch)
     future.result(timeout=30)
 
     return {
