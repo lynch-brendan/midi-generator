@@ -2126,7 +2126,7 @@
         </div>
         <div class="vp-actions">
           ${v.wav_url
-            ? `<audio controls src="${escHtml(v.wav_url)}"></audio>`
+            ? `<audio controls preload="none" src="${escHtml(v.wav_url)}"></audio>`
             : `<span style="color:var(--text-dim);font-size:0.76rem">No audio</span>`}
           <a class="download" href="${escHtml(v.midi_url)}" download draggable="true" data-mime="audio/midi">MIDI</a>
           ${v.wav_url ? `<a class="download" href="${escHtml(v.wav_url)}" download draggable="true" data-mime="audio/wav">WAV</a>` : ""}
@@ -2140,7 +2140,7 @@
         document.getElementById("prompt").value = refined;
         generate();
       });
-      if (autoPlay) {
+      if (autoPlay && !abortController) {
         const audio = panel.querySelector("audio");
         if (audio) audio.play().catch(() => {});
       }
@@ -2494,7 +2494,7 @@
           <span class="vp-tempo">${item.tempo ? item.tempo + ' BPM' : ''}${item.key ? ' · ' + escHtml(item.key) : ''}</span>
         </div>
         <div class="vp-actions">
-          ${item.wav_url ? `<audio controls src="${escHtml(item.wav_url)}"></audio>` : ''}
+          ${item.wav_url ? `<audio controls preload="none" src="${escHtml(item.wav_url)}"></audio>` : ''}
           ${item.midi_url ? `<a class="download" href="${escHtml(item.midi_url)}" download>MIDI</a>` : ''}
           ${item.wav_url ? `<a class="download" href="${escHtml(item.wav_url)}" download>WAV</a>` : ''}
         </div>
