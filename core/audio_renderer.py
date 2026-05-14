@@ -142,20 +142,21 @@ def render_midi_to_wav(
         for key, val in preset.items():
             reverb_flags += ["-o", f"{key}={val}"]
 
-        def _run(flags):
-            return subprocess.run(
-                [fluidsynth, "-ni", "-q", "-F", str(wav_path), "-r", "44100", *flags, str(soundfont), str(midi_path)],
-                capture_output=True,
-                timeout=30,
-            )
+        base_flags = ["-ni", "-o", "audio.driver=file", "-F", str(wav_path), "-r", "44100"]
+
+        def _run(extra):
+            cmd = [fluidsynth] + base_flags + extra + [str(soundfont), str(midi_path)]
+            print(f"  [fluidsynth] {' '.join(cmd)}")
+            return subprocess.run(cmd, capture_output=True, timeout=30)
 
         result = _run(reverb_flags)
         if result.returncode != 0:
+            print(f"  [fluidsynth] reverb attempt failed (rc={result.returncode}): {result.stderr.decode().strip()}")
             if wav_path.exists():
                 wav_path.unlink()
             result = _run([])
         if result.returncode != 0:
-            print(f"  [warn] fluidsynth error for {midi_path.name}: {result.stderr.decode().strip()}")
+            print(f"  [fluidsynth] plain attempt failed (rc={result.returncode}): {result.stderr.decode().strip()}")
             return False
 
         if wav_path.exists():

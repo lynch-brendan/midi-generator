@@ -38,6 +38,17 @@ app = FastAPI()
 OUTPUT_DIR = Path(__file__).parent / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
+# Log audio setup at startup
+try:
+    import shutil
+    _fs = shutil.which("fluidsynth")
+    from core.audio_renderer import SOUNDFONT_PATHS
+    _sf = next((p for p in SOUNDFONT_PATHS if p.exists()), None)
+    print(f"[startup] fluidsynth: {_fs or 'NOT FOUND'}")
+    print(f"[startup] soundfont:  {_sf or 'NOT FOUND'}")
+except Exception as _e:
+    print(f"[startup] audio check failed: {_e}")
+
 WEB_DIR = Path(__file__).parent / "web"
 
 # ---------------------------------------------------------------------------
