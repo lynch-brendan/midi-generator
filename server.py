@@ -188,15 +188,30 @@ class SaveProjectRequest(BaseModel):
 # Existing generation logic
 # ---------------------------------------------------------------------------
 
-def _render_wav(notes, tempo, is_drums, drum_kit, midi_path, wav_path, gm_patch=None):
+def _infer_bars(notes) -> int:
+    """Snap note content to the nearest standard loop length (4 or 8 bars)."""
+    if not notes:
+        return 4
+    max_beat = max(float(n["time"]) + float(n["duration"]) for n in notes)
+    if max_beat <= 16.5:
+        return 4
+    elif max_beat <= 32.5:
+        return 8
+    return 16
+
+
+def _render_wav(notes, tempo, bars, is_drums, drum_kit, midi_path, wav_path, gm_patch=None):
     """Runs in background thread — renders WAV after MIDI is written."""
+    from core.audio_renderer import pad_to_bar_duration
     try:
         if is_drums:
             ok = render_drum_pattern(notes, tempo, wav_path, kit_name=drum_kit)
             if not ok:
-                render_midi_to_wav(midi_path, wav_path, gm_patch=gm_patch)
+                render_midi_to_wav(midi_path, wav_path, gm_patch=gm_patch, tempo=tempo, bars=bars)
+            elif wav_path.exists():
+                pad_to_bar_duration(wav_path, bars * 4 * (60.0 / tempo))
         else:
-            render_midi_to_wav(midi_path, wav_path, gm_patch=gm_patch)
+            render_midi_to_wav(midi_path, wav_path, gm_patch=gm_patch, tempo=tempo, bars=bars)
     except Exception as e:
         print(f"  [warn] background WAV render failed for {wav_path.name}: {e}")
 
@@ -221,12 +236,13 @@ def _process_variation(var: dict, gm_patch: int, slug: str, is_drums: bool = Fal
         for n in notes:
             n["time"] = round(round(float(n["time"]) / grid) * grid, 4)
 
+    bars = _infer_bars(notes)
     notes_with_expression = apply_expression(notes, gm_patch, expression_level, is_drums)
-    write_midi(midi_path, notes_with_expression, info.tempo, gm_patch, channel)
+    write_midi(midi_path, notes_with_expression, info.tempo, gm_patch, channel, bars=bars)
 
     drum_kit = var.get("drum_kit", None) if is_drums else None
 
-    future = _wav_executor.submit(_render_wav, list(notes), info.tempo, is_drums, drum_kit, midi_path, wav_path, gm_patch)
+    future = _wav_executor.submit(_render_wav, list(notes), info.tempo, bars, is_drums, drum_kit, midi_path, wav_path, gm_patch)
     future.result(timeout=30)
 
     return {

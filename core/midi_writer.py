@@ -122,7 +122,7 @@ def _vibrato_events(
     return events
 
 
-def _build_track_data(notes: List[Dict], tempo_bpm: int, gm_patch: int, channel: int = 0) -> bytes:
+def _build_track_data(notes: List[Dict], tempo_bpm: int, gm_patch: int, channel: int = 0, bars: int = None) -> bytes:
     """
     Build raw MIDI track bytes from a list of note dicts.
 
@@ -235,9 +235,12 @@ def _build_track_data(notes: List[Dict], tempo_bpm: int, gm_patch: int, channel:
 
     events.sort(key=event_sort_key)
 
-    # End-of-track: two beats after the last event
     last_tick = events[-1][0] if events else 0
-    eot_tick = last_tick + TICKS_PER_BEAT * 2
+    if bars is not None:
+        eot_tick = bars * 4 * TICKS_PER_BEAT
+        eot_tick = max(eot_tick, last_tick + 1)
+    else:
+        eot_tick = last_tick + TICKS_PER_BEAT * 2
     events.append((eot_tick, bytes([0xFF, 0x2F, 0x00])))
 
     # Convert absolute ticks → delta-time encoded events
@@ -251,9 +254,9 @@ def _build_track_data(notes: List[Dict], tempo_bpm: int, gm_patch: int, channel:
     return track_bytes
 
 
-def write_midi(output_path: Path, notes: List[Dict], tempo_bpm: int, gm_patch: int, channel: int = 0) -> None:
+def write_midi(output_path: Path, notes: List[Dict], tempo_bpm: int, gm_patch: int, channel: int = 0, bars: int = None) -> None:
     """Write a MIDI Format 0 file to output_path."""
-    track_data = _build_track_data(notes, tempo_bpm, gm_patch, channel)
+    track_data = _build_track_data(notes, tempo_bpm, gm_patch, channel, bars=bars)
 
     # MIDI header chunk
     header = b"MThd"

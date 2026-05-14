@@ -81,11 +81,10 @@ def _find_soundfont() -> Path:
     )
 
 
-def trim_trailing_silence(wav_path: Path, threshold: float = 0.005, padding: float = 0.3) -> None:
-    """Trim trailing silence from a WAV file in-place.
+def pad_to_bar_duration(wav_path: Path, target_seconds: float) -> None:
+    """Pad (or trim) a WAV file in-place to exactly target_seconds.
 
-    threshold: amplitude fraction (0–1) below which samples are considered silent
-    padding:   seconds of audio to keep after the last loud sample
+    This ensures rendered clips snap perfectly to DAW grids when looped.
     """
     try:
         with wave.open(str(wav_path), "rb") as wf:
@@ -97,41 +96,42 @@ def trim_trailing_silence(wav_path: Path, threshold: float = 0.005, padding: flo
 
         if sampwidth == 2:
             samples = array.array("h", raw)
-            max_val = 32768
         elif sampwidth == 4:
             samples = array.array("i", raw)
-            max_val = 2147483648
         else:
-            return  # unsupported width, leave file alone
+            return
 
-        # Scan backwards for last sample above threshold
-        last_active = 0
-        for i in range(len(samples) - 1, -1, -1):
-            if abs(samples[i]) / max_val > threshold:
-                last_active = i
-                break
+        target_samples = int(target_seconds * framerate) * n_channels
+        target_samples -= target_samples % n_channels  # align to frame boundary
 
-        padding_samples = int(framerate * padding) * n_channels
-        end = min(last_active + padding_samples, len(samples))
-        end -= end % n_channels  # align to frame boundary
-
-        if end >= len(samples):
-            return  # nothing to trim
+        if len(samples) < target_samples:
+            samples.extend([0] * (target_samples - len(samples)))
+        elif len(samples) > target_samples:
+            samples = samples[:target_samples]
+        else:
+            return  # already exact
 
         with wave.open(str(wav_path), "wb") as wf:
             wf.setnchannels(n_channels)
             wf.setsampwidth(sampwidth)
             wf.setframerate(framerate)
-            wf.writeframes(samples[:end].tobytes())
+            wf.writeframes(samples.tobytes())
 
     except Exception as e:
-        print(f"  [warn] silence trim failed for {wav_path.name}: {e}")
+        print(f"  [warn] pad_to_bar_duration failed for {wav_path.name}: {e}")
 
 
-def render_midi_to_wav(midi_path: Path, wav_path: Path, gm_patch: Optional[int] = None) -> bool:
+def render_midi_to_wav(
+    midi_path: Path,
+    wav_path: Path,
+    gm_patch: Optional[int] = None,
+    tempo: Optional[float] = None,
+    bars: Optional[int] = None,
+) -> bool:
     """
     Render a MIDI file to WAV. Returns True on success, False on failure.
     Prints a warning but does not raise — MIDI files are still saved even if audio fails.
+    When tempo and bars are provided, the WAV is padded to exactly bars*4 beats long.
     """
     try:
         fluidsynth = _find_fluidsynth()
@@ -159,7 +159,9 @@ def render_midi_to_wav(midi_path: Path, wav_path: Path, gm_patch: Optional[int] 
             return False
 
         if wav_path.exists():
-            trim_trailing_silence(wav_path)
+            if tempo and bars:
+                target_seconds = bars * 4 * (60.0 / tempo)
+                pad_to_bar_duration(wav_path, target_seconds)
             return True
         return False
 

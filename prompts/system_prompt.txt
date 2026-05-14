@@ -81,8 +81,12 @@ VELOCITY (dynamics):
 
 TIME:
 - Start time 0.0 is the beginning of bar 1
+- 1 bar = 4.0 beats. Every melodic variation must use a standard loop length — choose one:
+    4 bars = 16.0 beats — for riffs, grooves, ostinatos, and short loops
+    8 bars = 32.0 beats — for full phrases, call-and-answer, complex melodies
+- The final note's (time + duration) must land at or very near the end of the chosen bar count (within 0.5 beats)
+- Distribute notes across ALL bars — do not cluster everything in bars 1-2 and leave bars 3-4 empty
 - Rests are implicit — simply leave gaps between notes
-- End the phrase cleanly — don't leave long rests at the end
 
 CHORDS AND POLYPHONY:
 - For chordal instruments (piano, guitar, strings, vibraphone, etc.) you SHOULD include chord voicings
