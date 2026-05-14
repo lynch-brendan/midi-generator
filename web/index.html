@@ -13,6 +13,13 @@
   <meta name="twitter:title" content="Muse — Your AI Musician" />
   <meta name="twitter:description" content="Describe any musical idea and instantly get 5 unique variations as playable audio and downloadable MIDI." />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='16' fill='%232C2420'/><text y='78' x='50' text-anchor='middle' font-size='72' font-family='Georgia,serif' fill='%23F7F4EF'>M</text></svg>">
+  <script>
+    !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","cdn.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+" (stub)"},o="init be br capture alias people.set people.set_once set_config register register_once unregister opt_out_capturing has_opted_out_capturing opt_in_capturing reset isFeatureEnabled onFeatureFlags getFeatureFlag getFeatureFlagPayload reloadFeatureFlags group updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures getActiveMatchingSurveys getSurveys onSessionId".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+    posthog.init('phc_ApLQhurRYZBztKzcmM3iy5889rUmNYxxZ3onAELXdxVj', {
+      api_host: 'https://us.i.posthog.com',
+      person_profiles: 'identified_only',
+    });
+  </script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1959,6 +1966,7 @@
       }
       renderAuthArea();
       if (currentUser) {
+        posthog.identify(currentUser.email, { email: currentUser.email, name: currentUser.name });
         document.getElementById("libraryBtn").style.display = "block";
         await Promise.all([refreshUsage(), loadProjects()]);
       }
@@ -2171,6 +2179,7 @@
     }
 
     function openUpgradeModal() {
+      posthog.capture('upgrade_modal_shown');
       const modal = document.getElementById("upgradeModal");
       modal.querySelector(".modal-heading").textContent = "You've used your free generations";
       modal.querySelector(".modal-pitch").textContent = "Upgrade to keep creating unlimited MIDI patterns.";
@@ -2181,6 +2190,7 @@
     }
 
     function showSignInModal() {
+      posthog.capture('signin_modal_shown');
       const modal = document.getElementById("upgradeModal");
       modal.querySelector(".modal-heading").textContent = "You've hit the daily limit";
       modal.querySelector(".modal-pitch").textContent = "Sign in for 10 free generations — no card needed.";
@@ -2245,6 +2255,7 @@
 
       lastUserPrompt = prompt;
       const isReply = !overridePrompt && conversationHistory.length > 0;
+      posthog.capture('generate_submitted', { prompt, is_reply: isReply });
       if (!overridePrompt && !isReply) {
         conversationHistory = [];
         hideReplyBar();
@@ -2308,6 +2319,7 @@
               const idx = currentVariations.length;
               currentVariations.push({ ...event, prompt });
               populateCloud(idx, event);
+              posthog.capture('variation_ready', { name: event.name, tempo: event.tempo, variation_index: idx + 1 });
             } else if (event.type === "done") {
               fadeSpeechBubble("what's next?");
               setGenStatus("");
@@ -2395,6 +2407,7 @@
       } else {
         sessionItems.push({ ...v, cloudIdx: idx });
         updateCloudHeartState(idx, true);
+        posthog.capture('variation_hearted', { name: v.name, tempo: v.tempo });
       }
       renderSessionPanel();
       saveSessionToStorage();
@@ -2647,6 +2660,7 @@
           showToast('Save failed: ' + (err.detail || 'Unknown error'));
           return;
         }
+        posthog.capture('project_saved', { name, variation_count: sessionItems.length });
         if (fromModal) closeSaveProjectModal();
         btn.textContent = fromModal ? 'Saved ✓' : 'Saved ✓';
         setTimeout(() => {
@@ -2834,6 +2848,14 @@
     document.addEventListener("dragend", e => {
       const link = e.target.closest("a.download[draggable]");
       if (link) link.classList.remove("dragging");
+    });
+
+    document.addEventListener('click', (e) => {
+      const a = e.target.closest('a[download]');
+      if (a) {
+        const type = a.href.includes('.mid') ? 'midi' : 'wav';
+        posthog.capture('file_downloaded', { file_type: type });
+      }
     });
 
     initAuth();
