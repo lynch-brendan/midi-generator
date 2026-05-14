@@ -236,7 +236,7 @@ def _process_variation(var: dict, gm_patch: int, slug: str, is_drums: bool = Fal
         "tempo": info.tempo,
         "note_count": info.note_count,
         "midi_url": f"/output/{slug}/{midi_path.name}",
-        "wav_url": f"/output/{slug}/{wav_path.name}",
+        "wav_url": f"/output/{slug}/{wav_path.name}" if wav_path.exists() else None,
     }
 
 
