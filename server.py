@@ -720,6 +720,32 @@ async def list_project_files(project_id: str, request: Request, db=Depends(get_d
 
 
 # ---------------------------------------------------------------------------
+# PostHog reverse proxy — routes analytics through first-party domain to
+# avoid Cloudflare blocking outbound requests to us.i.posthog.com
+# ---------------------------------------------------------------------------
+
+@app.api_route("/ingest/{path:path}", methods=["GET", "POST", "OPTIONS"])
+async def posthog_proxy(path: str, request: Request):
+    import httpx
+    target = f"https://us.i.posthog.com/{path}"
+    params = dict(request.query_params)
+    body = await request.body()
+    headers = {
+        "content-type": request.headers.get("content-type", "application/json"),
+    }
+    async with httpx.AsyncClient() as client:
+        resp = await client.request(
+            method=request.method,
+            url=target,
+            params=params,
+            content=body,
+            headers=headers,
+            timeout=10,
+        )
+    return JSONResponse(content=resp.json() if resp.content else {}, status_code=resp.status_code)
+
+
+# ---------------------------------------------------------------------------
 # Static file mounts (must come last)
 # ---------------------------------------------------------------------------
 
