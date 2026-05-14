@@ -1842,6 +1842,10 @@
     }
 
     function autoPlayVariation(idx) {
+      if (abortController) {
+        autoPlayWaitingForIdx = idx;
+        return;
+      }
       selectCloud(idx, true);
       const panel = document.getElementById("variationPanel");
       const audio = panel.querySelector("audio");
@@ -2350,6 +2354,11 @@
         abortController = null;
         btn.disabled = false;
         if (currentUser) refreshUsage();
+        if (autoPlayEnabled && autoPlayWaitingForIdx >= 0 && currentVariations[autoPlayWaitingForIdx]) {
+          const idx = autoPlayWaitingForIdx;
+          autoPlayWaitingForIdx = -1;
+          autoPlayVariation(idx);
+        }
       }
     }
 
