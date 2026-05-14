@@ -2125,10 +2125,8 @@
           <span class="vp-tempo">${v.tempo} BPM${v.key ? ' · ' + escHtml(v.key) : ''}</span>
         </div>
         <div class="vp-actions">
-          ${v.wav_url && !abortController
+          ${v.wav_url
             ? `<audio controls preload="none" src="${escHtml(v.wav_url)}"></audio>`
-            : v.wav_url && abortController
-            ? `<span style="color:var(--text-dim);font-size:0.76rem">tap again to play once all 5 load</span>`
             : `<span style="color:var(--text-dim);font-size:0.76rem">No audio</span>`}
           <a class="download" href="${escHtml(v.midi_url)}" download draggable="true" data-mime="audio/midi">MIDI</a>
           ${v.wav_url ? `<a class="download" href="${escHtml(v.wav_url)}" download draggable="true" data-mime="audio/wav">WAV</a>` : ""}

@@ -13,7 +13,7 @@ from typing import List, Dict, Optional
 
 from core import drum_kits
 
-SAMPLE_RATE = 44100
+SAMPLE_RATE = 22050
 
 _BUNDLED = Path(__file__).parent.parent / "samples" / "drums"
 _FL_STUDIO = Path("/Applications/FL Studio 21.app/Contents/Resources/FL/Data/Patches/Packs/All drum packs/Roland Tr-808")

@@ -142,7 +142,7 @@ def render_midi_to_wav(
         for key, val in preset.items():
             reverb_flags += ["-o", f"{key}={val}"]
 
-        base_flags = ["-ni", "-o", "audio.driver=file", "-F", str(wav_path), "-r", "44100"]
+        base_flags = ["-ni", "-o", "audio.driver=file", "-F", str(wav_path), "-r", "22050"]
 
         def _run(extra):
             cmd = [fluidsynth] + base_flags + extra + [str(soundfont), str(midi_path)]
