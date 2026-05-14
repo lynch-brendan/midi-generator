@@ -2135,9 +2135,9 @@
         <button class="vp-close" onclick="closeVariationPanel()">✕</button>
       `;
       panel.querySelector(".more-like").addEventListener("click", () => {
+        if (abortController) return;
         const refined = `${v.prompt} — more like: "${v.name}", ${v.tempo} BPM, ${v.character}`;
         document.getElementById("prompt").value = refined;
-        if (abortController) abortController.abort();
         generate();
       });
       if (autoPlay) {

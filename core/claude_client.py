@@ -11,7 +11,7 @@ from typing import Dict, Any, Generator
 import anthropic
 
 MODEL = "claude-sonnet-4-6"
-MAX_TOKENS = 8096
+MAX_TOKENS = 16000
 SYSTEM_PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "system_prompt.txt"
 
 
