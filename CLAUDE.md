@@ -92,7 +92,7 @@ web/privacy.html           — Privacy policy
 | GET | `/api/projects/{id}/files` | List files in project |
 
 ## Tiers
-- **Free:** 3 generations/day (anonymous IP), 10 lifetime (signed in)
+- **Free:** 5 lifetime (anonymous, tracked via browser cookie), 15 lifetime (signed in)
 - **Creator:** $12/mo, 300 generations/month
 - **Pro:** $20/mo, 1000 generations/month
 - **Admin:** unlimited (set via `ADMIN_EMAILS` or `ADMIN_IPS` env vars)
@@ -115,9 +115,23 @@ web/privacy.html           — Privacy policy
 - System prompt KEY RULE enforces no two variations share the same key
 - `key` shown in session panel item meta line and in detail panel
 
+## Audio rendering
+- FluidSynth reverb is applied per GM patch family: bass (32–39) gets none, strings/pads/ensemble/pipe (40–55, 72–79, 88–103) get a wide hall, everything else gets a small room
+- Reverb flags passed via `-o synth.reverb.*` to the fluidsynth CLI in `core/audio_renderer.py`
+- Drum renders (`core/drum_synth.py`) are stereo — each kit piece has a fixed pan position (kick center, hats left/right, toms spread). Early reflections (3 short delay taps) add room feel without washing out transients
+- Drum sample rate is 22050 Hz
+
+## Analytics (PostHog)
+- PostHog project ID: 422391 (US region)
+- Snippet is in `web/index.html` `<head>` — uses hardcoded `us-assets.i.posthog.com` asset URL (the default snippet's URL transform produces a dead hostname for US region)
+- Events are proxied through `/ingest` on the FastAPI server to bypass Cloudflare blocking — see `posthog_proxy` endpoint in `server.py`
+- PostHog `api_host` is set to `https://museaimusician.com/ingest`, `ui_host` to `https://us.posthog.com`
+- Tracked events: `generate_submitted` (prompt, is_reply), `variation_ready` (name, tempo, index), `variation_hearted`, `file_downloaded` (file_type), `upgrade_modal_shown`, `signin_modal_shown`, `project_saved`
+- Signed-in users are identified via `posthog.identify()` in `initAuth()` using their Google OAuth email
+
 ## Code conventions
 - No JS framework — vanilla JS only, no build step
 - Keep all frontend in `web/index.html` (one file)
 - Backend is one file (`server.py`) importing from `core/`
 - Prompt engineering lives in `prompts/system_prompt.txt` — this is the main lever for output quality
-- Always commit and push after changes so Railway deploys
+- Always commit and push after changes so Railway deploys — do this automatically without asking for confirmation
