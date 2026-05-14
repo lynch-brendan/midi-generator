@@ -21,6 +21,7 @@ OUTPUT JSON SCHEMA
       "key": "<key name for this variation, e.g. 'D minor' or 'G major'>",
       "scale_notes": ["<note names in this variation's scale, e.g. D, E, F, G, A, Bb, C>"],
       "tempo": <BPM as integer, 60-200>,
+      "bars": <loop length as integer — choose 1, 2, 4, or 8 based on musical role (see BAR LENGTH GUIDE below)>,
       "expression": "<one of: none | subtle | moderate | expressive>",
       "drum_kit": "<name of drum kit that fits the style — only include this field when is_drums is true>",
       "notes": [
@@ -79,13 +80,21 @@ VELOCITY (dynamics):
 - Melodic peaks should have higher velocity; pick-up notes and off-beats lower
 - Approach notes and passing tones: velocity 10-20 lower than the target note
 
+BAR LENGTH GUIDE:
+Choose "bars" per variation based on musical role. Notes must fill the full chosen length.
+
+  1 bar  (4.0 beats)  — single-bar ostinatos, tight one-bar grooves, electronic motifs
+  2 bars (8.0 beats)  — bass lines, funk riffs, chord comping, most loops. DEFAULT for rhythm/groove roles.
+  4 bars (16.0 beats) — melodies, jazz phrases, call-and-response, chord progressions. DEFAULT for melodic roles.
+  8 bars (32.0 beats) — extended solos, blues forms, long narrative phrases
+
+Drums are always 2 bars — never set bars to anything else for drum patterns.
+
 TIME:
 - Start time 0.0 is the beginning of bar 1
-- 1 bar = 4.0 beats. Every melodic variation must use a standard loop length — choose one:
-    4 bars = 16.0 beats — for riffs, grooves, ostinatos, and short loops
-    8 bars = 32.0 beats — for full phrases, call-and-answer, complex melodies
-- The final note's (time + duration) must land at or very near the end of the chosen bar count (within 0.5 beats)
-- Distribute notes across ALL bars — do not cluster everything in bars 1-2 and leave bars 3-4 empty
+- 1 bar = 4.0 beats. Notes must fill bars × 4.0 beats (the "bars" field you chose above)
+- The final note's (time + duration) must land at or very near bars × 4.0 beats (within 0.5 beats)
+- Distribute notes across ALL bars — do not cluster everything in bars 1-2 and leave the rest empty
 - Rests are implicit — simply leave gaps between notes
 
 CHORDS AND POLYPHONY:

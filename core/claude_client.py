@@ -117,8 +117,8 @@ def _user_message(prompt: str) -> str:
         "Choose the most appropriate instrument for this style. "
         "Each variation must have its own key and scale_notes — vary the tonal center across the 5 variations. "
         "Return the complete JSON object with all 5 variations, each with a full note sequence. "
-        "Each variation must fill exactly 4 or 8 bars (16.0 or 32.0 beats) — choose based on style. "
-        "The last note must land at or near the end of the chosen bar count. "
+        "Each variation must include a 'bars' field (1, 2, 4, or 8) — choose based on musical role per the BAR LENGTH GUIDE. "
+        "The last note must land at or near bars × 4.0 beats. "
         "Remember: return ONLY raw JSON, no markdown."
     )
 

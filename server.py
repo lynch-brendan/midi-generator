@@ -199,12 +199,18 @@ class SaveProjectRequest(BaseModel):
 # Existing generation logic
 # ---------------------------------------------------------------------------
 
-def _infer_bars(notes) -> int:
-    """Snap note content to the nearest standard loop length (4 or 8 bars)."""
+def _infer_bars(notes, declared: int = None) -> int:
+    """Return the loop length in bars — use Claude's declared value if valid, else infer from notes."""
+    if declared in (1, 2, 4, 8, 16):
+        return declared
     if not notes:
         return 4
     max_beat = max(float(n["time"]) + float(n["duration"]) for n in notes)
-    if max_beat <= 16.5:
+    if max_beat <= 4.5:
+        return 1
+    elif max_beat <= 8.5:
+        return 2
+    elif max_beat <= 16.5:
         return 4
     elif max_beat <= 32.5:
         return 8
@@ -247,7 +253,7 @@ def _process_variation(var: dict, gm_patch: int, slug: str, is_drums: bool = Fal
         for n in notes:
             n["time"] = round(round(float(n["time"]) / grid) * grid, 4)
 
-    bars = _infer_bars(notes)
+    bars = _infer_bars(notes, declared=var.get("bars"))
     notes_with_expression = apply_expression(notes, gm_patch, expression_level, is_drums)
     write_midi(midi_path, notes_with_expression, info.tempo, gm_patch, channel, bars=bars)
 
