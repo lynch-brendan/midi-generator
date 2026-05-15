@@ -1306,6 +1306,9 @@
     .session-item-dl:hover { color: var(--text); }
     .session-item-remove { color: var(--border); }
     .session-item-remove:hover { color: var(--red); }
+    .session-item-seed { color: var(--text-dim); font-size: 0.78rem; opacity: 0; transition: opacity 0.15s, color 0.15s; }
+    .session-item:hover .session-item-seed { opacity: 1; }
+    .session-item-seed:hover { color: var(--accent); }
 
     .session-footer {
       padding-top: 14px;
@@ -2130,7 +2133,6 @@
         <button class="vp-close" onclick="closeVariationPanel()">✕</button>
       `;
       panel.querySelector(".more-like").addEventListener("click", () => {
-        if (abortController) return;
         showIterationBar(v);
         closeVariationPanel();
       });
@@ -2465,6 +2467,7 @@
             ${meta ? `<div class="session-item-meta">${escHtml(meta)}</div>` : ''}
           </div>
           <div class="session-item-actions">
+            ${item.notes ? `<button class="session-item-seed" title="More like this" onclick="seedFromSession(${i})">✦</button>` : ''}
             ${item.wav_url ? `<button class="session-item-play" id="session-play-${i}" title="Play / Pause" onclick="playSessionItem(${i})">▶</button>` : ''}
             ${item.midi_url ? `<a class="session-item-dl" href="${escHtml(item.midi_url)}" download title="Download MIDI">MIDI</a>` : ''}
             ${item.wav_url ? `<a class="session-item-dl" href="${escHtml(item.wav_url)}" download title="Download WAV">WAV</a>` : ''}
@@ -2504,6 +2507,7 @@
           ${item.notes ? `<button class="play-btn">▶ Play</button>` : item.wav_url ? `<audio controls preload="none" src="${escHtml(item.wav_url)}"></audio>` : ''}
           ${item.midi_url ? `<a class="download" href="${escHtml(item.midi_url)}" download>MIDI</a>` : ''}
           ${item.wav_url ? `<a class="download" href="${escHtml(item.wav_url)}" download>WAV</a>` : ''}
+          ${item.notes ? `<button class="more-like">More like this</button>` : ''}
         </div>
         <button class="vp-close" onclick="closeVariationPanel()">✕</button>`;
       openVariationPanel();
@@ -2513,6 +2517,14 @@
           unlockAudio();
           if (sessionPlayBtn.textContent.startsWith('⏸')) { stopPlayback(); }
           else { playVariation(item); }
+        });
+      }
+      const sessionMoreLike = panel.querySelector('.more-like');
+      if (sessionMoreLike) {
+        sessionMoreLike.addEventListener('click', () => {
+          showIterationBar(item);
+          closeVariationPanel();
+          if (!isDesktop()) closeSessionPanel();
         });
       }
       if (!isDesktop()) closeSessionPanel();
@@ -2813,6 +2825,13 @@
     // ==========================================================================
     // Iteration bar (seed variation for "More like this")
     // ==========================================================================
+
+    function seedFromSession(i) {
+      const item = sessionItems[i];
+      if (!item || !item.notes) return;
+      showIterationBar(item);
+      if (!isDesktop()) closeSessionPanel();
+    }
 
     function showIterationBar(variation) {
       seedVariation = variation;
