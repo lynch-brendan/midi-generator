@@ -1203,7 +1203,7 @@
 
     .btn-session-clear:hover { color: var(--text-muted); }
 
-    /* Session title bar — top center of page */
+    /* Session title bar — top center of content area */
     .session-title-bar {
       position: fixed;
       top: 56px;
@@ -1212,16 +1212,49 @@
       display: flex;
       justify-content: center;
       align-items: center;
-      padding: 6px 16px;
+      padding: 8px 16px;
       z-index: 300;
       pointer-events: none;
+      transition: left 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    @media (min-width: 900px) {
+      body.panel-open .session-title-bar { left: 280px; }
     }
 
     .session-title-bar-inner {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 0;
       pointer-events: all;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 4px 6px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+
+    /* Lock controls inside the title bar — no box, just underline to match session input */
+    .session-title-bar-inner .lock-group {
+      background: none;
+      border: none;
+      border-radius: 0;
+      padding: 0 8px;
+      gap: 4px;
+    }
+    .session-title-bar-inner .lock-group.locked { background: none; }
+    .session-title-bar-inner .lock-label { font-size: 0.62rem; }
+    .session-title-bar-inner .lock-select,
+    .session-title-bar-inner .lock-tempo-input { font-size: 0.78rem; color: var(--text-muted); }
+    .session-title-bar-inner .lock-group.locked .lock-select,
+    .session-title-bar-inner .lock-group.locked .lock-tempo-input { color: var(--accent); font-weight: 500; }
+
+    .session-title-bar-divider {
+      width: 1px;
+      height: 16px;
+      background: var(--border);
+      margin: 0 4px;
+      flex-shrink: 0;
     }
 
     .session-name-input {
@@ -1666,10 +1699,11 @@
         <span class="lock-label">BPM</span>
         <input type="number" class="lock-tempo-input" id="lockTempo" min="40" max="240" placeholder="any" oninput="updateLockState()" />
       </div>
-      <div style="width:1px;height:16px;background:var(--border);margin:0 4px;"></div>
-      <input type="text" class="session-name-input" id="sessionNameInput" placeholder="Session 1" maxlength="60" />
-      <button class="btn-save-session" id="btnSaveSession" onclick="saveProject()">Save ↗</button>
-      <button class="btn-save-session" onclick="promptNewSession()" title="Start a new session">+ New</button>
+      <div class="session-title-bar-divider"></div>
+      <input type="text" class="session-name-input" id="sessionNameInput" placeholder="Session 1" maxlength="60" style="border-bottom:none;color:var(--text-muted);width:100px;" />
+      <div class="session-title-bar-divider"></div>
+      <button class="btn-save-session" id="btnSaveSession" onclick="saveProject()" style="border:none;padding:0 8px;">Save ↗</button>
+      <button class="btn-save-session" onclick="promptNewSession()" title="Start a new session" style="border:none;padding:0 8px;">+ New</button>
     </div>
   </div>
 
