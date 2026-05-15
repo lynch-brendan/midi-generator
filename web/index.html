@@ -1253,7 +1253,7 @@
     /* Project settings bar — always centered in full viewport */
     .project-settings-bar {
       position: fixed;
-      top: 122px;
+      top: 114px;
       left: 0;
       right: 0;
       display: flex;
@@ -1447,29 +1447,36 @@
        Keep strip on clouds
     ----------------------------------------------------------------------- */
 
-    .cloud-keep-strip {
+    .cloud-action-strip {
       position: absolute;
       bottom: 0;
       left: 0;
       right: 0;
       display: flex;
+      border-top: 1px solid var(--border-soft);
+      z-index: 2;
+      overflow: hidden;
+      border-radius: 0 0 27px 27px;
+    }
+    .cloud-keep-strip, .cloud-more-strip {
+      flex: 1;
+      display: flex;
       align-items: center;
       justify-content: center;
-      gap: 4px;
-      padding: 5px 10px;
-      font-size: 0.65rem;
+      gap: 3px;
+      padding: 5px 6px;
+      font-size: 0.62rem;
       color: var(--text-dim);
       cursor: pointer;
-      border-top: 1px solid var(--border-soft);
       background: transparent;
       transition: background 0.15s, color 0.15s;
       user-select: none;
       letter-spacing: 0.02em;
-      z-index: 2;
     }
-
+    .cloud-keep-strip { border-right: 1px solid var(--border-soft); }
     .cloud-keep-strip:hover { color: var(--text-muted); background: var(--bg-card); }
-    .cloud-keep-strip.kept { background: var(--accent); color: var(--accent-fg); border-top-color: transparent; }
+    .cloud-keep-strip.kept { background: var(--accent); color: var(--accent-fg); border-right-color: transparent; }
+    .cloud-more-strip:hover { color: var(--text-muted); background: var(--bg-card); }
 
     /* -----------------------------------------------------------------------
        First-time keep hint nudge
@@ -1695,6 +1702,7 @@
 
   <!-- Project settings bar — below title bar -->
   <div class="project-settings-bar">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:3px;">
     <div class="project-settings-inner">
       <div class="lock-group" id="keyLockGroup">
         <span class="lock-label">KEY</span>
@@ -1733,6 +1741,8 @@
       <button id="autoPlayToggle" onclick="toggleAutoPlay()" title="Toggle auto-play" style="background:none;border:none;font-size:0.72rem;cursor:pointer;display:flex;align-items:center;gap:4px;letter-spacing:0.01em;color:var(--text-muted);padding:0 12px;">
         Auto-play <span id="autoPlayState" style="font-weight:600;">on</span>
       </button>
+    </div>
+    <p style="font-size:0.65rem;color:var(--text-dim);margin:0;letter-spacing:0.02em;">All output is royalty free.</p>
     </div>
   </div>
 
@@ -1812,8 +1822,6 @@
           <div id="charHeldInstrument" style="position:absolute;top:138px;left:50%;transform:translateX(-50%);font-size:30px;opacity:0;transition:opacity 0.3s;pointer-events:none;line-height:1;"></div>
         </div>
       </div>
-
-      <p style="font-size:0.68rem;color:var(--text-dim);letter-spacing:0.02em;text-align:center;margin:6px 0 2px;">All output is royalty free.</p>
 
       <p id="genStatus" style="font-size:0.78rem;color:var(--text-muted);text-align:center;min-height:18px;margin-bottom:4px;letter-spacing:0.01em;"></p>
 
@@ -2287,7 +2295,7 @@
       const cloud = document.querySelector(`.thought-cloud[data-idx="${idx}"]`);
       if (!cloud) return;
       cloud.className = "thought-cloud visible";
-      cloud.innerHTML = `<span class="cloud-name">${escHtml(variation.name)}</span><button class="cloud-play" title="Play">▶</button><div class="cloud-keep-strip" onclick="heartCloud(event,${idx})"><span>♥</span><span class="keep-label">keep this</span></div>`;
+      cloud.innerHTML = `<span class="cloud-name">${escHtml(variation.name)}</span><button class="cloud-play" title="Play">▶</button><div class="cloud-action-strip"><div class="cloud-keep-strip" onclick="heartCloud(event,${idx})"><span>♥</span><span class="keep-label">keep this</span></div><div class="cloud-more-strip" onclick="cloudMoreLikeThis(event,${idx})"><span>✦</span><span>more like this</span></div></div>`;
       cloud.addEventListener("click", () => selectCloud(idx));
       cloud.querySelector(".cloud-play").addEventListener("click", (e) => {
         e.stopPropagation();
@@ -3061,6 +3069,14 @@
     // ==========================================================================
     // Iteration bar (seed variation for "More like this")
     // ==========================================================================
+
+    function cloudMoreLikeThis(e, idx) {
+      e.stopPropagation();
+      const v = currentVariations[idx];
+      if (!v) return;
+      showIterationBar(v);
+      document.getElementById('prompt').focus();
+    }
 
     function seedFromSession(i) {
       const item = sessionItems[i];
