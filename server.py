@@ -190,6 +190,10 @@ class SaveProjectFileRequest(BaseModel):
     midi_url: str
     wav_url: Optional[str] = None
 
+class PromoteFilesRequest(BaseModel):
+    midi_url: str
+    wav_url: Optional[str] = None
+
 class SaveProjectRequest(BaseModel):
     name: str
     files: list[SaveProjectFileRequest] = []
@@ -638,6 +642,28 @@ async def list_projects(request: Request, db=Depends(get_db)):
             "file_count": file_count,
         })
     return JSONResponse(result)
+
+
+@app.post("/api/promote-files")
+async def promote_files(body: PromoteFilesRequest):
+    """Upload a hearted variation's files to R2 so URLs survive server restarts."""
+    import uuid as _uuid_mod
+    result = {"midi_url": body.midi_url, "wav_url": body.wav_url}
+    if not r2_enabled():
+        return result
+    uid = str(_uuid_mod.uuid4())[:8]
+    midi_local = _url_to_local_path(body.midi_url)
+    if midi_local and midi_local.exists():
+        r2_url = upload_to_r2(midi_local, f"hearted/{uid}/{midi_local.name}")
+        if r2_url:
+            result["midi_url"] = r2_url
+    if body.wav_url:
+        wav_local = _url_to_local_path(body.wav_url)
+        if wav_local and wav_local.exists():
+            r2_url = upload_to_r2(wav_local, f"hearted/{uid}/{wav_local.name}")
+            if r2_url:
+                result["wav_url"] = r2_url
+    return result
 
 
 @app.post("/api/projects")

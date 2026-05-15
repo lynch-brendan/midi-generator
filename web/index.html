@@ -2416,9 +2416,22 @@
         sessionItems.splice(existing, 1);
         updateCloudHeartState(idx, false);
       } else {
-        sessionItems.push({ ...v, cloudIdx: idx });
+        const item = { ...v, cloudIdx: idx };
+        sessionItems.push(item);
         updateCloudHeartState(idx, true);
         posthog.capture('variation_hearted', { name: v.name, tempo: v.tempo });
+        // Promote local files to R2 so URLs survive server restarts
+        fetch('/api/promote-files', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ midi_url: v.midi_url, wav_url: v.wav_url })
+        }).then(r => r.ok ? r.json() : null).then(data => {
+          if (!data) return;
+          item.midi_url = data.midi_url;
+          item.wav_url = data.wav_url;
+          renderSessionPanel();
+          saveSessionToStorage();
+        }).catch(() => {});
       }
       renderSessionPanel();
       saveSessionToStorage();
