@@ -151,7 +151,7 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 60px 24px 160px;
+      padding: 80px 24px 160px;
       transition: padding-left 0.28s cubic-bezier(0.4, 0, 0.2, 1),
                   padding-bottom 0.18s ease;
     }
@@ -1203,7 +1203,7 @@
 
     .btn-session-clear:hover { color: var(--text-muted); }
 
-    /* Session title bar — top center of content area */
+    /* Session title bar — always centered in full viewport */
     .session-title-bar {
       position: fixed;
       top: 56px;
@@ -1212,14 +1212,9 @@
       display: flex;
       justify-content: center;
       align-items: center;
-      padding: 8px 16px;
+      padding: 8px 16px 4px;
       z-index: 300;
       pointer-events: none;
-      transition: left 0.28s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-
-    @media (min-width: 900px) {
-      body.panel-open .session-title-bar { left: 280px; }
     }
 
     .session-title-bar-inner {
@@ -1257,20 +1252,16 @@
       flex-shrink: 0;
     }
 
-    /* Project settings bar — sits below the session title bar */
+    /* Project settings bar — always centered in full viewport */
     .project-settings-bar {
       position: fixed;
-      top: 96px;
+      top: 100px;
       left: 0;
       right: 0;
       display: flex;
       justify-content: center;
       z-index: 299;
       pointer-events: none;
-      transition: left 0.28s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-    @media (min-width: 900px) {
-      body.panel-open .project-settings-bar { left: 280px; }
     }
     .project-settings-inner {
       display: flex;
