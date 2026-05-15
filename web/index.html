@@ -20,6 +20,7 @@
       ui_host: 'https://us.posthog.com',
     });
   </script>
+  <script src="https://unpkg.com/soundfont-player/dist/soundfont-player.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -404,7 +405,7 @@
       opacity: 0.75;
     }
 
-    a.download, button.more-like {
+    a.download, button.more-like, button.play-btn {
       color: var(--text-muted);
       font-size: 0.76rem;
       border: 1px solid var(--border);
@@ -421,7 +422,7 @@
     a.download:active { cursor: grabbing; }
     a.download.dragging { opacity: 0.4; border-color: var(--text-muted); }
 
-    a.download:hover, button.more-like:hover {
+    a.download:hover, button.more-like:hover, button.play-btn:hover {
       color: var(--text);
       border-color: var(--text-muted);
       background: var(--bg-input);
@@ -1006,11 +1007,9 @@
       min-width: 0;
     }
 
-    .vp-actions audio {
-      height: 32px;
-      flex: 1;
-      min-width: 120px;
-      max-width: 340px;
+    button.play-btn {
+      min-width: 80px;
+      font-weight: 500;
     }
 
     .vp-close {
@@ -1072,7 +1071,7 @@
         padding: 10px 14px;
       }
       .vp-header { max-width: 140px; }
-      .vp-actions audio { min-width: 80px; }
+      button.play-btn { min-width: 70px; }
     }
 
     @media (max-width: 860px) {
@@ -1832,6 +1831,93 @@
       audioUnlocked = true;
     }
 
+    // ==========================================================================
+    // Web Audio playback (soundfont-player)
+    // ==========================================================================
+
+    const GM_INSTRUMENTS = [
+      'acoustic_grand_piano','bright_acoustic_piano','electric_grand_piano','honkytonk_piano',
+      'electric_piano_1','electric_piano_2','harpsichord','clavinet',
+      'celesta','glockenspiel','music_box','vibraphone','marimba','xylophone','tubular_bells','dulcimer',
+      'drawbar_organ','percussive_organ','rock_organ','church_organ','reed_organ','accordion','harmonica','tango_accordion',
+      'acoustic_guitar_nylon','acoustic_guitar_steel','electric_guitar_jazz','electric_guitar_clean',
+      'electric_guitar_muted','overdriven_guitar','distortion_guitar','guitar_harmonics',
+      'acoustic_bass','electric_bass_finger','electric_bass_pick','fretless_bass',
+      'slap_bass_1','slap_bass_2','synth_bass_1','synth_bass_2',
+      'violin','viola','cello','contrabass','tremolo_strings','pizzicato_strings','orchestral_harp','timpani',
+      'string_ensemble_1','string_ensemble_2','synth_strings_1','synth_strings_2',
+      'choir_aahs','voice_oohs','synth_choir','orchestra_hit',
+      'trumpet','trombone','tuba','muted_trumpet','french_horn','brass_section','synth_brass_1','synth_brass_2',
+      'soprano_sax','alto_sax','tenor_sax','baritone_sax','oboe','english_horn','bassoon','clarinet',
+      'piccolo','flute','recorder','pan_flute','blown_bottle','shakuhachi','whistle','ocarina',
+      'lead_1_square','lead_2_sawtooth','lead_3_calliope','lead_4_chiff','lead_5_charang',
+      'lead_6_voice','lead_7_fifths','lead_8_bass_lead',
+      'pad_1_new_age','pad_2_warm','pad_3_polysynth','pad_4_choir',
+      'pad_5_bowed','pad_6_metallic','pad_7_halo','pad_8_sweep',
+      'fx_1_rain','fx_2_soundtrack','fx_3_crystal','fx_4_atmosphere',
+      'fx_5_brightness','fx_6_goblins','fx_7_echoes','fx_8_scifi',
+      'sitar','banjo','shamisen','koto','kalimba','bagpipe','fiddle','shanai',
+      'tinkle_bell','agogo','steel_drums','woodblock','taiko_drum','melodic_tom','synth_drum','reverse_cymbal',
+      'guitar_fret_noise','breath_noise','seashore','bird_tweet','telephone_ring','helicopter','applause','gunshot',
+    ];
+
+    let _audioCtx = null;
+    let _instrumentCache = {};
+    let _activeInstrument = null;
+    let _playEndTimer = null;
+
+    function _getAudioCtx() {
+      if (!_audioCtx) {
+        _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (_audioCtx.state === 'suspended') _audioCtx.resume();
+      return _audioCtx;
+    }
+
+    function _loadInstrument(gmPatch, isDrums) {
+      const name = isDrums ? 'percussion' : (GM_INSTRUMENTS[gmPatch] || 'acoustic_grand_piano');
+      if (_instrumentCache[name]) return Promise.resolve(_instrumentCache[name]);
+      return Soundfont.instrument(_getAudioCtx(), name).then(inst => {
+        _instrumentCache[name] = inst;
+        return inst;
+      });
+    }
+
+    function stopPlayback() {
+      if (_activeInstrument) { try { _activeInstrument.stop(); } catch(_) {} _activeInstrument = null; }
+      if (_playEndTimer) { clearTimeout(_playEndTimer); _playEndTimer = null; }
+      const btn = document.querySelector('.play-btn');
+      if (btn) btn.textContent = '▶ Play';
+    }
+
+    function playVariation(v, onEnd) {
+      if (typeof Soundfont === 'undefined' || !v || !v.notes || !v.notes.length) {
+        if (onEnd) onEnd(); return;
+      }
+      stopPlayback();
+      _loadInstrument(v.gm_patch, v.is_drums).then(instrument => {
+        _activeInstrument = instrument;
+        const ac = _getAudioCtx();
+        const bps = (v.tempo || 120) / 60;
+        const now = ac.currentTime + 0.05;
+        let lastEnd = 0;
+        v.notes.forEach(n => {
+          const when = now + n.time / bps;
+          const dur = v.is_drums ? 1.5 : Math.max(0.05, (n.duration || 0.25) / bps);
+          instrument.play(n.pitch, when, { duration: dur, gain: Math.min(1, (n.velocity || 80) / 100) });
+          lastEnd = Math.max(lastEnd, n.time / bps + dur);
+        });
+        const btn = document.querySelector('.play-btn');
+        if (btn) btn.textContent = '⏸ Pause';
+        _playEndTimer = setTimeout(() => {
+          _playEndTimer = null;
+          const b = document.querySelector('.play-btn');
+          if (b) b.textContent = '▶ Play';
+          if (onEnd) onEnd();
+        }, (lastEnd + 0.3) * 1000);
+      }).catch(() => { if (onEnd) onEnd(); });
+    }
+
     function toggleAutoPlay() {
       autoPlayEnabled = !autoPlayEnabled;
       const btn = document.getElementById("autoPlayToggle");
@@ -1842,19 +1928,9 @@
     }
 
     function autoPlayVariation(idx) {
-      selectCloud(idx, true);
-      const panel = document.getElementById("variationPanel");
-      const audio = panel.querySelector("audio");
-      if (audio) {
-        // Retry play after canplay in case play() fired before data was ready
-        const tryPlay = () => audio.play().catch(() => {});
-        if (audio.readyState >= 3) {
-          tryPlay();
-        } else {
-          audio.addEventListener("canplay", tryPlay, { once: true });
-        }
-        audio.addEventListener("ended", () => advanceAutoPlay(idx), { once: true });
-      }
+      selectCloud(idx, false);
+      const v = currentVariations[idx];
+      if (v && v.notes) playVariation(v, () => advanceAutoPlay(idx));
     }
 
     function advanceAutoPlay(fromIdx) {
@@ -2056,6 +2132,7 @@
     }
 
     function clearClouds() {
+      stopPlayback();
       document.querySelectorAll(".thought-cloud").forEach(c => c.remove());
       const panel = document.getElementById("variationPanel");
       panel.innerHTML = "";
@@ -2107,6 +2184,7 @@
     }
 
     function selectCloud(idx, autoPlay) {
+      stopPlayback();
       document.querySelectorAll(".thought-cloud").forEach(c =>
         c.classList.toggle("active", parseInt(c.dataset.idx) === idx)
       );
@@ -2115,8 +2193,9 @@
       const v = currentVariations[idx];
       if (!v) return;
 
+      try { _getAudioCtx(); } catch(_) {}  // unlock Web Audio on user tap (iOS)
+
       const panel = document.getElementById("variationPanel");
-      const saveVisible = currentUser ? "visible" : "";
       openVariationPanel();
       panel.className = "variation-panel";
       panel.innerHTML = `
@@ -2125,9 +2204,7 @@
           <span class="vp-tempo">${v.tempo} BPM${v.key ? ' · ' + escHtml(v.key) : ''}</span>
         </div>
         <div class="vp-actions">
-          ${v.wav_url
-            ? `<audio controls preload="none" src="${escHtml(v.wav_url)}"></audio>`
-            : `<span style="color:var(--text-dim);font-size:0.76rem">No audio</span>`}
+          ${v.notes ? `<button class="play-btn">▶ Play</button>` : `<span style="color:var(--text-dim);font-size:0.76rem">No audio</span>`}
           <a class="download" href="${escHtml(v.midi_url)}" download draggable="true" data-mime="audio/midi">MIDI</a>
           ${v.wav_url ? `<a class="download" href="${escHtml(v.wav_url)}" download draggable="true" data-mime="audio/wav">WAV</a>` : ""}
           <button class="more-like">More like this</button>
@@ -2140,16 +2217,15 @@
         document.getElementById("prompt").value = refined;
         generate();
       });
-      const audioEl = panel.querySelector("audio");
-      if (audioEl) {
-        audioEl.addEventListener("error", () => {
-          audioEl.style.display = "none";
-          audioEl.insertAdjacentHTML("afterend", '<span style="color:var(--text-dim);font-size:0.76rem">Audio expired — regenerate to hear</span>');
-        }, { once: true });
-      }
-      if (autoPlay && !abortController) {
-        const audio = panel.querySelector("audio");
-        if (audio) audio.play().catch(() => {});
+      const playBtn = panel.querySelector(".play-btn");
+      if (playBtn) {
+        playBtn.addEventListener("click", () => {
+          if (playBtn.textContent.startsWith("⏸")) {
+            stopPlayback();
+          } else {
+            playVariation(v);
+          }
+        });
       }
     }
 
@@ -2501,12 +2577,19 @@
           <span class="vp-tempo">${item.tempo ? item.tempo + ' BPM' : ''}${item.key ? ' · ' + escHtml(item.key) : ''}</span>
         </div>
         <div class="vp-actions">
-          ${item.wav_url ? `<audio controls preload="none" src="${escHtml(item.wav_url)}"></audio>` : ''}
+          ${item.notes ? `<button class="play-btn">▶ Play</button>` : item.wav_url ? `<audio controls preload="none" src="${escHtml(item.wav_url)}"></audio>` : ''}
           ${item.midi_url ? `<a class="download" href="${escHtml(item.midi_url)}" download>MIDI</a>` : ''}
           ${item.wav_url ? `<a class="download" href="${escHtml(item.wav_url)}" download>WAV</a>` : ''}
         </div>
         <button class="vp-close" onclick="closeVariationPanel()">✕</button>`;
       openVariationPanel();
+      const sessionPlayBtn = panel.querySelector('.play-btn');
+      if (sessionPlayBtn) {
+        sessionPlayBtn.addEventListener('click', () => {
+          if (sessionPlayBtn.textContent.startsWith('⏸')) { stopPlayback(); }
+          else { playVariation(item); }
+        });
+      }
       if (!isDesktop()) closeSessionPanel();
     }
 

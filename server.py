@@ -267,7 +267,11 @@ def _process_variation(var: dict, gm_patch: int, slug: str, is_drums: bool = Fal
         "name": info.name,
         "character": info.character,
         "tempo": info.tempo,
+        "key": var.get("key"),
         "note_count": info.note_count,
+        "notes": notes,
+        "gm_patch": gm_patch,
+        "is_drums": is_drums,
         "midi_url": f"/output/{slug}/{midi_path.name}",
         "wav_url": f"/output/{slug}/{wav_path.name}" if wav_path.exists() else None,
     }
