@@ -887,14 +887,15 @@
     .thought-cloud {
       position: absolute;
       display: flex;
-      align-items: center;
-      gap: 8px;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 3px;
       background: var(--bg-input);
       border: 1px solid var(--border);
       border-radius: 28px;
-      padding: 11px 14px 30px 18px;
+      padding: 10px 14px 36px;
       cursor: pointer;
-      max-width: 158px;
+      max-width: 178px;
       overflow: hidden;
       box-shadow: 0 4px 14px rgba(0,0,0,0.07);
       opacity: 0;
@@ -956,6 +957,21 @@
     .seed-card-meta { font-size: 0.72rem; color: var(--text-muted); margin-top: 1px; }
     .seed-card-clear { background: none; border: none; cursor: pointer; font-size: 1rem; color: var(--text-dim); padding: 2px 4px; border-radius: 4px; transition: color 0.15s; flex-shrink: 0; }
     .seed-card-clear:hover { color: var(--text); }
+
+    .cloud-top {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .cloud-meta {
+      font-size: 0.58rem;
+      color: var(--text-dim);
+      letter-spacing: 0.03em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
 
     .cloud-name {
       font-size: 0.8rem;
@@ -2310,7 +2326,8 @@
       const cloud = document.querySelector(`.thought-cloud[data-idx="${idx}"]`);
       if (!cloud) return;
       cloud.className = "thought-cloud visible";
-      cloud.innerHTML = `<span class="cloud-name">${escHtml(variation.name)}</span><button class="cloud-play" title="Play">▶</button><div class="cloud-action-strip"><div class="cloud-keep-strip" onclick="heartCloud(event,${idx})"><span>♥</span><span class="keep-label">keep this</span></div><div class="cloud-more-strip" onclick="cloudMoreLikeThis(event,${idx})"><span>✦</span><span>build on this</span></div></div>`;
+      const metaParts = [variation.key, variation.tempo ? variation.tempo + ' BPM' : null].filter(Boolean);
+      cloud.innerHTML = `<div class="cloud-top"><span class="cloud-name">${escHtml(variation.name)}</span><button class="cloud-play" title="Play">▶</button></div>${metaParts.length ? `<span class="cloud-meta">${escHtml(metaParts.join(' · '))}</span>` : ''}<div class="cloud-action-strip"><div class="cloud-keep-strip" onclick="heartCloud(event,${idx})"><span>♥</span><span class="keep-label">keep this</span></div><div class="cloud-more-strip" onclick="cloudMoreLikeThis(event,${idx})"><span>✦</span><span>build on this</span></div></div>`;
       cloud.addEventListener("click", () => selectCloud(idx));
       cloud.querySelector(".cloud-play").addEventListener("click", (e) => {
         e.stopPropagation();
@@ -2375,8 +2392,10 @@
         <button class="vp-close" onclick="closeVariationPanel()">✕</button>
       `;
       panel.querySelector(".more-like").addEventListener("click", () => {
-        showIterationBar(v);
+        if (!confirm('Clear current generations and build on this?')) return;
+        clearClouds();
         closeVariationPanel();
+        showIterationBar(v);
       });
       const playBtn = panel.querySelector(".play-btn");
       if (playBtn) {
@@ -2771,8 +2790,10 @@
       const sessionMoreLike = panel.querySelector('.more-like');
       if (sessionMoreLike) {
         sessionMoreLike.addEventListener('click', () => {
-          showIterationBar(item);
+          if (!confirm('Clear current generations and build on this?')) return;
+          clearClouds();
           closeVariationPanel();
+          showIterationBar(item);
           if (!isDesktop()) closeSessionPanel();
         });
       }
@@ -3101,6 +3122,8 @@
       e.stopPropagation();
       const v = currentVariations[idx];
       if (!v) return;
+      if (!confirm('Clear current generations and build on this?')) return;
+      clearClouds();
       showIterationBar(v);
       document.getElementById('prompt').focus();
     }
