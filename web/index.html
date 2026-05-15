@@ -1813,20 +1813,26 @@
 
     function unlockAudio() {
       if (audioUnlocked) return;
-      try {
-        // Initialize the persistent Web Audio context during a user gesture so iOS allows playback
-        if (!_audioCtx) {
-          _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        }
-        if (_audioCtx.state === 'suspended') _audioCtx.resume();
-        // Play a silent buffer — required by iOS to mark the context as user-initiated
-        const buf = _audioCtx.createBuffer(1, 1, _audioCtx.sampleRate);
-        const src = _audioCtx.createBufferSource();
-        src.buffer = buf;
-        src.connect(_audioCtx.destination);
-        src.start(0);
-      } catch (_) {}
       audioUnlocked = true;
+      try {
+        const ac = _getAudioCtx();
+        // Must await resume before playing the silent buffer — iOS only marks the context
+        // as user-initiated once audio actually flows, not just when resume() is called.
+        const doUnlock = () => {
+          try {
+            const buf = ac.createBuffer(1, 1, ac.sampleRate);
+            const src = ac.createBufferSource();
+            src.buffer = buf;
+            src.connect(ac.destination);
+            src.start(0);
+          } catch(_) {}
+        };
+        if (ac.state === 'suspended') {
+          ac.resume().then(doUnlock).catch(() => {});
+        } else {
+          doUnlock();
+        }
+      } catch (_) {}
     }
 
     // ==========================================================================
@@ -1868,8 +1874,15 @@
       if (!_audioCtx) {
         _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       }
-      if (_audioCtx.state === 'suspended') _audioCtx.resume();
       return _audioCtx;
+    }
+
+    // Returns a Promise<AudioContext> that resolves only once the context is actually running.
+    // Critical: scheduling notes before resume() resolves uses stale currentTime and drops them.
+    function _getAudioCtxReady() {
+      const ac = _getAudioCtx();
+      if (ac.state === 'running') return Promise.resolve(ac);
+      return ac.resume().then(() => ac);
     }
 
     function _loadInstrument(gmPatch, isDrums) {
@@ -1893,9 +1906,11 @@
         if (onEnd) onEnd(); return;
       }
       stopPlayback();
-      _loadInstrument(v.gm_patch, v.is_drums).then(instrument => {
+      Promise.all([
+        _loadInstrument(v.gm_patch, v.is_drums),
+        _getAudioCtxReady()
+      ]).then(([instrument, ac]) => {
         _activeInstrument = instrument;
-        const ac = _getAudioCtx();
         const bps = (v.tempo || 120) / 60;
         const now = ac.currentTime + 0.05;
         let lastEnd = 0;
@@ -2191,7 +2206,7 @@
       const v = currentVariations[idx];
       if (!v) return;
 
-      try { _getAudioCtx(); } catch(_) {}  // unlock Web Audio on user tap (iOS)
+      unlockAudio();  // unlock Web Audio on user tap (iOS)
 
       const panel = document.getElementById("variationPanel");
       openVariationPanel();
@@ -2218,6 +2233,7 @@
       const playBtn = panel.querySelector(".play-btn");
       if (playBtn) {
         playBtn.addEventListener("click", () => {
+          unlockAudio();
           if (playBtn.textContent.startsWith("⏸")) {
             stopPlayback();
           } else {
@@ -2588,6 +2604,7 @@
       const sessionPlayBtn = panel.querySelector('.play-btn');
       if (sessionPlayBtn) {
         sessionPlayBtn.addEventListener('click', () => {
+          unlockAudio();
           if (sessionPlayBtn.textContent.startsWith('⏸')) { stopPlayback(); }
           else { playVariation(item); }
         });
