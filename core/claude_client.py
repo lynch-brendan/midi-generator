@@ -190,17 +190,39 @@ def stream_thinking(prompt: str) -> Generator[Dict, None, None]:
             yield {"type": "thought", "token": text}
 
 
-def stream_variations(prompt: str, seed_variation: dict = None, lock_key: str = None, lock_tempo: int = None) -> Generator[Dict, None, None]:
+def _complement_message(seed: dict, lock_key: str, lock_tempo: int) -> str:
+    musical_fields = {k: v for k, v in seed.items() if k not in ("midi_url", "wav_url", "note_count")}
+    seed_json = json.dumps(musical_fields, indent=2)
+    seed_instrument = seed.get("instrument", "the existing part")
+    return (
+        f"The user has an existing musical part and wants complementary sounds to layer alongside it.\n\n"
+        f"EXISTING PART:\n{seed_json}\n\n"
+        f"Generate 5 new musical parts that complement this. Each variation MUST use a DIFFERENT instrument from "
+        f'"{seed_instrument}" and from each other — think about what instruments would form a full arrangement: '
+        "bass, melody, chords/pads, rhythm, atmospheric texture, counter-melody, etc. "
+        "Match the style, energy, and feel of the seed — these parts should sound like they belong in the same song. "
+        "Vary the rhythmic density and register across the 5 parts. "
+        f'LOCKED KEY: Every variation MUST use "{lock_key}" as its key and scale_notes. '
+        f"LOCKED TEMPO: Every variation MUST use exactly {lock_tempo} BPM. "
+        "Each variation must include a 'bars' field. The last note must land at or near bars × 4.0 beats. "
+        "Return ONLY raw JSON, no markdown."
+    )
+
+
+def stream_variations(prompt: str, seed_variation: dict = None, lock_key: str = None, lock_tempo: int = None, complement: bool = False) -> Generator[Dict, None, None]:
     """
     Stream Claude's response and yield parsed objects as they become available.
     Yields: one 'meta' dict first, then one 'variation' dict per variation, then 'done'.
     If seed_variation is provided, Claude evolves that specific variation instead of starting fresh.
+    complement=True generates different instruments that complement the seed (lock_key and lock_tempo required).
     lock_key and lock_tempo pin all variations to an exact key/tempo when set.
     """
     client = anthropic.Anthropic()
     system_prompt = _load_system_prompt()
 
-    if seed_variation:
+    if complement and seed_variation:
+        user_content = _complement_message(seed_variation, lock_key, lock_tempo)
+    elif seed_variation:
         user_content = _seed_user_message(prompt, seed_variation, lock_key, lock_tempo)
     else:
         user_content = _user_message(prompt, lock_key, lock_tempo)

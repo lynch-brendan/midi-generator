@@ -404,7 +404,7 @@
       opacity: 0.75;
     }
 
-    a.download, button.more-like, button.play-btn {
+    a.download, button.more-like, button.complement-btn, button.play-btn {
       color: var(--text-muted);
       font-size: 0.76rem;
       border: 1px solid var(--border);
@@ -421,7 +421,7 @@
     a.download:active { cursor: grabbing; }
     a.download.dragging { opacity: 0.4; border-color: var(--text-muted); }
 
-    a.download:hover, button.more-like:hover, button.play-btn:hover {
+    a.download:hover, button.more-like:hover, button.complement-btn:hover, button.play-btn:hover {
       color: var(--text);
       border-color: var(--text-muted);
       background: var(--bg-input);
@@ -1983,6 +1983,7 @@
     let activeCloudIdx = -1;
     let sessionItems = [];        // hearted variations: [{...variation, sessionIdx}]
     let seedVariation = null;     // variation being iterated on via "More like this"
+    let _complementSeed = null;   // variation to complement (different instruments, same key/tempo)
     let lastUserPrompt = "";
     let projects = [];
     let openProjectId = null;
@@ -2370,12 +2371,18 @@
           <a class="download" href="${escHtml(v.midi_url)}" download draggable="true" data-mime="audio/midi">MIDI</a>
           ${v.wav_url ? `<a class="download" href="${escHtml(v.wav_url)}" download draggable="true" data-mime="audio/wav">WAV</a>` : ""}
           <button class="more-like">More like this</button>
+          ${v.key && v.tempo ? `<button class="complement-btn">Complement ✦</button>` : ''}
         </div>
         <button class="vp-close" onclick="closeVariationPanel()">✕</button>
       `;
       panel.querySelector(".more-like").addEventListener("click", () => {
         showIterationBar(v);
         closeVariationPanel();
+      });
+      const compBtn = panel.querySelector(".complement-btn");
+      if (compBtn) compBtn.addEventListener("click", () => {
+        closeVariationPanel();
+        generateComplement(v);
       });
       const playBtn = panel.querySelector(".play-btn");
       if (playBtn) {
@@ -2500,10 +2507,22 @@
       }, durationMs);
     }
 
+    function generateComplement(v) {
+      // Lock key and tempo to the seed variation's values, then generate complementary parts
+      const keySelect = document.getElementById('lockKey');
+      const tempoInput = document.getElementById('lockTempo');
+      if (v.key) { keySelect.value = v.key; }
+      if (v.tempo) { tempoInput.value = v.tempo; }
+      updateLockState();
+      // Kick off generation immediately with complement mode
+      _complementSeed = v;
+      generate('');
+    }
+
     async function generate(overridePrompt) {
       const promptInput = document.getElementById("prompt");
-      const prompt = overridePrompt || promptInput.value.trim();
-      if (!prompt && !seedVariation) return;
+      const prompt = overridePrompt !== undefined ? overridePrompt : promptInput.value.trim();
+      if (!prompt && !seedVariation && !_complementSeed) return;
 
       lastUserPrompt = prompt;
       posthog.capture('generate_submitted', { prompt, is_iteration: !!seedVariation });
@@ -2511,6 +2530,9 @@
 
       const activeSeed = seedVariation;
       seedVariation = null; // prevent re-use, but keep the card visible until done
+
+      const activeComplement = _complementSeed;
+      _complementSeed = null;
 
       unlockAudio();
 
@@ -2526,7 +2548,12 @@
 
       try {
         const body = { prompt, ...getLocks() };
-        if (activeSeed) body.seed_variation = activeSeed;
+        if (activeComplement) {
+          body.seed_variation = activeComplement;
+          body.complement = true;
+        } else if (activeSeed) {
+          body.seed_variation = activeSeed;
+        }
         const res = await fetch("/api/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
