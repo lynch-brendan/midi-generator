@@ -1814,19 +1814,17 @@
     function unlockAudio() {
       if (audioUnlocked) return;
       try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        const buf = ctx.createBuffer(1, 1, 22050);
-        const src = ctx.createBufferSource();
+        // Initialize the persistent Web Audio context during a user gesture so iOS allows playback
+        if (!_audioCtx) {
+          _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (_audioCtx.state === 'suspended') _audioCtx.resume();
+        // Play a silent buffer — required by iOS to mark the context as user-initiated
+        const buf = _audioCtx.createBuffer(1, 1, _audioCtx.sampleRate);
+        const src = _audioCtx.createBufferSource();
         src.buffer = buf;
-        src.connect(ctx.destination);
+        src.connect(_audioCtx.destination);
         src.start(0);
-        ctx.close();
-      } catch (_) {}
-      // Also unlock HTML5 audio by playing a silent data URI
-      try {
-        const a = new Audio("data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=");
-        a.volume = 0;
-        a.play().catch(() => {});
       } catch (_) {}
       audioUnlocked = true;
     }
@@ -2398,6 +2396,10 @@
             } else if (event.type === "meta") {
               setCharacterInstrument(event.instrument);
               setGenStatus(`${event.instrument}`);
+              // Pre-load the soundfont instrument now so it's cached when variation 1 arrives
+              if (typeof Soundfont !== 'undefined') {
+                _loadInstrument(event.gm_patch, event.is_drums).catch(() => {});
+              }
             } else if (event.type === "variation") {
               const idx = currentVariations.length;
               currentVariations.push({ ...event, prompt });
