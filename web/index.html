@@ -2570,6 +2570,7 @@
             } else if (event.type === "variation") {
               const idx = currentVariations.length;
               currentVariations.push({ ...event, prompt });
+              if (event.instrument) setCharacterInstrument(event.instrument);
               populateCloud(idx, event);
               posthog.capture('variation_ready', { name: event.name, tempo: event.tempo, variation_index: idx + 1 });
             } else if (event.type === "done") {
