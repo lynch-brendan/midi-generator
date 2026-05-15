@@ -1843,6 +1843,9 @@
 
     function autoPlayVariation(idx) {
       if (abortController) {
+        // Select the cloud visually but defer audio.play() until generation finishes.
+        // audio.play() triggers a WAV download that can compete with the SSE stream on mobile.
+        selectCloud(idx, false);
         autoPlayWaitingForIdx = idx;
         return;
       }
@@ -2144,6 +2147,13 @@
         document.getElementById("prompt").value = refined;
         generate();
       });
+      const audioEl = panel.querySelector("audio");
+      if (audioEl) {
+        audioEl.addEventListener("error", () => {
+          audioEl.style.display = "none";
+          audioEl.insertAdjacentHTML("afterend", '<span style="color:var(--text-dim);font-size:0.76rem">Audio expired — regenerate to hear</span>');
+        }, { once: true });
+      }
       if (autoPlay && !abortController) {
         const audio = panel.querySelector("audio");
         if (audio) audio.play().catch(() => {});
