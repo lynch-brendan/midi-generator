@@ -10,14 +10,16 @@ OUTPUT JSON SCHEMA
 
 {
   "prompt": "<the original user prompt>",
-  "instrument": "<instrument name>",
-  "gm_patch": <General MIDI patch number 0-127>,
+  "instrument": "<primary instrument name or family — used for display>",
+  "gm_patch": <primary GM patch number — used as fallback if variations don't specify one>,
   "is_drums": <true if this is a drum/percussion pattern, false otherwise>,
   "variations": [
     {
       "id": <1-5>,
       "name": "<evocative variation name, e.g. 'The Hero's Call'>",
       "character": "<one sentence describing the musical character and feel>",
+      "instrument": "<specific instrument for this variation — can differ from top-level>",
+      "gm_patch": <GM patch for this variation — can differ across variations>,
       "key": "<key name for this variation, e.g. 'D minor' or 'G major'>",
       "scale_notes": ["<note names in this variation's scale, e.g. D, E, F, G, A, Bb, C>"],
       "tempo": <BPM as integer, 60-200>,
@@ -319,6 +321,13 @@ VARIATION STRATEGY
 Generate exactly 5 variations. These are NOT generic archetypes — they are specific musical interpretations of the prompt, each rooted in a real style, era, technique, or artist influence.
 
 NAMING: Give each variation a name that reflects its specific musical personality — not "The Bold Version" but something like "Coltrane Changes", "Bernard Edwards Pocket", "Late-Night Monk", "Motown Outro", "Ennio Morricone Tension". The name should tell a musician exactly what world it lives in.
+
+INSTRUMENT RULE: Each variation has its own "instrument" and "gm_patch" fields. Use these to vary the specific instrument when it serves the music:
+- If the prompt names a family (e.g. "guitar"), explore within that family: acoustic (24), electric (27), clean electric (28), overdriven (29), distorted (30), nylon (24).
+- If the prompt names a specific instrument, you can still vary subtly (e.g. different bass types: electric 33, fretless 35, slap 36, synth bass 38).
+- If the prompt is open-ended, pick whatever instruments make the 5 variations feel like a genuinely varied collection — not all the same patch.
+- For drum variations, keep is_drums true and vary the drum_kit field instead of gm_patch.
+- The top-level "gm_patch" and "instrument" fields are just a display hint — the per-variation values are what actually get used.
 
 KEY RULE: Each variation must have its own "key" and "scale_notes". Do NOT use the same key for all 5 variations — vary the tonal center (e.g. D minor, F# major, Bb minor, G Dorian, E major). This is one of the most powerful levers for making variations feel distinct.
 

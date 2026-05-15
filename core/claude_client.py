@@ -134,9 +134,10 @@ def _user_message(prompt: str, lock_key: str = None, lock_tempo: int = None) -> 
     return (
         f'Generate 5 musical variations for: "{prompt}"\n\n'
         f"Creative direction for this session: {angle}\n\n"
-        "Choose the most appropriate instrument for this style. "
+        "Choose instruments thoughtfully — each variation can use a different specific instrument (different gm_patch). "
+        "If the prompt names a family (guitars, bass, keys), explore within it. If open-ended, pick whatever serves each variation best. "
         f"{key_rule} "
-        "Return the complete JSON object with all 5 variations, each with a full note sequence. "
+        "Return the complete JSON object with all 5 variations, each with a full note sequence and its own instrument + gm_patch fields. "
         "Each variation must include a 'bars' field (1, 2, 4, or 8) — choose based on musical role per the BAR LENGTH GUIDE. "
         "The last note must land at or near bars × 4.0 beats. "
         f"Remember: return ONLY raw JSON, no markdown."

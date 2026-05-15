@@ -250,34 +250,39 @@ def _process_variation(var: dict, gm_patch: int, slug: str, is_drums: bool = Fal
     midi_path = out_dir / f"{idx}-{var_slug}.mid"
     wav_path = out_dir / f"{idx}-{var_slug}.wav"
 
-    channel = 9 if is_drums else 0
+    # Per-variation instrument overrides top-level fallback
+    effective_patch = var.get("gm_patch", gm_patch)
+    effective_drums = var.get("is_drums", is_drums)
+
+    channel = 9 if effective_drums else 0
     expression_level = var.get("expression", "subtle")
 
     notes = var["notes"]
-    if is_drums:
+    if effective_drums:
         grid = 0.25
         for n in notes:
             n["time"] = round(round(float(n["time"]) / grid) * grid, 4)
 
     bars = _infer_bars(notes, declared=var.get("bars"))
-    notes_with_expression = apply_expression(notes, gm_patch, expression_level, is_drums)
-    write_midi(midi_path, notes_with_expression, info.tempo, gm_patch, channel, bars=bars)
+    notes_with_expression = apply_expression(notes, effective_patch, expression_level, effective_drums)
+    write_midi(midi_path, notes_with_expression, info.tempo, effective_patch, channel, bars=bars)
 
-    drum_kit = var.get("drum_kit", None) if is_drums else None
+    drum_kit = var.get("drum_kit", None) if effective_drums else None
 
-    future = _wav_executor.submit(_render_wav, list(notes), info.tempo, bars, is_drums, drum_kit, midi_path, wav_path, gm_patch)
+    future = _wav_executor.submit(_render_wav, list(notes), info.tempo, bars, effective_drums, drum_kit, midi_path, wav_path, effective_patch)
     future.result(timeout=30)
 
     return {
         "id": info.id,
         "name": info.name,
         "character": info.character,
+        "instrument": var.get("instrument"),
         "tempo": info.tempo,
         "key": var.get("key"),
         "note_count": info.note_count,
         "notes": notes,
-        "gm_patch": gm_patch,
-        "is_drums": is_drums,
+        "gm_patch": effective_patch,
+        "is_drums": effective_drums,
         "midi_url": f"/output/{slug}/{midi_path.name}",
         "wav_url": f"/output/{slug}/{wav_path.name}" if wav_path.exists() else None,
     }

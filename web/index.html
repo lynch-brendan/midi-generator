@@ -2363,7 +2363,7 @@
       panel.innerHTML = `
         <div class="vp-header">
           <span class="vp-name">${escHtml(v.name)}</span>
-          <span class="vp-tempo">${v.tempo} BPM${v.key ? ' · ' + escHtml(v.key) : ''}</span>
+          <span class="vp-tempo">${v.instrument ? escHtml(v.instrument) + ' · ' : ''}${v.tempo} BPM${v.key ? ' · ' + escHtml(v.key) : ''}</span>
         </div>
         <div class="vp-actions">
           ${v.notes ? `<button class="play-btn">▶ Play</button>` : `<span style="color:var(--text-dim);font-size:0.76rem">No audio</span>`}
