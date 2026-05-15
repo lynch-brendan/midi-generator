@@ -184,7 +184,6 @@ class GenerateRequest(BaseModel):
     seed_variation: Optional[dict] = None
     lock_key: Optional[str] = None
     lock_tempo: Optional[int] = None
-    complement: bool = False
 
 
 class SaveProjectFileRequest(BaseModel):
@@ -321,7 +320,7 @@ async def generate(req: GenerateRequest, request: Request, db=Depends(get_db)):
         try:
             for event in stream_thinking(req.prompt):
                 yield f"data: {json.dumps(event)}\n\n"
-            for event in stream_variations(req.prompt, seed_variation=req.seed_variation, lock_key=req.lock_key, lock_tempo=req.lock_tempo, complement=req.complement):
+            for event in stream_variations(req.prompt, seed_variation=req.seed_variation, lock_key=req.lock_key, lock_tempo=req.lock_tempo):
                 if event["type"] == "meta":
                     gm_patch = event["gm_patch"]
                     is_drums = event.get("is_drums", False)

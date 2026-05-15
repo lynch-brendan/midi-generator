@@ -148,20 +148,24 @@ def _seed_user_message(prompt: str, seed: dict, lock_key: str = None, lock_tempo
     musical_fields = {k: v for k, v in seed.items() if k not in ("midi_url", "wav_url", "note_count")}
     seed_json = json.dumps(musical_fields, indent=2)
     direction = prompt.strip() or "explore natural variations"
+    seed_instrument = seed.get("instrument", "the existing instrument")
     key_rule = (
         f'Every variation MUST use "{lock_key}" as its key and scale_notes.'
         if lock_key else
         "Each variation must have its own key and scale_notes."
     )
     return (
-        f"The user has a musical variation they want to evolve.\n\n"
+        f"The user has a musical variation they want to build on.\n\n"
         f"SEED VARIATION:\n{seed_json}\n\n"
-        f"EVOLUTION DIRECTION: \"{direction}\"\n\n"
-        "Generate 5 new variations that treat the seed as your starting point. "
-        "Keep the same instrument (same gm_patch and is_drums value). "
-        "Study the seed's note choices, rhythmic feel, and register — then evolve them based on the user's direction. "
-        "Each variation should feel like a distinct reinterpretation: vary rhythmic density and dynamics. "
-        "The 5 variations must differ from each other AND from the seed — don't just copy it 5 times. "
+        f"USER REQUEST: \"{direction}\"\n\n"
+        "Read the request carefully to decide your approach:\n"
+        f"- If the user wants to EVOLVE or REMIX the existing sound (e.g. 'make it darker', 'more aggressive', 'add variation', 'slower'), "
+        f"keep the same instrument ({seed_instrument}) and reinterpret the seed's notes and feel.\n"
+        "- If the user is asking for a NEW PART or DIFFERENT INSTRUMENT (e.g. 'add a bassline', 'give me some keys', "
+        "'add chords', 'make a melody for this', 'add percussion'), choose the appropriate instrument and create a part "
+        "that complements the seed harmonically and rhythmically.\n"
+        "Generate 5 variations that fulfill the request. Each must differ from the others — vary density, register, and dynamics. "
+        "The 5 variations must also differ from the seed itself. "
         f"{key_rule} "
         "Each variation must include a 'bars' field. "
         "The last note must land at or near bars × 4.0 beats. "
@@ -190,39 +194,18 @@ def stream_thinking(prompt: str) -> Generator[Dict, None, None]:
             yield {"type": "thought", "token": text}
 
 
-def _complement_message(seed: dict, lock_key: str, lock_tempo: int) -> str:
-    musical_fields = {k: v for k, v in seed.items() if k not in ("midi_url", "wav_url", "note_count")}
-    seed_json = json.dumps(musical_fields, indent=2)
-    seed_instrument = seed.get("instrument", "the existing part")
-    return (
-        f"The user has an existing musical part and wants complementary sounds to layer alongside it.\n\n"
-        f"EXISTING PART:\n{seed_json}\n\n"
-        f"Generate 5 new musical parts that complement this. Each variation MUST use a DIFFERENT instrument from "
-        f'"{seed_instrument}" and from each other — think about what instruments would form a full arrangement: '
-        "bass, melody, chords/pads, rhythm, atmospheric texture, counter-melody, etc. "
-        "Match the style, energy, and feel of the seed — these parts should sound like they belong in the same song. "
-        "Vary the rhythmic density and register across the 5 parts. "
-        f'LOCKED KEY: Every variation MUST use "{lock_key}" as its key and scale_notes. '
-        f"LOCKED TEMPO: Every variation MUST use exactly {lock_tempo} BPM. "
-        "Each variation must include a 'bars' field. The last note must land at or near bars × 4.0 beats. "
-        "Return ONLY raw JSON, no markdown."
-    )
-
-
-def stream_variations(prompt: str, seed_variation: dict = None, lock_key: str = None, lock_tempo: int = None, complement: bool = False) -> Generator[Dict, None, None]:
+def stream_variations(prompt: str, seed_variation: dict = None, lock_key: str = None, lock_tempo: int = None) -> Generator[Dict, None, None]:
     """
     Stream Claude's response and yield parsed objects as they become available.
     Yields: one 'meta' dict first, then one 'variation' dict per variation, then 'done'.
-    If seed_variation is provided, Claude evolves that specific variation instead of starting fresh.
-    complement=True generates different instruments that complement the seed (lock_key and lock_tempo required).
+    If seed_variation is provided, Claude interprets the prompt to decide whether to evolve
+    the existing sound or generate a complementary part on a different instrument.
     lock_key and lock_tempo pin all variations to an exact key/tempo when set.
     """
     client = anthropic.Anthropic()
     system_prompt = _load_system_prompt()
 
-    if complement and seed_variation:
-        user_content = _complement_message(seed_variation, lock_key, lock_tempo)
-    elif seed_variation:
+    if seed_variation:
         user_content = _seed_user_message(prompt, seed_variation, lock_key, lock_tempo)
     else:
         user_content = _user_message(prompt, lock_key, lock_tempo)

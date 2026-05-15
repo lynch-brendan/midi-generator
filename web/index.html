@@ -1983,7 +1983,6 @@
     let activeCloudIdx = -1;
     let sessionItems = [];        // hearted variations: [{...variation, sessionIdx}]
     let seedVariation = null;     // variation being iterated on via "More like this"
-    let _complementSeed = null;   // variation to complement (different instruments, same key/tempo)
     let lastUserPrompt = "";
     let projects = [];
     let openProjectId = null;
@@ -2311,7 +2310,7 @@
       const cloud = document.querySelector(`.thought-cloud[data-idx="${idx}"]`);
       if (!cloud) return;
       cloud.className = "thought-cloud visible";
-      cloud.innerHTML = `<span class="cloud-name">${escHtml(variation.name)}</span><button class="cloud-play" title="Play">▶</button><div class="cloud-action-strip"><div class="cloud-keep-strip" onclick="heartCloud(event,${idx})"><span>♥</span><span class="keep-label">keep this</span></div><div class="cloud-more-strip" onclick="cloudMoreLikeThis(event,${idx})"><span>✦</span><span>more like this</span></div></div>`;
+      cloud.innerHTML = `<span class="cloud-name">${escHtml(variation.name)}</span><button class="cloud-play" title="Play">▶</button><div class="cloud-action-strip"><div class="cloud-keep-strip" onclick="heartCloud(event,${idx})"><span>♥</span><span class="keep-label">keep this</span></div><div class="cloud-more-strip" onclick="cloudMoreLikeThis(event,${idx})"><span>✦</span><span>build on this</span></div></div>`;
       cloud.addEventListener("click", () => selectCloud(idx));
       cloud.querySelector(".cloud-play").addEventListener("click", (e) => {
         e.stopPropagation();
@@ -2370,19 +2369,13 @@
           ${v.notes ? `<button class="play-btn">▶ Play</button>` : `<span style="color:var(--text-dim);font-size:0.76rem">No audio</span>`}
           <a class="download" href="${escHtml(v.midi_url)}" download draggable="true" data-mime="audio/midi">MIDI</a>
           ${v.wav_url ? `<a class="download" href="${escHtml(v.wav_url)}" download draggable="true" data-mime="audio/wav">WAV</a>` : ""}
-          <button class="more-like">More like this</button>
-          ${v.key && v.tempo ? `<button class="complement-btn">Complement ✦</button>` : ''}
+          <button class="more-like">Build on this</button>
         </div>
         <button class="vp-close" onclick="closeVariationPanel()">✕</button>
       `;
       panel.querySelector(".more-like").addEventListener("click", () => {
         showIterationBar(v);
         closeVariationPanel();
-      });
-      const compBtn = panel.querySelector(".complement-btn");
-      if (compBtn) compBtn.addEventListener("click", () => {
-        closeVariationPanel();
-        generateComplement(v);
       });
       const playBtn = panel.querySelector(".play-btn");
       if (playBtn) {
@@ -2507,22 +2500,10 @@
       }, durationMs);
     }
 
-    function generateComplement(v) {
-      // Lock key and tempo to the seed variation's values, then generate complementary parts
-      const keySelect = document.getElementById('lockKey');
-      const tempoInput = document.getElementById('lockTempo');
-      if (v.key) { keySelect.value = v.key; }
-      if (v.tempo) { tempoInput.value = v.tempo; }
-      updateLockState();
-      // Kick off generation immediately with complement mode
-      _complementSeed = v;
-      generate('');
-    }
-
     async function generate(overridePrompt) {
       const promptInput = document.getElementById("prompt");
       const prompt = overridePrompt !== undefined ? overridePrompt : promptInput.value.trim();
-      if (!prompt && !seedVariation && !_complementSeed) return;
+      if (!prompt && !seedVariation) return;
 
       lastUserPrompt = prompt;
       posthog.capture('generate_submitted', { prompt, is_iteration: !!seedVariation });
@@ -2530,9 +2511,6 @@
 
       const activeSeed = seedVariation;
       seedVariation = null; // prevent re-use, but keep the card visible until done
-
-      const activeComplement = _complementSeed;
-      _complementSeed = null;
 
       unlockAudio();
 
@@ -2548,12 +2526,7 @@
 
       try {
         const body = { prompt, ...getLocks() };
-        if (activeComplement) {
-          body.seed_variation = activeComplement;
-          body.complement = true;
-        } else if (activeSeed) {
-          body.seed_variation = activeSeed;
-        }
+        if (activeSeed) body.seed_variation = activeSeed;
         const res = await fetch("/api/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -3140,6 +3113,16 @@
     function showIterationBar(variation) {
       seedVariation = variation;
 
+      // Auto-lock key and tempo from the seed so new generations stay in sync
+      if (variation.key) {
+        const keySelect = document.getElementById('lockKey');
+        if (keySelect && !keySelect.value) { keySelect.value = variation.key; updateLockState(); }
+      }
+      if (variation.tempo) {
+        const tempoInput = document.getElementById('lockTempo');
+        if (tempoInput && !tempoInput.value) { tempoInput.value = variation.tempo; updateLockState(); }
+      }
+
       // Populate and show the seed card above the clouds
       const card = document.getElementById('seedCard');
       const cardName = document.getElementById('seedCardName');
@@ -3164,7 +3147,7 @@
       // Update prompt input
       const input = document.getElementById('prompt');
       if (input) {
-        input.placeholder = 'how should we evolve it? (or leave blank to just explore)';
+        input.placeholder = 'e.g. add a bassline, make it darker, give me some chords...';
         input.focus();
       }
     }
