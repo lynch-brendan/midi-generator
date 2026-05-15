@@ -61,7 +61,10 @@ def upload_to_r2(local_path: str | Path, key: str) -> Optional[str]:
             str(local_path),
             bucket,
             key,
-            ExtraArgs={"ContentType": content_type},
+            ExtraArgs={
+                "ContentType": content_type,
+                "ContentDisposition": f"attachment; filename=\"{local_path.name}\"",
+            },
         )
 
         return f"{public_url}/{key}"
