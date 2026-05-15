@@ -2270,6 +2270,10 @@
             playVariation(v);
           }
         });
+        if (autoPlay && v.wav_url) {
+          unlockAudio();
+          playVariation(v);
+        }
       }
     }
 
