@@ -1225,11 +1225,6 @@
       align-items: center;
       gap: 0;
       pointer-events: all;
-      background: var(--bg-input);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 4px 6px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     }
 
     /* Lock controls inside the title bar — no box, just underline to match session input */
@@ -1258,7 +1253,7 @@
     /* Project settings bar — always centered in full viewport */
     .project-settings-bar {
       position: fixed;
-      top: 100px;
+      top: 108px;
       left: 0;
       right: 0;
       display: flex;
@@ -1269,20 +1264,15 @@
     .project-settings-inner {
       display: flex;
       align-items: center;
-      gap: 4px;
+      gap: 0;
       pointer-events: all;
       font-size: 0.72rem;
       color: var(--text-dim);
-      background: var(--bg-input);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 5px 10px;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.05);
     }
     .project-settings-inner .lock-group {
       background: none;
       border: none;
-      padding: 0 8px;
+      padding: 0 10px;
     }
     .project-settings-inner .lock-group.locked { background: none; }
     .project-settings-inner .lock-label { font-size: 0.62rem; }
@@ -1697,10 +1687,9 @@
   <!-- Session title bar — top center: session name + save + new only -->
   <div class="session-title-bar">
     <div class="session-title-bar-inner">
-      <input type="text" class="session-name-input" id="sessionNameInput" placeholder="Session 1" maxlength="60" style="border-bottom:none;color:var(--text-muted);width:110px;" />
-      <div class="session-title-bar-divider"></div>
-      <button class="btn-save-session" id="btnSaveSession" onclick="saveProject()" style="border:none;padding:0 8px;">Save ↗</button>
-      <button class="btn-save-session" onclick="promptNewSession()" title="Start a new session" style="border:none;padding:0 8px;">+ New</button>
+      <input type="text" class="session-name-input" id="sessionNameInput" placeholder="Session 1" maxlength="60" />
+      <button class="btn-save-session" id="btnSaveSession" onclick="saveProject()">Save ↗</button>
+      <button class="btn-save-session" onclick="promptNewSession()" title="Start a new session">+ New</button>
     </div>
   </div>
 
@@ -1737,13 +1726,11 @@
           <option value="B minor">B minor</option>
         </select>
       </div>
-      <div class="session-title-bar-divider"></div>
       <div class="lock-group" id="tempoLockGroup">
         <span class="lock-label">BPM</span>
         <input type="number" class="lock-tempo-input" id="lockTempo" min="40" max="240" placeholder="any" oninput="updateLockState()" />
       </div>
-      <div class="session-title-bar-divider"></div>
-      <button id="autoPlayToggle" onclick="toggleAutoPlay()" title="Toggle auto-play" style="background:none;border:none;font-size:0.72rem;cursor:pointer;display:flex;align-items:center;gap:4px;letter-spacing:0.01em;color:var(--text-muted);padding:0 4px;">
+      <button id="autoPlayToggle" onclick="toggleAutoPlay()" title="Toggle auto-play" style="background:none;border:none;font-size:0.72rem;cursor:pointer;display:flex;align-items:center;gap:4px;letter-spacing:0.01em;color:var(--text-muted);padding:0 12px;">
         Auto-play <span id="autoPlayState" style="font-weight:600;">on</span>
       </button>
     </div>
