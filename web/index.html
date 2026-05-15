@@ -1899,7 +1899,6 @@
     function saveSessionToStorage() {
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify({
-          currentVariations,
           sessionItems,
           conversationHistory,
           lastUserPrompt,
@@ -1922,14 +1921,6 @@
         if (!data.savedAt || Date.now() - data.savedAt > SESSION_TTL) {
           clearSessionStorage();
           return;
-        }
-        if (data.currentVariations && data.currentVariations.length > 0) {
-          currentVariations = data.currentVariations;
-          _restoringSession = true;
-          createLoadingClouds();
-          currentVariations.forEach((v, i) => { if (v) populateCloud(i, v); });
-          _restoringSession = false;
-          fadeSpeechBubble("what's next?");
         }
         if (data.sessionItems && data.sessionItems.length > 0) {
           sessionItems = data.sessionItems;
