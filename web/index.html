@@ -1441,6 +1441,47 @@
        Context pill (shown below input when conversation history is active)
     ----------------------------------------------------------------------- */
 
+    /* -----------------------------------------------------------------------
+       Project lock controls (key + tempo)
+    ----------------------------------------------------------------------- */
+    .project-lock-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      max-width: 580px;
+      margin-bottom: 8px;
+    }
+    .lock-group {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 4px 8px;
+      transition: border-color 0.15s;
+    }
+    .lock-group:focus-within { border-color: var(--text-muted); }
+    .lock-group.locked { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, var(--bg-input)); }
+    .lock-label { font-size: 0.65rem; color: var(--text-dim); letter-spacing: 0.04em; white-space: nowrap; user-select: none; }
+    .lock-group.locked .lock-label { color: var(--accent); }
+    .lock-select, .lock-tempo-input {
+      background: none;
+      border: none;
+      outline: none;
+      font-size: 0.75rem;
+      color: var(--text);
+      cursor: pointer;
+      font-family: inherit;
+      padding: 0;
+    }
+    .lock-select { max-width: 110px; }
+    .lock-tempo-input { width: 38px; text-align: center; -moz-appearance: textfield; }
+    .lock-tempo-input::-webkit-outer-spin-button,
+    .lock-tempo-input::-webkit-inner-spin-button { -webkit-appearance: none; }
+    .lock-spacer { flex: 1; }
+
     .context-pill {
       display: none;
       align-items: center;
@@ -1653,7 +1694,44 @@
 
       <p style="font-size:0.72rem;color:var(--text-dim);text-align:center;letter-spacing:0.02em;margin-top:6px;margin-bottom:8px;">All output is royalty free.</p>
 
-      <div style="width:100%;max-width:580px;display:flex;justify-content:flex-end;align-items:center;margin-bottom:20px;">
+      <div class="project-lock-row">
+        <!-- Key lock -->
+        <div class="lock-group" id="keyLockGroup">
+          <span class="lock-label">KEY</span>
+          <select class="lock-select" id="lockKey" onchange="updateLockState()">
+            <option value="">any</option>
+            <option value="C major">C major</option>
+            <option value="C minor">C minor</option>
+            <option value="Db major">Db major</option>
+            <option value="Db minor">Db minor</option>
+            <option value="D major">D major</option>
+            <option value="D minor">D minor</option>
+            <option value="Eb major">Eb major</option>
+            <option value="Eb minor">Eb minor</option>
+            <option value="E major">E major</option>
+            <option value="E minor">E minor</option>
+            <option value="F major">F major</option>
+            <option value="F minor">F minor</option>
+            <option value="F# major">F# major</option>
+            <option value="F# minor">F# minor</option>
+            <option value="G major">G major</option>
+            <option value="G minor">G minor</option>
+            <option value="Ab major">Ab major</option>
+            <option value="Ab minor">Ab minor</option>
+            <option value="A major">A major</option>
+            <option value="A minor">A minor</option>
+            <option value="Bb major">Bb major</option>
+            <option value="Bb minor">Bb minor</option>
+            <option value="B major">B major</option>
+            <option value="B minor">B minor</option>
+          </select>
+        </div>
+        <!-- Tempo lock -->
+        <div class="lock-group" id="tempoLockGroup">
+          <span class="lock-label">BPM</span>
+          <input type="number" class="lock-tempo-input" id="lockTempo" min="40" max="240" placeholder="any" oninput="updateLockState()" />
+        </div>
+        <div class="lock-spacer"></div>
         <button id="autoPlayToggle" onclick="toggleAutoPlay()" title="Toggle auto-play" style="background:none;border:1px solid var(--border);border-radius:20px;font-size:0.7rem;cursor:pointer;padding:4px 10px;display:flex;align-items:center;gap:5px;letter-spacing:0.01em;color:var(--text-muted);transition:color 0.15s,border-color 0.15s,background 0.15s;">
           Auto-play <span id="autoPlayState" style="font-weight:600;">on</span>
         </button>
@@ -1882,6 +1960,20 @@
         setBtn('▶ Play');
         _activeAudio = audio; // keep ref so tapping play button will start it
       });
+    }
+
+    function updateLockState() {
+      const key = document.getElementById('lockKey').value;
+      const tempo = document.getElementById('lockTempo').value;
+      document.getElementById('keyLockGroup').classList.toggle('locked', !!key);
+      document.getElementById('tempoLockGroup').classList.toggle('locked', !!(tempo && parseInt(tempo) > 0));
+    }
+
+    function getLocks() {
+      const key = document.getElementById('lockKey').value || null;
+      const tempoRaw = document.getElementById('lockTempo').value;
+      const tempo = tempoRaw && parseInt(tempoRaw) > 0 ? parseInt(tempoRaw) : null;
+      return { lock_key: key, lock_tempo: tempo };
     }
 
     function toggleAutoPlay() {
@@ -2311,7 +2403,7 @@
       abortController = new AbortController();
 
       try {
-        const body = { prompt };
+        const body = { prompt, ...getLocks() };
         if (activeSeed) body.seed_variation = activeSeed;
         const res = await fetch("/api/generate", {
           method: "POST",

@@ -109,24 +109,50 @@ _CREATIVE_ANGLES = [
 ]
 
 
-def _user_message(prompt: str) -> str:
+def _lock_constraints(lock_key: str = None, lock_tempo: int = None) -> str:
+    parts = []
+    if lock_key:
+        parts.append(
+            f'LOCKED KEY: Every single variation MUST use "{lock_key}" as its key and scale_notes. '
+            "Override the normal key-variation rule — do NOT vary the tonal center."
+        )
+    if lock_tempo:
+        parts.append(
+            f"LOCKED TEMPO: Every single variation MUST use exactly {lock_tempo} BPM. "
+            "Do NOT vary the tempo across variations."
+        )
+    return ("\n\n" + "\n".join(parts)) if parts else ""
+
+
+def _user_message(prompt: str, lock_key: str = None, lock_tempo: int = None) -> str:
     angle = random.choice(_CREATIVE_ANGLES)
+    key_rule = (
+        f'Every variation MUST use "{lock_key}" as its key and scale_notes.'
+        if lock_key else
+        "Each variation must have its own key and scale_notes — vary the tonal center across the 5 variations."
+    )
     return (
         f'Generate 5 musical variations for: "{prompt}"\n\n'
         f"Creative direction for this session: {angle}\n\n"
         "Choose the most appropriate instrument for this style. "
-        "Each variation must have its own key and scale_notes — vary the tonal center across the 5 variations. "
+        f"{key_rule} "
         "Return the complete JSON object with all 5 variations, each with a full note sequence. "
         "Each variation must include a 'bars' field (1, 2, 4, or 8) — choose based on musical role per the BAR LENGTH GUIDE. "
         "The last note must land at or near bars × 4.0 beats. "
-        "Remember: return ONLY raw JSON, no markdown."
+        f"Remember: return ONLY raw JSON, no markdown."
+        + _lock_constraints(lock_key, lock_tempo)
     )
 
 
-def _seed_user_message(prompt: str, seed: dict) -> str:
+def _seed_user_message(prompt: str, seed: dict, lock_key: str = None, lock_tempo: int = None) -> str:
     musical_fields = {k: v for k, v in seed.items() if k not in ("midi_url", "wav_url", "note_count")}
     seed_json = json.dumps(musical_fields, indent=2)
     direction = prompt.strip() or "explore natural variations"
+    key_rule = (
+        f'Every variation MUST use "{lock_key}" as its key and scale_notes.'
+        if lock_key else
+        "Each variation must have its own key and scale_notes."
+    )
     return (
         f"The user has a musical variation they want to evolve.\n\n"
         f"SEED VARIATION:\n{seed_json}\n\n"
@@ -134,12 +160,13 @@ def _seed_user_message(prompt: str, seed: dict) -> str:
         "Generate 5 new variations that treat the seed as your starting point. "
         "Keep the same instrument (same gm_patch and is_drums value). "
         "Study the seed's note choices, rhythmic feel, and register — then evolve them based on the user's direction. "
-        "Each variation should feel like a distinct reinterpretation: vary tempo, key, rhythmic density, and dynamics. "
+        "Each variation should feel like a distinct reinterpretation: vary rhythmic density and dynamics. "
         "The 5 variations must differ from each other AND from the seed — don't just copy it 5 times. "
-        "Each variation must have its own key and scale_notes. "
+        f"{key_rule} "
         "Each variation must include a 'bars' field. "
         "The last note must land at or near bars × 4.0 beats. "
         "Return ONLY raw JSON, no markdown."
+        + _lock_constraints(lock_key, lock_tempo)
     )
 
 
@@ -163,19 +190,20 @@ def stream_thinking(prompt: str) -> Generator[Dict, None, None]:
             yield {"type": "thought", "token": text}
 
 
-def stream_variations(prompt: str, seed_variation: dict = None) -> Generator[Dict, None, None]:
+def stream_variations(prompt: str, seed_variation: dict = None, lock_key: str = None, lock_tempo: int = None) -> Generator[Dict, None, None]:
     """
     Stream Claude's response and yield parsed objects as they become available.
     Yields: one 'meta' dict first, then one 'variation' dict per variation, then 'done'.
     If seed_variation is provided, Claude evolves that specific variation instead of starting fresh.
+    lock_key and lock_tempo pin all variations to an exact key/tempo when set.
     """
     client = anthropic.Anthropic()
     system_prompt = _load_system_prompt()
 
     if seed_variation:
-        user_content = _seed_user_message(prompt, seed_variation)
+        user_content = _seed_user_message(prompt, seed_variation, lock_key, lock_tempo)
     else:
-        user_content = _user_message(prompt)
+        user_content = _user_message(prompt, lock_key, lock_tempo)
     messages = [{"role": "user", "content": user_content}]
 
     buffer = ""
