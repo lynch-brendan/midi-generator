@@ -2028,30 +2028,45 @@
     // ==========================================================================
 
     let _activeAudio = null;
+    let _playingCloudIdx = -1;
+
+    function updateCloudPlayBtn(idx, icon) {
+      const cloud = document.querySelector(`.thought-cloud[data-idx="${idx}"]`);
+      const btn = cloud && cloud.querySelector('.cloud-play');
+      if (btn) btn.textContent = icon;
+    }
 
     function stopPlayback() {
       if (_activeAudio) {
         try { _activeAudio.pause(); _activeAudio.src = ''; } catch(_) {}
         _activeAudio = null;
       }
+      if (_playingCloudIdx >= 0) { updateCloudPlayBtn(_playingCloudIdx, '▶'); _playingCloudIdx = -1; }
       const btn = document.querySelector('.play-btn');
       if (btn) btn.textContent = '▶ Play';
     }
 
-    function playVariation(v, onEnd) {
+    function playVariation(v, onEnd, cloudIdx = -1) {
       if (!v || !v.wav_url) { if (onEnd) onEnd(); return; }
       stopPlayback();
       const audio = new Audio(v.wav_url);
       _activeAudio = audio;
+      _playingCloudIdx = cloudIdx;
+      if (cloudIdx >= 0) updateCloudPlayBtn(cloudIdx, '⏸');
       const setBtn = t => { const b = document.querySelector('.play-btn'); if (b) b.textContent = t; };
-      const finish = () => { _activeAudio = null; setBtn('▶ Play'); if (onEnd) onEnd(); };
+      const finish = () => {
+        _activeAudio = null;
+        if (_playingCloudIdx === cloudIdx) { _playingCloudIdx = -1; if (cloudIdx >= 0) updateCloudPlayBtn(cloudIdx, '▶'); }
+        setBtn('▶ Play');
+        if (onEnd) onEnd();
+      };
       audio.addEventListener('ended', finish);
       audio.addEventListener('error', finish);
       setBtn('⏸ Pause');
       audio.play().catch(() => {
-        // Autoplay blocked (common on mobile before user gesture) — reset UI silently
         setBtn('▶ Play');
-        _activeAudio = audio; // keep ref so tapping play button will start it
+        if (cloudIdx >= 0) updateCloudPlayBtn(cloudIdx, '▶');
+        _activeAudio = audio;
       });
     }
 
@@ -2081,7 +2096,7 @@
     function autoPlayVariation(idx) {
       selectCloud(idx, false);
       const v = currentVariations[idx];
-      if (v && v.notes) playVariation(v, () => advanceAutoPlay(idx));
+      if (v && v.notes) playVariation(v, () => advanceAutoPlay(idx), idx);
     }
 
     function advanceAutoPlay(fromIdx) {
@@ -2299,7 +2314,17 @@
       cloud.addEventListener("click", () => selectCloud(idx));
       cloud.querySelector(".cloud-play").addEventListener("click", (e) => {
         e.stopPropagation();
-        selectCloud(idx, true);
+        if (_playingCloudIdx === idx && _activeAudio && !_activeAudio.paused) {
+          _activeAudio.pause();
+          updateCloudPlayBtn(idx, '▶');
+        } else if (_playingCloudIdx === idx && _activeAudio && _activeAudio.paused) {
+          _activeAudio.play().catch(() => {});
+          updateCloudPlayBtn(idx, '⏸');
+        } else {
+          unlockAudio();
+          const v = currentVariations[idx];
+          if (v) playVariation(v, undefined, idx);
+        }
       });
       // Restore kept state if already in session
       if (currentVariations[idx] && sessionItems.some(s => s.midi_url === currentVariations[idx].midi_url)) {
@@ -2368,7 +2393,7 @@
         });
         if (autoPlay && v.wav_url) {
           unlockAudio();
-          playVariation(v);
+          playVariation(v, undefined, idx);
         }
       }
     }
@@ -3155,11 +3180,28 @@
       if (link) link.classList.remove("dragging");
     });
 
-    document.addEventListener('click', (e) => {
+    document.addEventListener('click', async (e) => {
       const a = e.target.closest('a[download]');
-      if (a) {
-        const type = a.href.includes('.mid') ? 'midi' : 'wav';
-        posthog.capture('file_downloaded', { file_type: type });
+      if (!a) return;
+      const isWav = a.href.includes('.wav');
+      const type = a.href.includes('.mid') ? 'midi' : 'wav';
+      posthog.capture('file_downloaded', { file_type: type });
+      if (isWav) {
+        e.preventDefault();
+        try {
+          const resp = await fetch(a.href);
+          const blob = await resp.blob();
+          const url = URL.createObjectURL(blob);
+          const tmp = document.createElement('a');
+          tmp.href = url;
+          tmp.download = a.href.split('/').pop() || 'variation.wav';
+          document.body.appendChild(tmp);
+          tmp.click();
+          tmp.remove();
+          URL.revokeObjectURL(url);
+        } catch (_) {
+          window.open(a.href);
+        }
       }
     });
 
