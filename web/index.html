@@ -1269,15 +1269,20 @@
     .project-settings-inner {
       display: flex;
       align-items: center;
-      gap: 0;
+      gap: 4px;
       pointer-events: all;
       font-size: 0.72rem;
       color: var(--text-dim);
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 5px 10px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.05);
     }
     .project-settings-inner .lock-group {
       background: none;
       border: none;
-      padding: 0 6px;
+      padding: 0 8px;
     }
     .project-settings-inner .lock-group.locked { background: none; }
     .project-settings-inner .lock-label { font-size: 0.62rem; }
