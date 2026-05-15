@@ -2388,7 +2388,7 @@
       if (promptInput) promptInput.value = '';
 
       const activeSeed = seedVariation;
-      clearSeed();
+      seedVariation = null; // prevent re-use, but keep the card visible until done
 
       unlockAudio();
 
@@ -2453,6 +2453,7 @@
             } else if (event.type === "done") {
               fadeSpeechBubble("what's next?");
               setGenStatus("");
+              clearSeed();
               if (currentVariations.length > 0) saveSessionToStorage();
             } else if (event.type === "error") {
               throw new Error(event.message);
@@ -2468,6 +2469,7 @@
       } finally {
         abortController = null;
         btn.disabled = false;
+        clearSeed();
         if (currentUser) refreshUsage();
       }
     }
