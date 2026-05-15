@@ -1450,7 +1450,7 @@
       gap: 8px;
       width: 100%;
       max-width: 580px;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }
     .lock-group {
       display: flex;
@@ -1684,16 +1684,6 @@
         </div>
       </div>
 
-      <p id="genStatus" style="font-size:0.78rem;color:var(--text-muted);text-align:center;min-height:18px;margin-bottom:4px;letter-spacing:0.01em;"></p>
-
-      <div class="input-row">
-        <input type="text" id="prompt" placeholder="e.g. funky bass riff in E minor" />
-        <button class="generate" id="generateBtn" onclick="generate()">Generate</button>
-      </div>
-
-
-      <p style="font-size:0.72rem;color:var(--text-dim);text-align:center;letter-spacing:0.02em;margin-top:6px;margin-bottom:8px;">All output is royalty free.</p>
-
       <div class="project-lock-row">
         <!-- Key lock -->
         <div class="lock-group" id="keyLockGroup">
@@ -1735,6 +1725,13 @@
         <button id="autoPlayToggle" onclick="toggleAutoPlay()" title="Toggle auto-play" style="background:none;border:1px solid var(--border);border-radius:20px;font-size:0.7rem;cursor:pointer;padding:4px 10px;display:flex;align-items:center;gap:5px;letter-spacing:0.01em;color:var(--text-muted);transition:color 0.15s,border-color 0.15s,background 0.15s;">
           Auto-play <span id="autoPlayState" style="font-weight:600;">on</span>
         </button>
+      </div>
+
+      <p id="genStatus" style="font-size:0.78rem;color:var(--text-muted);text-align:center;min-height:18px;margin-bottom:4px;letter-spacing:0.01em;"></p>
+
+      <div class="input-row">
+        <input type="text" id="prompt" placeholder="e.g. funky bass riff in E minor" />
+        <button class="generate" id="generateBtn" onclick="generate()">Generate</button>
       </div>
 
       <div class="examples">
