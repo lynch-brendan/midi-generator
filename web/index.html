@@ -2355,6 +2355,7 @@
       const v = currentVariations[idx];
       if (!v) return;
 
+      if (v.instrument) setCharacterInstrument(v.instrument);
       unlockAudio();  // unlock Web Audio on user tap (iOS)
 
       const panel = document.getElementById("variationPanel");
