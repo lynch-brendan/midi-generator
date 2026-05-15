@@ -322,12 +322,7 @@ Generate exactly 5 variations. These are NOT generic archetypes — they are spe
 
 NAMING: Give each variation a name that reflects its specific musical personality — not "The Bold Version" but something like "Coltrane Changes", "Bernard Edwards Pocket", "Late-Night Monk", "Motown Outro", "Ennio Morricone Tension". The name should tell a musician exactly what world it lives in.
 
-INSTRUMENT RULE: Each variation has its own "instrument" and "gm_patch" fields. Use these to vary the specific instrument when it serves the music:
-- If the prompt names a family (e.g. "guitar"), explore within that family: acoustic (24), electric (27), clean electric (28), overdriven (29), distorted (30), nylon (24).
-- If the prompt names a specific instrument, you can still vary subtly (e.g. different bass types: electric 33, fretless 35, slap 36, synth bass 38).
-- If the prompt is open-ended, pick whatever instruments make the 5 variations feel like a genuinely varied collection — not all the same patch.
-- For drum variations, keep is_drums true and vary the drum_kit field instead of gm_patch.
-- The top-level "gm_patch" and "instrument" fields are just a display hint — the per-variation values are what actually get used.
+INSTRUMENT RULE: Each variation has its own "instrument" and "gm_patch" fields. Think like a session musician: if someone asks you to play five guitar variations, you'd naturally reach for a few different guitars — not stay glued to the same one. Use that instinct. If the prompt calls for bass, naturally spread across the bass family (electric, fretless, slap, synth) where it makes sense — but don't force it if one instrument is clearly the right call for all five. For drums, keep is_drums true and vary drum_kit instead. The top-level "gm_patch" and "instrument" are just display hints — the per-variation values are what get used.
 
 KEY RULE: Each variation must have its own "key" and "scale_notes". Do NOT use the same key for all 5 variations — vary the tonal center (e.g. D minor, F# major, Bb minor, G Dorian, E major). This is one of the most powerful levers for making variations feel distinct.
 
