@@ -737,6 +737,42 @@ async def list_project_files(project_id: str, request: Request, db=Depends(get_d
 
 
 # ---------------------------------------------------------------------------
+# Email open tracking
+# ---------------------------------------------------------------------------
+
+_OPENS_FILE = Path(__file__).parent / "email_opens.json"
+_TRANSPARENT_GIF = (
+    b"GIF89a\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\x00\x00\x00"
+    b"!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01"
+    b"\x00\x00\x02\x02D\x01\x00;"
+)
+
+
+@app.get("/track/open")
+async def track_open(id: str = "", request: Request = None):
+    import base64
+    from fastapi.responses import Response
+    try:
+        email = base64.urlsafe_b64decode(id + "==").decode()
+        opens = json.loads(_OPENS_FILE.read_text()) if _OPENS_FILE.exists() else []
+        opens.append({"email": email, "ts": datetime.utcnow().isoformat(), "ip": request.headers.get("x-forwarded-for", "")})
+        _OPENS_FILE.write_text(json.dumps(opens))
+        print(f"[email-open] {email}")
+    except Exception:
+        pass
+    return Response(content=_TRANSPARENT_GIF, media_type="image/gif", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/email-opens")
+async def get_email_opens(request: Request, db=Depends(get_db)):
+    user = get_current_user(request, db) if db is not None else None
+    admin_emails = {x.strip().lower() for x in os.environ.get("ADMIN_EMAILS", "").split(",") if x.strip()}
+    if not user or user.email.lower() not in admin_emails:
+        raise HTTPException(status_code=403, detail="Admin only")
+    return JSONResponse(json.loads(_OPENS_FILE.read_text()) if _OPENS_FILE.exists() else [])
+
+
+# ---------------------------------------------------------------------------
 # PostHog reverse proxy — routes analytics through first-party domain to
 # avoid Cloudflare blocking outbound requests to us.i.posthog.com
 # ---------------------------------------------------------------------------
