@@ -181,7 +181,7 @@ def _check_and_increment_generation(user, db, ip: str) -> None:
 
 class GenerateRequest(BaseModel):
     prompt: str
-    history: list = []
+    seed_variation: Optional[dict] = None
 
 
 class SaveProjectFileRequest(BaseModel):
@@ -318,7 +318,7 @@ async def generate(req: GenerateRequest, request: Request, db=Depends(get_db)):
         try:
             for event in stream_thinking(req.prompt):
                 yield f"data: {json.dumps(event)}\n\n"
-            for event in stream_variations(req.prompt, req.history):
+            for event in stream_variations(req.prompt, seed_variation=req.seed_variation):
                 if event["type"] == "meta":
                     gm_patch = event["gm_patch"]
                     is_drums = event.get("is_drums", False)

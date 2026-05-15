@@ -123,6 +123,26 @@ def _user_message(prompt: str) -> str:
     )
 
 
+def _seed_user_message(prompt: str, seed: dict) -> str:
+    musical_fields = {k: v for k, v in seed.items() if k not in ("midi_url", "wav_url", "note_count")}
+    seed_json = json.dumps(musical_fields, indent=2)
+    direction = prompt.strip() or "explore natural variations"
+    return (
+        f"The user has a musical variation they want to evolve.\n\n"
+        f"SEED VARIATION:\n{seed_json}\n\n"
+        f"EVOLUTION DIRECTION: \"{direction}\"\n\n"
+        "Generate 5 new variations that treat the seed as your starting point. "
+        "Keep the same instrument (same gm_patch and is_drums value). "
+        "Study the seed's note choices, rhythmic feel, and register — then evolve them based on the user's direction. "
+        "Each variation should feel like a distinct reinterpretation: vary tempo, key, rhythmic density, and dynamics. "
+        "The 5 variations must differ from each other AND from the seed — don't just copy it 5 times. "
+        "Each variation must have its own key and scale_notes. "
+        "Each variation must include a 'bars' field. "
+        "The last note must land at or near bars × 4.0 beats. "
+        "Return ONLY raw JSON, no markdown."
+    )
+
+
 def stream_thinking(prompt: str) -> Generator[Dict, None, None]:
     """Stream a funny one-liner reaction to the user's prompt into the speech bubble."""
     client = anthropic.Anthropic()
@@ -143,23 +163,20 @@ def stream_thinking(prompt: str) -> Generator[Dict, None, None]:
             yield {"type": "thought", "token": text}
 
 
-def stream_variations(prompt: str, history: list = None) -> Generator[Dict, None, None]:
+def stream_variations(prompt: str, seed_variation: dict = None) -> Generator[Dict, None, None]:
     """
     Stream Claude's response and yield parsed objects as they become available.
     Yields: one 'meta' dict first, then one 'variation' dict per variation, then 'done'.
-    Accepts an optional history list of {role, content} dicts for conversational follow-up.
+    If seed_variation is provided, Claude evolves that specific variation instead of starting fresh.
     """
     client = anthropic.Anthropic()
     system_prompt = _load_system_prompt()
 
-    messages = []
-    if history:
-        for turn in history:
-            role = turn.get("role", "user")
-            content = turn.get("content", "")
-            if role in ("user", "assistant") and content:
-                messages.append({"role": role, "content": content})
-    messages.append({"role": "user", "content": _user_message(prompt)})
+    if seed_variation:
+        user_content = _seed_user_message(prompt, seed_variation)
+    else:
+        user_content = _user_message(prompt)
+    messages = [{"role": "user", "content": user_content}]
 
     buffer = ""
     meta_sent = False
