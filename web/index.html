@@ -637,6 +637,21 @@
 
     .modal-overlay.hidden { display: none; }
 
+    .modal-btn-primary, .modal-btn-secondary {
+      border-radius: 8px;
+      padding: 7px 14px;
+      font-size: 0.8rem;
+      font-family: inherit;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .modal-btn-primary { background: var(--text); color: var(--bg); border-color: var(--text); }
+    .modal-btn-primary:hover { opacity: 0.85; }
+    .modal-btn-secondary { background: none; color: var(--text-muted); }
+    .modal-btn-secondary:hover { border-color: var(--text-muted); color: var(--text); }
+
     .modal-box {
       background: var(--bg-input);
       border: 1px solid var(--border);
@@ -1617,6 +1632,20 @@
     <div class="session-title-bar-inner">
       <input type="text" class="session-name-input" id="sessionNameInput" placeholder="Session 1" maxlength="60" />
       <button class="btn-save-session" id="btnSaveSession" onclick="saveProject()">Save ↗</button>
+      <button class="btn-save-session" onclick="promptNewSession()" title="Start a new session">+ New</button>
+    </div>
+  </div>
+
+  <!-- New session confirmation modal -->
+  <div id="newSessionModal" class="modal-overlay hidden" onclick="if(event.target===this)closeNewSessionModal()">
+    <div class="modal-box" style="max-width:340px;">
+      <p style="font-size:1rem;font-weight:600;margin:0 0 6px;">Start a new session?</p>
+      <p id="newSessionMsg" style="font-size:0.82rem;color:var(--text-muted);margin:0 0 18px;"></p>
+      <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
+        <button class="modal-btn-secondary" onclick="closeNewSessionModal()">Cancel</button>
+        <button class="modal-btn-secondary" onclick="skipAndNew()">Start fresh</button>
+        <button class="modal-btn-primary" onclick="saveAndNew()">Save &amp; new</button>
+      </div>
     </div>
   </div>
 
@@ -2713,6 +2742,28 @@
     }
 
     let sessionCounter = 1;
+
+    function promptNewSession() {
+      if (sessionItems.length === 0) { newSession(); return; }
+      const msg = document.getElementById('newSessionMsg');
+      if (msg) msg.textContent = `You have ${sessionItems.length} sound${sessionItems.length > 1 ? 's' : ''} in this session. Want to save them before starting fresh?`;
+      document.getElementById('newSessionModal').classList.remove('hidden');
+    }
+
+    function closeNewSessionModal() {
+      document.getElementById('newSessionModal').classList.add('hidden');
+    }
+
+    function skipAndNew() {
+      closeNewSessionModal();
+      newSession();
+    }
+
+    async function saveAndNew() {
+      closeNewSessionModal();
+      await saveProject();
+      newSession();
+    }
 
     function newSession() {
       sessionItems = [];
