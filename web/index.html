@@ -2065,6 +2065,7 @@
 
     let _activeAudio = null;
     let _playingCloudIdx = -1;
+    let _audioGen = 0; // incremented on every stopPlayback to invalidate pending onEnd callbacks
 
     function updateCloudPlayBtn(idx, icon) {
       const cloud = document.querySelector(`.thought-cloud[data-idx="${idx}"]`);
@@ -2073,6 +2074,7 @@
     }
 
     function stopPlayback() {
+      _audioGen++;
       if (_activeAudio) {
         try { _activeAudio.pause(); _activeAudio.src = ''; } catch(_) {}
         _activeAudio = null;
@@ -2085,12 +2087,14 @@
     function playVariation(v, onEnd, cloudIdx = -1) {
       if (!v || !v.wav_url) { if (onEnd) onEnd(); return; }
       stopPlayback();
+      const gen = _audioGen;
       const audio = new Audio(v.wav_url);
       _activeAudio = audio;
       _playingCloudIdx = cloudIdx;
       if (cloudIdx >= 0) updateCloudPlayBtn(cloudIdx, '⏸');
       const setBtn = t => { const b = document.querySelector('.play-btn'); if (b) b.textContent = t; };
       const finish = () => {
+        if (_audioGen !== gen) return; // interrupted by a newer play — don't chain
         _activeAudio = null;
         if (_playingCloudIdx === cloudIdx) { _playingCloudIdx = -1; if (cloudIdx >= 0) updateCloudPlayBtn(cloudIdx, '▶'); }
         setBtn('▶ Play');
