@@ -931,32 +931,19 @@
     .thought-cloud.seed   { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent), 0 6px 18px rgba(0,0,0,0.1); }
     .thought-cloud.seed::before { content: '✦'; position: absolute; top: 5px; right: 8px; font-size: 0.6rem; color: var(--accent); opacity: 0.8; }
 
-    /* -----------------------------------------------------------------------
-       Seed card — shown above thought stage when a seed variation is active
-    ----------------------------------------------------------------------- */
-    #seedCard {
+    /* Seed indicator — inline in the project-settings bar */
+    #seedIndicator {
       display: none;
-      position: fixed;
-      top: 128px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: calc(100% - 48px);
-      max-width: 580px;
-      background: var(--bg-card);
-      border: 1px solid var(--accent);
-      border-left: 3px solid var(--accent);
-      border-radius: 10px;
-      padding: 10px 14px;
-      z-index: 298;
-      box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 12%, transparent);
+      align-items: center;
+      gap: 5px;
+      padding: 0 10px;
+      border-left: 1px solid var(--border);
     }
-    #seedCard.visible { display: flex; align-items: center; gap: 10px; }
-    .seed-card-label { font-size: 0.65rem; color: var(--accent); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
-    .seed-card-info { flex: 1; min-width: 0; }
-    .seed-card-name { font-size: 0.85rem; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .seed-card-meta { font-size: 0.72rem; color: var(--text-muted); margin-top: 1px; }
-    .seed-card-clear { background: none; border: none; cursor: pointer; font-size: 1rem; color: var(--text-dim); padding: 2px 4px; border-radius: 4px; transition: color 0.15s; flex-shrink: 0; }
-    .seed-card-clear:hover { color: var(--text); }
+    #seedIndicator.visible { display: flex; }
+    .seed-ind-label { font-size: 0.62rem; color: var(--accent); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
+    .seed-ind-name { font-size: 0.72rem; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px; }
+    .seed-ind-clear { background: none; border: none; cursor: pointer; font-size: 1rem; color: var(--text-dim); padding: 0 2px; line-height: 1; transition: color 0.15s; }
+    .seed-ind-clear:hover { color: var(--text); }
 
     .cloud-top {
       display: flex;
@@ -1757,6 +1744,11 @@
       <button id="autoPlayToggle" onclick="toggleAutoPlay()" title="Toggle auto-play" style="background:none;border:none;font-size:0.72rem;cursor:pointer;display:flex;align-items:center;gap:4px;letter-spacing:0.01em;color:var(--text-muted);padding:0 12px;">
         Auto-play <span id="autoPlayState" style="font-weight:600;">on</span>
       </button>
+      <div id="seedIndicator">
+        <span class="seed-ind-label">✦ evolving from</span>
+        <span class="seed-ind-name" id="seedCardName"></span>
+        <button class="seed-ind-clear" onclick="clearSeed()" title="Clear seed">×</button>
+      </div>
     </div>
     </div>
   </div>
@@ -1793,15 +1785,6 @@
   <div id="variationPanel" style="display:none"></div>
 
   <!-- Page layout -->
-  <!-- Seed card: fixed overlay, doesn't affect page flow -->
-  <div id="seedCard">
-    <span class="seed-card-label">✦ evolving from</span>
-    <div class="seed-card-info">
-      <div class="seed-card-name" id="seedCardName"></div>
-      <div class="seed-card-meta" id="seedCardMeta"></div>
-    </div>
-    <button class="seed-card-clear" onclick="clearSeed()" title="Clear seed">×</button>
-  </div>
 
   <div class="page-layout">
     <div class="main-content">
@@ -3148,16 +3131,14 @@
         if (tempoInput && !tempoInput.value) { tempoInput.value = variation.tempo; updateLockState(); }
       }
 
-      // Populate and show the seed card above the clouds
-      const card = document.getElementById('seedCard');
+      // Show seed indicator inline in the settings bar
+      const indicator = document.getElementById('seedIndicator');
       const cardName = document.getElementById('seedCardName');
-      const cardMeta = document.getElementById('seedCardMeta');
-      if (cardName) cardName.textContent = variation.name;
-      if (cardMeta) {
-        const parts = [variation.tempo ? variation.tempo + ' BPM' : null, variation.key || null].filter(Boolean);
-        cardMeta.textContent = parts.join(' · ');
+      if (cardName) {
+        const parts = [variation.name, variation.tempo ? variation.tempo + ' BPM' : null, variation.key || null].filter(Boolean);
+        cardName.textContent = parts.join(' · ');
       }
-      if (card) card.classList.add('visible');
+      if (indicator) indicator.classList.add('visible');
 
       // Highlight the source cloud if it's still on screen
       document.querySelectorAll('.thought-cloud').forEach(c => c.classList.remove('seed'));
@@ -3179,8 +3160,8 @@
 
     function clearSeed() {
       seedVariation = null;
-      const card = document.getElementById('seedCard');
-      if (card) card.classList.remove('visible');
+      const indicator = document.getElementById('seedIndicator');
+      if (indicator) indicator.classList.remove('visible');
       document.querySelectorAll('.thought-cloud.seed').forEach(c => c.classList.remove('seed'));
       const input = document.getElementById('prompt');
       if (input) input.placeholder = 'e.g. funky bass riff in E minor';
