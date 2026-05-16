@@ -1479,7 +1479,37 @@
     .cloud-keep-strip { border-right: 1px solid var(--border-soft); }
     .cloud-keep-strip:hover { color: var(--text-muted); background: var(--bg-card); }
     .cloud-keep-strip.kept { background: var(--accent); color: var(--accent-fg); border-right-color: transparent; }
+    .cloud-more-strip { border-right: 1px solid var(--border-soft); }
     .cloud-more-strip:hover { color: var(--text-muted); background: var(--bg-card); }
+    .cloud-lock-strip { flex: none; padding: 5px 8px; display: flex; align-items: center; justify-content: center; gap: 3px; font-size: 0.62rem; color: var(--text-dim); cursor: pointer; background: transparent; transition: background 0.15s, color 0.15s; user-select: none; }
+    .cloud-lock-strip:hover { color: var(--text-muted); background: var(--bg-card); }
+    .cloud-lock-strip.locked { color: #c9a227; }
+
+    /* Lock popup — appears when building on a variation */
+    #lockPopup {
+      display: none;
+      position: fixed;
+      top: 148px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 9px 14px;
+      z-index: 400;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+      align-items: center;
+      gap: 10px;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+      animation: fadeUp 0.15s ease both;
+    }
+    #lockPopup.visible { display: flex; }
+    .lock-popup-label { color: var(--text); font-weight: 500; }
+    .lock-popup-yes { background: #c9a227; color: #fff; border: none; border-radius: 6px; padding: 4px 12px; cursor: pointer; font-size: 0.72rem; font-weight: 600; }
+    .lock-popup-no { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 0.72rem; color: var(--text-dim); }
+    .lock-popup-no:hover { color: var(--text); }
 
     /* -----------------------------------------------------------------------
        First-time keep hint nudge
@@ -1783,6 +1813,13 @@
 
   <!-- Variation detail panel: fixed top-left under the logo -->
   <div id="variationPanel" style="display:none"></div>
+
+  <!-- Lock popup -->
+  <div id="lockPopup">
+    <span class="lock-popup-label" id="lockPopupLabel">Lock to this BPM/key?</span>
+    <button class="lock-popup-yes" id="lockPopupYes">Yes</button>
+    <button class="lock-popup-no" onclick="dismissLockPopup()">No</button>
+  </div>
 
   <!-- Page layout -->
 
@@ -2310,7 +2347,7 @@
       if (!cloud) return;
       cloud.className = "thought-cloud visible";
       const metaParts = [variation.key, variation.tempo ? variation.tempo + ' BPM' : null].filter(Boolean);
-      cloud.innerHTML = `<div class="cloud-top"><span class="cloud-name">${escHtml(variation.name)}</span><button class="cloud-play" title="Play">▶</button></div>${metaParts.length ? `<span class="cloud-meta">${escHtml(metaParts.join(' · '))}</span>` : ''}<div class="cloud-action-strip"><div class="cloud-keep-strip" onclick="heartCloud(event,${idx})"><span>♥</span><span class="keep-label">keep this</span></div><div class="cloud-more-strip" onclick="cloudMoreLikeThis(event,${idx})"><span>✦</span><span>build on this</span></div></div>`;
+      cloud.innerHTML = `<div class="cloud-top"><span class="cloud-name">${escHtml(variation.name)}</span><button class="cloud-play" title="Play">▶</button></div>${metaParts.length ? `<span class="cloud-meta">${escHtml(metaParts.join(' · '))}</span>` : ''}<div class="cloud-action-strip"><div class="cloud-keep-strip" onclick="heartCloud(event,${idx})"><span>♥</span><span class="keep-label">keep this</span></div><div class="cloud-more-strip" onclick="cloudMoreLikeThis(event,${idx})"><span>✦</span><span>build on this</span></div><div class="cloud-lock-strip" onclick="lockCloudToThis(event,${idx})" title="Lock BPM/key to this variation">🔒</div></div>`;
       cloud.addEventListener("click", () => selectCloud(idx));
       cloud.querySelector(".cloud-play").addEventListener("click", (e) => {
         e.stopPropagation();
@@ -2375,10 +2412,10 @@
         <button class="vp-close" onclick="closeVariationPanel()">✕</button>
       `;
       panel.querySelector(".more-like").addEventListener("click", () => {
-        if (!confirm('Clear current generations and build on this?')) return;
-        clearClouds();
+          clearClouds();
         closeVariationPanel();
         showIterationBar(v);
+        showLockPopup(v);
       });
       const playBtn = panel.querySelector(".play-btn");
       if (playBtn) {
@@ -2719,6 +2756,7 @@
           </div>
           <div class="session-item-actions">
             ${item.notes ? `<button class="session-item-seed" title="More like this" onclick="seedFromSession(${i})">✦</button>` : ''}
+            <button class="session-item-seed" title="Lock BPM/key to this" onclick="lockToVariation(sessionItems[${i}])">🔒</button>
             ${item.wav_url ? `<button class="session-item-play" id="session-play-${i}" title="Play / Pause" onclick="playSessionItem(${i})">▶</button>` : ''}
             ${item.midi_url ? `<a class="session-item-dl" href="${escHtml(item.midi_url)}" download title="Download MIDI">MIDI</a>` : ''}
             ${item.wav_url ? `<a class="session-item-dl" href="${escHtml(item.wav_url)}" download title="Download WAV">WAV</a>` : ''}
@@ -3101,13 +3139,51 @@
     // Iteration bar (seed variation for "More like this")
     // ==========================================================================
 
+    function lockToVariation(variation) {
+      const keySelect = document.getElementById('lockKey');
+      const tempoInput = document.getElementById('lockTempo');
+      if (keySelect && variation.key) keySelect.value = variation.key;
+      if (tempoInput && variation.tempo) tempoInput.value = variation.tempo;
+      updateLockState();
+    }
+
+    let _lockPopupTimer = null;
+
+    function showLockPopup(variation) {
+      const popup = document.getElementById('lockPopup');
+      const label = document.getElementById('lockPopupLabel');
+      const yesBtn = document.getElementById('lockPopupYes');
+      if (!popup) return;
+      const parts = [variation.tempo ? variation.tempo + ' BPM' : null, variation.key || null].filter(Boolean);
+      label.textContent = 'Lock to ' + parts.join(' · ') + '?';
+      yesBtn.onclick = () => { lockToVariation(variation); dismissLockPopup(); };
+      popup.classList.add('visible');
+      clearTimeout(_lockPopupTimer);
+      _lockPopupTimer = setTimeout(dismissLockPopup, 6000);
+    }
+
+    function dismissLockPopup() {
+      clearTimeout(_lockPopupTimer);
+      const popup = document.getElementById('lockPopup');
+      if (popup) popup.classList.remove('visible');
+    }
+
+    function lockCloudToThis(e, idx) {
+      e.stopPropagation();
+      const v = currentVariations[idx];
+      if (!v) return;
+      lockToVariation(v);
+      const strip = document.querySelector(`.thought-cloud[data-idx="${idx}"] .cloud-lock-strip`);
+      if (strip) strip.classList.add('locked');
+    }
+
     function cloudMoreLikeThis(e, idx) {
       e.stopPropagation();
       const v = currentVariations[idx];
       if (!v) return;
-      if (!confirm('Clear current generations and build on this?')) return;
       clearClouds();
       showIterationBar(v);
+      showLockPopup(v);
       document.getElementById('prompt').focus();
     }
 
@@ -3143,15 +3219,6 @@
         saveSessionToStorage();
       }
 
-      // Auto-lock key and tempo from the seed so new generations stay in sync
-      if (variation.key) {
-        const keySelect = document.getElementById('lockKey');
-        if (keySelect && !keySelect.value) { keySelect.value = variation.key; updateLockState(); }
-      }
-      if (variation.tempo) {
-        const tempoInput = document.getElementById('lockTempo');
-        if (tempoInput && !tempoInput.value) { tempoInput.value = variation.tempo; updateLockState(); }
-      }
 
       // Show seed indicator inline in the settings bar
       const indicator = document.getElementById('seedIndicator');
