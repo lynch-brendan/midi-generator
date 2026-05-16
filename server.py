@@ -810,6 +810,32 @@ async def get_email_opens(request: Request, db=Depends(get_db)):
 
 
 # ---------------------------------------------------------------------------
+# Admin: user report
+# ---------------------------------------------------------------------------
+
+@app.get("/api/admin/users")
+async def admin_users(request: Request, db=Depends(get_db)):
+    user = get_current_user(request, db) if db is not None else None
+    admin_emails = {x.strip().lower() for x in os.environ.get("ADMIN_EMAILS", "").split(",") if x.strip()}
+    if not user or user.email.lower() not in admin_emails:
+        raise HTTPException(status_code=403, detail="Admin only")
+    from core.models import User
+    users = db.query(User).order_by(User.created_at.desc()).all()
+    return [
+        {
+            "name": u.name,
+            "email": u.email,
+            "signed_up": u.created_at.strftime("%Y-%m-%d %H:%M UTC") if u.created_at else None,
+            "plan": u.subscription_plan or "free",
+            "subscription_status": u.subscription_status,
+            "lifetime_generations": u.lifetime_generations or 0,
+            "monthly_generations": u.monthly_generations or 0,
+        }
+        for u in users
+    ]
+
+
+# ---------------------------------------------------------------------------
 # PostHog reverse proxy — routes analytics through first-party domain to
 # avoid Cloudflare blocking outbound requests to us.i.posthog.com
 # ---------------------------------------------------------------------------
