@@ -2351,7 +2351,7 @@
       if (!cloud) return;
       cloud.className = "thought-cloud visible";
       const metaParts = [variation.key, variation.tempo ? variation.tempo + ' BPM' : null].filter(Boolean);
-      cloud.innerHTML = `<div class="cloud-top"><span class="cloud-name">${escHtml(variation.name)}</span><button class="cloud-play" title="Play">▶</button></div>${metaParts.length ? `<span class="cloud-meta">${escHtml(metaParts.join(' · '))}</span>` : ''}<div class="cloud-action-strip"><div class="cloud-keep-strip" onclick="heartCloud(event,${idx})"><span>♥</span><span class="keep-label">keep this</span></div><div class="cloud-more-strip" onclick="cloudMoreLikeThis(event,${idx})"><span>✦</span><span>build on this</span></div><div class="cloud-lock-strip" onclick="lockCloudToThis(event,${idx})" title="Lock BPM/key to this variation">🔒</div></div>`;
+      cloud.innerHTML = `<div class="cloud-top"><span class="cloud-name">${escHtml(variation.name)}</span><button class="cloud-play" title="Play">▶</button></div>${metaParts.length ? `<span class="cloud-meta">${escHtml(metaParts.join(' · '))}</span>` : ''}<div class="cloud-action-strip"><div class="cloud-keep-strip" onclick="heartCloud(event,${idx})"><span>♥</span><span class="keep-label">keep this</span></div><div class="cloud-more-strip" onclick="cloudMoreLikeThis(event,${idx})"><span>✦</span><span>build on this</span></div><div class="cloud-lock-strip" onclick="lockCloudToThis(event,${idx})" title="Lock BPM/key to this variation">🔗</div></div>`;
       cloud.addEventListener("click", () => selectCloud(idx));
       cloud.querySelector(".cloud-play").addEventListener("click", (e) => {
         e.stopPropagation();
@@ -2760,7 +2760,7 @@
           </div>
           <div class="session-item-actions">
             ${item.notes ? `<button class="session-item-seed" title="More like this" onclick="seedFromSession(${i})">✦</button>` : ''}
-            <button class="session-item-seed" title="Lock BPM/key to this" onclick="lockToVariation(sessionItems[${i}])">🔒</button>
+            <button class="session-item-seed" title="Lock BPM/key to this" onclick="lockToVariation(sessionItems[${i}])">🔗</button>
             ${item.wav_url ? `<button class="session-item-play" id="session-play-${i}" title="Play / Pause" onclick="playSessionItem(${i})">▶</button>` : ''}
             ${item.midi_url ? `<a class="session-item-dl" href="${escHtml(item.midi_url)}" download title="Download MIDI">MIDI</a>` : ''}
             ${item.wav_url ? `<a class="session-item-dl" href="${escHtml(item.wav_url)}" download title="Download WAV">WAV</a>` : ''}
