@@ -274,13 +274,47 @@ STEP 1 — CHOOSE A PLAYING STYLE before writing any notes. There are two modes 
 
 DO NOT MIX THE TWO — a strummed chord with a passing note thrown in at the same time, or an arpeggio where some notes are bunched together, sounds broken. Commit fully.
 
-STRUMMING MODE — patterns to choose from (pick one, stay consistent):
-  • Quarter-note strum (pop/rock): chord at 0.0, 1.0, 2.0, 3.0 each bar
-  • Down-up 8th strum (folk/pop): 0.0 down, 0.5 up, 1.0 down, 1.5 up, 2.0 down, 2.5 up, 3.0 down, 3.5 up
-  • Half-note ballad: chord at 0.0, chord change at 2.0 — slow and open
-  • Reggae skank: chords ONLY on beats 2 and 4 (time 1.0 and 3.0)
-  • Funk chop: 16th-note hits at 0.0, 0.25, 0.5, 0.75... muted chops at velocity 30–50
-  • Power chord chug (rock/metal): 8th notes 0.0, 0.5, 1.0, 1.5... same chord or root/5th alternation
+STRUMMING MODE — chord change rules (do this first):
+  • Chords ALWAYS change at bar boundaries (0.0, 4.0, 8.0, 12.0) or half-bar (0.0, 2.0, 4.0, 6.0). NEVER mid-bar at random beats like 1.3 or 2.7.
+  • Most common durations: whole bar (4 beats), half bar (2 beats). Occasional quarter-bar (1 beat) for turnarounds only.
+  • Use real progressions: I–V–vi–IV (C–G–Am–F), I–IV–V (A–D–E), i–VII–VI–VII (Am–G–F–G), I–vi–IV–V (C–Am–F–G), i–iv–VII–III (Am–Dm–G–C). Don't invent random root motion.
+
+STRUMMING MODE — patterns (pick ONE, copy the exact timing):
+
+  ① BALLAD DOWN (slow/emotional): one downstroke per beat
+     Bar times: 0.0(D) 1.0(D) 2.0(D) 3.0(D)
+     Velocity:  100    90    95    85
+     Best for: slow ballads, hymns, simple folk. Chord change every bar.
+
+  ② THE FOLK STRUM (most versatile): D–DU–UDU per bar
+     Bar times: 0.0(D) 1.0(D) 1.5(U) 2.5(D) 3.0(U)
+     Velocity:  100    90    65    85    60
+     Best for: folk, country, singer-songwriter, acoustic pop. Chord every 2 or 4 beats.
+
+  ③ DOWN-UP 8THS (driving/energetic): strict alternating 8th notes
+     Bar times: 0.0(D) 0.5(U) 1.0(D) 1.5(U) 2.0(D) 2.5(U) 3.0(D) 3.5(U)
+     Velocity:  100    60    95    55    100   60    90    55
+     Best for: upbeat pop, punk, strummed rock. Chord every 2 or 4 beats.
+
+  ④ SYNCOPATED POP: D–DU–DU per bar (skips beat 2 downstroke)
+     Bar times: 0.0(D) 1.0(D) 1.5(U) 2.0(D) 2.5(U) 3.5(U)
+     Velocity:  100    85    60    90    60    55
+     Best for: modern pop, indie, R&B-influenced guitar. Chord every 2 or 4 beats.
+
+  ⑤ REGGAE SKANK: upstrokes on beats 2 and 4 ONLY
+     Bar times: 1.0(U) 3.0(U)
+     Velocity:  80     75
+     Best for: reggae, ska, dub. Short duration (0.4). Chord every 2 or 4 beats.
+
+  ⑥ POWER CHORD CHUG: steady 8th notes, all same velocity
+     Bar times: 0.0 0.5 1.0 1.5 2.0 2.5 3.0 3.5
+     Velocity:  100 95  100 90  100 95  100 90
+     Best for: rock, metal, punk. Power chords only (root+5th, no 3rd). Chord every 2 or 4 beats.
+
+  ⑦ BOSSA NOVA: syncopated Brazilian pattern
+     Bar times: 0.0(D) 0.75(U) 1.5(D) 2.0(D) 2.75(U) 3.5(U)
+     Velocity:  90     65      80     85     65      60
+     Best for: bossa nova, jazz-pop, Latin. Chord every 2 or 4 beats.
 
 STRUMMING MODE — chord voicings (MIDI note numbers):
   • E major: 52, 56, 59, 64 | E minor: 52, 55, 59, 64
@@ -291,9 +325,8 @@ STRUMMING MODE — chord voicings (MIDI note numbers):
   • F major: 53, 57, 60, 65 | B major: 47, 54, 59, 63, 66
   • Power chord (root+5th only, no 3rd): root + root+7 + root+12 (e.g. E5: 40, 47, 52)
 
-STRUMMING MODE — duration and velocity:
-  • Duration = beats until next chord minus 0.05 (e.g. chord every beat → duration 0.95). Let chords ring.
-  • Downstrokes: velocity 85–105. Upstrokes: velocity 55–75. Mutes: velocity 30–50.
+STRUMMING MODE — duration:
+  • Duration = beats until next strum minus 0.05 (e.g. next strum in 1 beat → duration 0.95). Let chords ring naturally.
 
 FINGERPICKING MODE — rules:
   • One note at a time, sequential times. Never two notes at the same time.
