@@ -29,7 +29,6 @@ from core.midi_writer import write_midi
 from core.audio_renderer import render_midi_to_wav
 from core.expression import apply_expression
 from core.drum_synth import render_drum_pattern
-from core.guitar_synth import render_guitar_pattern
 from core.variations import extract_variation_info, validate_variation, sanitize_variation
 from core.auth import create_jwt, get_current_user, google_auth_url, exchange_google_code
 from core.storage import upload_to_r2, r2_enabled
@@ -234,10 +233,6 @@ def _render_wav(notes, tempo, bars, is_drums, drum_kit, midi_path, wav_path, gm_
                 render_midi_to_wav(midi_path, wav_path, gm_patch=gm_patch, tempo=tempo, bars=bars)
             elif wav_path.exists():
                 pad_to_bar_duration(wav_path, bars * 4 * (60.0 / tempo))
-        elif gm_patch is not None and 24 <= gm_patch <= 31:
-            ok = render_guitar_pattern(notes, tempo, gm_patch, wav_path, bars=bars)
-            if not ok:
-                render_midi_to_wav(midi_path, wav_path, gm_patch=gm_patch, tempo=tempo, bars=bars)
         else:
             render_midi_to_wav(midi_path, wav_path, gm_patch=gm_patch, tempo=tempo, bars=bars)
     except Exception as e:
