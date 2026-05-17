@@ -122,7 +122,7 @@ CHORDS AND POLYPHONY:
 - For chordal instruments (piano, guitar, strings, vibraphone, etc.) you SHOULD include chord voicings
 - Create chords by giving multiple notes the same "time" value
 - Piano: mix melody notes with left-hand bass notes and right-hand chord voicings
-- Guitar: use 3-4 note chord voicings, strum patterns (slightly offset times by 0.05 beats per string)
+- Guitar: use 3-5 note chord voicings. Notes in one strum must share the SAME time value (the renderer detects simultaneous notes as a chord and plays a real strummed recording). NEVER spread one chord's notes across multiple time values — that creates a random arpeggio feel. Change chord on beat boundaries (0.0, 1.0, 2.0, 3.0, or 2.0/6.0 for half-bar changes). Strum rhythm = choose one strumming pattern and stay on it for the loop.
 - Strings/pads: use full chord voicings (root, third, fifth, seventh)
 - For melodic instruments (trumpet, flute, sax, bass) keep it monophonic — one note at a time
 - Chord voicings should be musically correct — no random note stacking
@@ -262,6 +262,34 @@ ELECTRONIC / SYNTH:
 - Synth leads: use octave jumps for drama, return to root for grounding
 - Pads: long durations (2.0-4.0), low velocity (45-65), dense chord voicings, slow movement
 - Acid bassline: synth bass (gm_patch 38 or 39), lots of 16th note movement, alternates between root and b7, uses 0.25 and 0.5 durations
+
+GUITAR (GM patches 24–31 — acoustic nylon/steel, clean electric, jazz electric, muted, overdrive, distortion, harmonics):
+- THE GOLDEN RULE: A strum = all notes of the chord at the EXACT same time value. The renderer takes simultaneous notes, identifies the chord, and plays a real strummed recording. If you spread a chord's notes across different times, it sounds like random single plucks — not a guitar.
+- CHORD RHYTHM: Pick a strumming pattern and stick to it. Real guitarists are rhythmically consistent. Examples:
+  • 4-on-the-floor (pop/rock): strums at 0.0, 1.0, 2.0, 3.0 each bar
+  • Down-up strum (folk/pop): 0.0 down, 0.5 up, 1.0 down, 1.5 up, 2.0 down, 2.5 up, 3.0 down, 3.5 up
+  • Ballad (half-note): chord at 0.0, next chord at 2.0 — slow and open
+  • Reggae skank: chords ONLY on beats 2 and 4 (time 1.0 and 3.0)
+  • Funk chop: 16th-note chops at 0.0, 0.25, 0.5, 0.75, 1.0... with mutes (velocity 30-50) between hits
+  • Power chord chug (rock/metal): steady 8th notes 0.0, 0.5, 1.0, 1.5... all same chord or alternating root and 5th
+- CHORD VOICINGS (MIDI note numbers for common open/barre shapes):
+  • E major: 40, 44, 47, 52, 56, 64 — or compact: 52, 56, 59, 64
+  • A major: 45, 52, 57, 61, 64 — or compact: 52, 57, 61, 64
+  • D major: 50, 57, 62, 66 — compact 4-string
+  • G major: 43, 47, 55, 59, 62, 67 — or compact: 55, 59, 62, 67
+  • C major: 48, 52, 55, 60, 64
+  • F major (barre): 53, 57, 60, 65, 69
+  • Am: 45, 52, 57, 60, 64
+  • Em: 40, 47, 52, 55, 59, 64 — or compact: 52, 55, 59, 64
+  • Dm: 50, 57, 62, 65
+  • Power chord (5th only, no 3rd — perfect for rock/metal): root + root+7 + root+12 (e.g., E5: 40, 47, 52)
+- CHORD DURATION: Each chord should sustain for its full rhythmic slot. Use duration = time until next chord (e.g. if chords change every beat, duration = 0.9 to avoid overlap). For open strumming styles, use longer durations (1.5–3.0) so chords ring out naturally.
+- VELOCITY: Downstrokes louder (85–105), upstrokes softer (55–75). Muted/percussive chops: velocity 30–55.
+- STYLE CHOICES:
+  • Acoustic (patches 24–25): folk strumming, fingerpicking arpeggios (cycle root→3rd→5th→3rd), pop ballads, bossa patterns
+  • Clean electric (patches 26–27): funk chops, jazz comping, clean pop, R&B
+  • Distorted/overdrive (patches 28–30): power chords (root+5th only), rock chugs, metal riffs
+- NEVER: random note pitches that don't form a chord, single notes scattered at random times when a strumming part is intended, or chord notes spread across multiple time values.
 
 ELECTRIC PIANO (Rhodes / Wurlitzer — patches 4–5):
 - The Rhodes is the soul and R&B instrument. Think D'Angelo, J Dilla, Herbie Hancock.
