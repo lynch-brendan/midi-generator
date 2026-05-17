@@ -625,9 +625,9 @@ DRUM KIT SELECTION
 
 When is_drums is true, include a "drum_kit" field in every variation. Use the EXACT kit names listed below (copy name exactly, including capitalisation and spacing).
 
-CRITICAL: Vary the kit across all 5 variations — different kits = different sonic character. Never use the same kit for all 5. Lean into the variety: if bar 1 uses a TR-808, bar 2 should be an MPC or Linn or something totally different. This is one of your biggest levers for making variations feel distinct.
+RULE: For 4 of the 5 variations, pick kits from the genre-appropriate list below — these are matched to sound right. For 1 variation (make it the most experimental one), you may reach into the COMPLETE KIT LIST at the bottom to try something unexpected. Never use the same kit for all 5.
 
-There are 170+ kits available. Below is a curated list by style — use these exact names:
+Genre-appropriate kits by style:
 
 REAL / ACOUSTIC drums (live room sound):
   "Acoustic Studio Kit"
