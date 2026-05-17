@@ -16,8 +16,10 @@ from core import drum_kits
 SAMPLE_RATE = 22050
 
 _BUNDLED = Path(__file__).parent.parent / "samples" / "drums"
+# Flat fallback: the original TR-808 one-shots in samples/drums/ root
+_BUNDLED_FLAT = _BUNDLED
 _FL_STUDIO = Path("/Applications/FL Studio 21.app/Contents/Resources/FL/Data/Patches/Packs/All drum packs/Roland Tr-808")
-SAMPLES_DIR = _BUNDLED if _BUNDLED.exists() else _FL_STUDIO
+SAMPLES_DIR = _BUNDLED_FLAT if _BUNDLED_FLAT.exists() else _FL_STUDIO
 
 # GM pitch → stereo pan (-1.0 full left, 0.0 center, 1.0 full right)
 # Mimics a standard drum kit viewed from the drummer's perspective

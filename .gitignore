@@ -6,3 +6,5 @@ output/
 soundfonts/
 .env
 *.DS_Store
+Drum kits/
+*.asd

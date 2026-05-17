@@ -648,22 +648,22 @@ DRUM KIT SELECTION
 
 When is_drums is true, include a "drum_kit" field in every variation. Use the EXACT kit names listed below.
 
-STYLE → EXACT KIT NAME:
+STYLE → EXACT KIT NAME (copy exactly, including capitalisation):
 
 808 / trap / modern hip-hop / Atlanta rap:
-  "Roland TR-808"
+  "Roland Tr-808"
 
 TR-909 / house / techno / UK garage / EDM:
-  "Roland TR-909"
+  "Roland Tr-909"
 
 Boom bap / 90s New York hip-hop / sampling culture:
   "Akai MPC-2000"
 
 Lo-fi hip-hop / classic rap / soulful beats:
-  "Akai MPC60"
+  "Akai Mpc60"
 
 Funk / soul / early hip-hop / Motown-adjacent:
-  "Oberheim DMX"
+  "Oberheim Dmx"
 
 80s R&B / electro / new wave / pop:
   "Linn Drum LM1"
@@ -672,7 +672,7 @@ Funk / soul / early hip-hop / Motown-adjacent:
   "Linn Linndrum"
 
 Classic electronic pop / Depeche Mode / Gary Numan:
-  "Roland TR-707"
+  "Roland Tr-707"
 
 Latin / Caribbean / world percussion:
   "Yamaha RX-5"
@@ -682,9 +682,6 @@ Vintage jazz drum machine / bossa nova / lounge:
 
 Old-school electronic / experimental / avant-garde:
   "Emu Drumulator"
-
-Budget vintage / lo-fi / VHS aesthetic:
-  "Casio RZ-1"
 
 Reggaeton / dembow / Latin trap / perreo:
   "Roland TR-808"

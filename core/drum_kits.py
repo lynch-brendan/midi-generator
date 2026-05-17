@@ -19,6 +19,7 @@ except ImportError:
     _boto3_available = False
 
 CACHE_DIR = Path("/tmp/drum_cache")
+LOCAL_KITS_DIR = Path(__file__).parent.parent / "samples" / "drums"
 
 R2_ACCOUNT_ID = os.environ.get("R2_ACCOUNT_ID", "")
 R2_ACCESS_KEY_ID = os.environ.get("R2_ACCESS_KEY_ID", "")
@@ -57,11 +58,21 @@ def _make_client():
 # Public API
 # ---------------------------------------------------------------------------
 
+def _local_kit_names() -> List[str]:
+    """Kit subdirectories present in samples/drums/."""
+    if not LOCAL_KITS_DIR.exists():
+        return []
+    return [d.name for d in LOCAL_KITS_DIR.iterdir()
+            if d.is_dir() and any(f.suffix.lower() == ".wav" for f in d.iterdir())]
+
+
 def get_kit_names() -> List[str]:
     """
-    Download drums/index.json from R2 and return the list of pack names.
-    Returns ["Roland Tr-808"] as a safe fallback if R2 is unavailable.
+    Return available kit names — local samples/drums/ subfolders first, then R2.
     """
+    local = _local_kit_names()
+    if local:
+        return local
     if not _r2_available():
         return list(_FALLBACK_KIT_NAMES)
 
@@ -102,10 +113,19 @@ def _resolve_kit_name(requested: str, known: List[str]) -> str:
 
 def get_kit_dir(kit_name: str) -> Optional[Path]:
     """
-    Return a local Path to the cached kit directory, downloading from R2 if needed.
-    Does case-insensitive / fuzzy matching so "Roland TR-808" finds "Roland Tr-808".
+    Return a local Path to the kit directory.
+    Checks samples/drums/<kit_name>/ first, then R2.
+    Does case-insensitive / fuzzy matching.
     Returns None if the kit cannot be obtained.
     """
+    # Check local samples first
+    local_names = _local_kit_names()
+    if local_names:
+        resolved = _resolve_kit_name(kit_name, local_names)
+        local_kit = LOCAL_KITS_DIR / resolved
+        if local_kit.exists() and any(f.suffix.lower() == ".wav" for f in local_kit.iterdir()):
+            return local_kit
+
     if not _r2_available():
         return None
 
@@ -181,15 +201,14 @@ def auto_map_kit(kit_dir: Path) -> Dict[int, str]:
                 return fname
         return None
 
-    kick  = _first_match("kick", "bd", "bass drum", "bassdrum")
-    snare = _first_match("snare", "sd", "snr")
+    kick  = _first_match("kick", "bd", "bass drum", "bassdrum", "bsdrum", "kick1", "kick_1")
+    snare = _first_match("snare", "sd", "snr", "sn1", "sn_1", "_sn.", "_sn_", "-sn-", "-sn.")
     rim   = _first_match("rim", "rs", "rimshot", "sidestick", "side_stick", "side-stick")
     clap  = _first_match("clap", "cp", "clp")
     chh   = _first_match("closed hat", "closed_hat", "closed-hat", "hat_c", "hat-c",
                           "_ch_", "-ch-", "_ch.", "-ch.", "hh_c", "hh-c", "hihat_c",
                           "hihat-c", "hi-hat_c", "hi-hat-c",
-                          # Generic closed/hat keywords (order matters — checked after specific ones)
-                          "chh", "clsd", "closed")
+                          "chh", "clsd", "closed", "hat_closed", "hat-closed")
     # Fallback: any generic hat/hh that isn't open
     if chh is None:
         for fname in wav_files:
