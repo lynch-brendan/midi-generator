@@ -1203,6 +1203,38 @@
       .session-panel { z-index: 300; }
     }
 
+    /* Mobile: strip everything down to core generation */
+    @media (max-width: 899px) {
+      .mobile-banner { display: flex !important; }
+      .session-panel { display: none !important; }
+      .session-panel-tab { display: none !important; }
+      .session-title-bar { display: none !important; }
+      #sessionBtn { display: none !important; }
+      #libraryBtn { display: none !important; }
+      .cloud-keep-btn { display: none !important; }
+      .cloud-more-btn { display: none !important; }
+      .cloud-lock-btn { display: none !important; }
+      .cloud-dl-btn { display: none !important; }
+      #autoPlayToggle { display: none !important; }
+      .volume-control { display: none !important; }
+    }
+
+    .mobile-banner {
+      display: none;
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border-soft);
+      padding: 10px 20px;
+      gap: 10px;
+      align-items: center;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      text-align: center;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .mobile-banner strong { color: var(--text); font-weight: 600; }
+    .mobile-banner-sub { color: var(--text-dim); font-size: 0.72rem; }
+
     .session-header {
       display: flex;
       align-items: center;
@@ -1776,6 +1808,11 @@
     </div>
   </div>
 
+  <!-- Mobile banner -->
+  <div class="mobile-banner">
+    <span>🎹 <strong>Best experienced on desktop</strong> — save, download, and build arrangements on a bigger screen.</span>
+  </div>
+
   <!-- Session panel overlay -->
   <div class="session-overlay" id="sessionOverlay" onclick="closeSessionPanel()"></div>
 
@@ -1829,7 +1866,7 @@
       <button id="autoPlayToggle" onclick="toggleAutoPlay()" title="Toggle auto-play" style="background:none;border:none;font-size:0.72rem;cursor:pointer;display:flex;align-items:center;gap:4px;letter-spacing:0.01em;color:var(--text-muted);padding:0 12px;">
         Auto-play <span id="autoPlayState" style="font-weight:600;">on</span>
       </button>
-      <div style="display:flex;align-items:center;gap:5px;padding:0 8px;">
+      <div class="volume-control" style="display:flex;align-items:center;gap:5px;padding:0 8px;">
         <span style="font-size:0.72rem;color:var(--text-muted);">vol</span>
         <input type="range" id="volumeSlider" min="0" max="1" step="0.02" value="1"
           oninput="setGlobalVolume(this.value)"
