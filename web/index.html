@@ -1164,6 +1164,27 @@
 
     .session-panel.visible { transform: translateX(0); }
 
+    .session-panel-tab {
+      display: none;
+      position: fixed;
+      left: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 299;
+      background: var(--bg-input);
+      border: 1px solid var(--border-soft);
+      border-left: none;
+      border-radius: 0 6px 6px 0;
+      padding: 10px 6px;
+      cursor: pointer;
+      color: var(--text-dim);
+      font-size: 0.85rem;
+      line-height: 1;
+      transition: color 0.15s, background 0.15s;
+      box-shadow: 3px 0 10px rgba(0,0,0,0.06);
+    }
+    .session-panel-tab:hover { color: var(--text-muted); background: var(--bg-card); }
+
     /* On desktop: slides in from left, no overlay needed */
     @media (min-width: 900px) {
       .session-panel {
@@ -1862,6 +1883,9 @@
     </div>
     <div id="sessionFooter" style="display:none;"></div>
   </div>
+
+  <!-- Session panel open tab (visible when panel is hidden) -->
+  <button class="session-panel-tab" id="sessionPanelTab" onclick="openSessionPanel()" title="Open session">›</button>
 
   <!-- Library drawer overlay -->
   <div class="library-drawer-overlay" id="libraryOverlay" onclick="closeLibraryDrawer()"></div>
@@ -2943,6 +2967,7 @@
       if (isDesktop()) {
         if (sessionItems.length > 0 && !sessionPanelHidden) openSessionPanel();
         else if (sessionItems.length === 0) { sessionPanelHidden = false; closeSessionPanel(); }
+        else _updateSessionTab();
       }
 
       if (sessionItems.length === 0) {
@@ -3176,12 +3201,21 @@
       sessionPanelHidden = false;
       document.getElementById('sessionPanel').classList.add('visible');
       if (!isDesktop()) document.getElementById('sessionOverlay').classList.add('open');
+      _updateSessionTab();
     }
 
     function closeSessionPanel(userAction = false) {
       if (userAction && isDesktop()) sessionPanelHidden = true;
       document.getElementById('sessionPanel').classList.remove('visible');
       document.getElementById('sessionOverlay').classList.remove('open');
+      _updateSessionTab();
+    }
+
+    function _updateSessionTab() {
+      const tab = document.getElementById('sessionPanelTab');
+      if (!tab) return;
+      const panelOpen = document.getElementById('sessionPanel').classList.contains('visible');
+      tab.style.display = (!panelOpen && sessionItems.length > 0 && isDesktop()) ? 'block' : 'none';
     }
 
     // ==========================================================================
