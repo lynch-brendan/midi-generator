@@ -401,8 +401,13 @@ def render_guitar_pattern(
         total_samples = int((bars * 4.0 / beats_per_second) * SAMPLE_RATE)
         buf = [0.0] * total_samples
 
+        MIN_STRUM_GAP = 0.2  # beats — anything faster than a 16th note is unintentional rapid fire
+        last_strum_beat = -99.0
+
         for group in groups:
             start_beat = float(min(n["time"] for n in group))
+            if start_beat - last_strum_beat < MIN_STRUM_GAP:
+                continue
             velocity = max(min(int(n.get("velocity", 100)), 127) for n in group)
             duration_beats = max(float(n.get("duration", 1.0)) for n in group)
 
@@ -433,6 +438,7 @@ def render_guitar_pattern(
             for i in range(use_len - fade_len, use_len):
                 tone[i] *= 1.0 - (i - (use_len - fade_len)) / fade_len
 
+            last_strum_beat = start_beat
             vel_scale = velocity / 127.0
             start_sample = int(start_beat / beats_per_second * SAMPLE_RATE)
             for i, s in enumerate(tone):
