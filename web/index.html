@@ -1922,7 +1922,7 @@
       </div>
       <div id="projectList"></div>
       <p class="library-empty-projects" id="projectsEmpty" style="display:none">No projects yet. Heart some variations and save a session.</p>
-      <button class="btn-new-session" onclick="newSession();closeLibraryDrawer();" style="margin-top:12px;padding:6px 0;font-size:0.78rem;">+ New Session</button>
+      <button class="btn-new-session" onclick="promptNewSession();closeLibraryDrawer();" style="margin-top:12px;padding:6px 0;font-size:0.78rem;">+ New Session</button>
 
     </div>
 
@@ -2718,6 +2718,7 @@
       } else {
         const item = { ...v, cloudIdx: idx };
         sessionItems.push(item);
+        sessionSaved = false;
         updateCloudHeartState(idx, true);
         posthog.capture('variation_hearted', { name: v.name, tempo: v.tempo });
         // Promote local files to R2 so URLs survive server restarts
@@ -2905,9 +2906,10 @@
     }
 
     let sessionCounter = 1;
+    let sessionSaved = false;
 
     function promptNewSession() {
-      if (sessionItems.length === 0) { newSession(); return; }
+      if (sessionItems.length === 0 || sessionSaved) { newSession(); return; }
       const msg = document.getElementById('newSessionMsg');
       if (msg) msg.textContent = `You have ${sessionItems.length} sound${sessionItems.length > 1 ? 's' : ''} in this session. Want to save them before starting fresh?`;
       document.getElementById('newSessionModal').classList.remove('hidden');
@@ -2930,6 +2932,7 @@
 
     function newSession() {
       sessionItems = [];
+      sessionSaved = false;
       clearSessionStorage();
       clearSeed();
       clearClouds();
@@ -3028,6 +3031,7 @@
           return;
         }
         posthog.capture('project_saved', { name, variation_count: sessionItems.length });
+        sessionSaved = true;
         if (fromModal) closeSaveProjectModal();
         btn.textContent = fromModal ? 'Saved ✓' : 'Saved ✓';
         setTimeout(() => {
