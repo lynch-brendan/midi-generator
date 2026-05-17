@@ -264,32 +264,46 @@ ELECTRONIC / SYNTH:
 - Acid bassline: synth bass (gm_patch 38 or 39), lots of 16th note movement, alternates between root and b7, uses 0.25 and 0.5 durations
 
 GUITAR (GM patches 24–31 — acoustic nylon/steel, clean electric, jazz electric, muted, overdrive, distortion, harmonics):
-- THE GOLDEN RULE: A strum = all notes of the chord at the EXACT same time value. The renderer takes simultaneous notes, identifies the chord, and plays a real strummed recording. If you spread a chord's notes across different times, it sounds like random single plucks — not a guitar.
-- CHORD RHYTHM: Pick a strumming pattern and stick to it. Real guitarists are rhythmically consistent. Examples:
-  • 4-on-the-floor (pop/rock): strums at 0.0, 1.0, 2.0, 3.0 each bar
-  • Down-up strum (folk/pop): 0.0 down, 0.5 up, 1.0 down, 1.5 up, 2.0 down, 2.5 up, 3.0 down, 3.5 up
-  • Ballad (half-note): chord at 0.0, next chord at 2.0 — slow and open
+
+STEP 1 — CHOOSE A PLAYING STYLE before writing any notes. There are two modes and they produce completely different note patterns. Pick one and commit to it for the entire variation:
+
+  ► STRUMMING (chords): All notes in a chord share the EXACT same time value. The renderer detects simultaneous notes as a chord and plays a real strummed recording. Use this for rhythm guitar parts — pop, rock, folk, funk, reggae, ballads.
+
+  ► FINGERPICKING / SINGLE-NOTE (melody or arpeggio): Notes are sequential, one at a time. Use this for lead lines, classical fingerpicking, melodic riffs, or arpeggiated chord patterns where each string rings individually.
+
+DO NOT MIX THE TWO — a strummed chord with a passing note thrown in at the same time, or an arpeggio where some notes are bunched together, sounds broken. Commit fully.
+
+STRUMMING MODE — patterns to choose from (pick one, stay consistent):
+  • Quarter-note strum (pop/rock): chord at 0.0, 1.0, 2.0, 3.0 each bar
+  • Down-up 8th strum (folk/pop): 0.0 down, 0.5 up, 1.0 down, 1.5 up, 2.0 down, 2.5 up, 3.0 down, 3.5 up
+  • Half-note ballad: chord at 0.0, chord change at 2.0 — slow and open
   • Reggae skank: chords ONLY on beats 2 and 4 (time 1.0 and 3.0)
-  • Funk chop: 16th-note chops at 0.0, 0.25, 0.5, 0.75, 1.0... with mutes (velocity 30-50) between hits
-  • Power chord chug (rock/metal): steady 8th notes 0.0, 0.5, 1.0, 1.5... all same chord or alternating root and 5th
-- CHORD VOICINGS (MIDI note numbers for common open/barre shapes):
-  • E major: 40, 44, 47, 52, 56, 64 — or compact: 52, 56, 59, 64
-  • A major: 45, 52, 57, 61, 64 — or compact: 52, 57, 61, 64
-  • D major: 50, 57, 62, 66 — compact 4-string
-  • G major: 43, 47, 55, 59, 62, 67 — or compact: 55, 59, 62, 67
-  • C major: 48, 52, 55, 60, 64
-  • F major (barre): 53, 57, 60, 65, 69
-  • Am: 45, 52, 57, 60, 64
-  • Em: 40, 47, 52, 55, 59, 64 — or compact: 52, 55, 59, 64
-  • Dm: 50, 57, 62, 65
-  • Power chord (5th only, no 3rd — perfect for rock/metal): root + root+7 + root+12 (e.g., E5: 40, 47, 52)
-- CHORD DURATION: Each chord should sustain for its full rhythmic slot. Use duration = time until next chord (e.g. if chords change every beat, duration = 0.9 to avoid overlap). For open strumming styles, use longer durations (1.5–3.0) so chords ring out naturally.
-- VELOCITY: Downstrokes louder (85–105), upstrokes softer (55–75). Muted/percussive chops: velocity 30–55.
-- STYLE CHOICES:
-  • Acoustic (patches 24–25): folk strumming, fingerpicking arpeggios (cycle root→3rd→5th→3rd), pop ballads, bossa patterns
-  • Clean electric (patches 26–27): funk chops, jazz comping, clean pop, R&B
-  • Distorted/overdrive (patches 28–30): power chords (root+5th only), rock chugs, metal riffs
-- NEVER: random note pitches that don't form a chord, single notes scattered at random times when a strumming part is intended, or chord notes spread across multiple time values.
+  • Funk chop: 16th-note hits at 0.0, 0.25, 0.5, 0.75... muted chops at velocity 30–50
+  • Power chord chug (rock/metal): 8th notes 0.0, 0.5, 1.0, 1.5... same chord or root/5th alternation
+
+STRUMMING MODE — chord voicings (MIDI note numbers):
+  • E major: 52, 56, 59, 64 | E minor: 52, 55, 59, 64
+  • A major: 52, 57, 61, 64 | A minor: 52, 57, 60, 64
+  • D major: 50, 57, 62, 66 | D minor: 50, 57, 62, 65
+  • G major: 55, 59, 62, 67 | G minor: 55, 58, 62, 67
+  • C major: 48, 52, 55, 60, 64 | C minor: 48, 51, 55, 60, 63
+  • F major: 53, 57, 60, 65 | B major: 47, 54, 59, 63, 66
+  • Power chord (root+5th only, no 3rd): root + root+7 + root+12 (e.g. E5: 40, 47, 52)
+
+STRUMMING MODE — duration and velocity:
+  • Duration = beats until next chord minus 0.05 (e.g. chord every beat → duration 0.95). Let chords ring.
+  • Downstrokes: velocity 85–105. Upstrokes: velocity 55–75. Mutes: velocity 30–50.
+
+FINGERPICKING MODE — rules:
+  • One note at a time, sequential times. Never two notes at the same time.
+  • Classic pattern (per bar): root(0.0), 5th(0.5), 3rd(1.0), 5th(1.5), root(2.0), 5th(2.5), 3rd(3.0), 5th(3.5)
+  • Duration 0.4–0.6 per note so strings overlap naturally.
+  • Velocity 55–80, gentle and even.
+
+PATCH → STYLE guide:
+  • Acoustic (24–25): strumming for folk/pop/bossa, fingerpicking for classical/ballad
+  • Clean electric (26–27): funk chops, jazz comping, clean pop strumming
+  • Distorted/overdrive (28–30): power chord chugging only — no fingerpicking, no extended chords
 
 ELECTRIC PIANO (Rhodes / Wurlitzer — patches 4–5):
 - The Rhodes is the soul and R&B instrument. Think D'Angelo, J Dilla, Herbie Hancock.
