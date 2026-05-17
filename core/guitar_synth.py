@@ -264,25 +264,33 @@ def _load_sample(path: Path, max_seconds: float = 4.0) -> Optional[List[float]]:
 # Chord detection
 # ---------------------------------------------------------------------------
 
-def _detect_chord(pitches: List[int]) -> Tuple[int, str]:
-    """Return (root_pitch_class, quality) for the best matching chord."""
+def _detect_chord(pitches: List[int]) -> Optional[Tuple[int, str]]:
+    """Return (root_pitch_class, quality) or None if no clean chord found."""
     pcs = set(p % 12 for p in pitches)
+    # Lowest note is almost always the root on guitar
+    bass_pc = min(pitches) % 12
 
-    best_root = pitches[0] % 12
+    best_root = bass_pc
     best_quality = "maj"
-    best_score = -1.0
+    best_score = -99.0
 
     for root in range(12):
         for quality, intervals in CHORD_TEMPLATES:
             chord_pcs = set((root + i) % 12 for i in intervals)
             hits = len(pcs & chord_pcs)
             misses = len(pcs - chord_pcs)
-            score = hits - misses * 0.4
+            score = hits - misses * 0.65
+            # Bonus for root matching the bass note — guitar chords are almost always root-position
+            if root == bass_pc:
+                score += 1.0
             if score > best_score:
                 best_score = score
                 best_root = root
                 best_quality = quality
 
+    # Require a meaningful match — skip if the notes don't form a recognisable chord
+    if best_score < 1.5:
+        return None
     return best_root, best_quality
 
 
@@ -313,8 +321,8 @@ def _find_sample(index: Dict[Tuple[int, str], Path],
         if (root_pc, q) in index:
             return index[(root_pc, q)]
 
-    # Widen search to adjacent roots (up to a tritone away)
-    for dist in range(1, 7):
+    # Widen search to nearest roots only — beyond 2 semitones a wrong chord is worse than silence
+    for dist in range(1, 3):
         for adj in [(root_pc + dist) % 12, (root_pc - dist) % 12]:
             for q in fallbacks:
                 if (adj, q) in index:
@@ -400,11 +408,12 @@ def render_guitar_pattern(
 
             if len(group) >= 2:
                 pitches = [int(n["pitch"]) for n in group]
-                root_pc, quality = _detect_chord(pitches)
+                result = _detect_chord(pitches)
+                if result is None:
+                    continue  # unrecognisable cluster — skip rather than play a wrong chord
+                root_pc, quality = result
             else:
-                # Single note — use its root as a chord anchor (sounds like a soft strum)
-                root_pc = int(group[0]["pitch"]) % 12
-                quality = "maj"
+                continue  # single melody note — let the surrounding chord strums carry it
 
             sample_path = _find_sample(index, root_pc, quality)
             if sample_path is None:
