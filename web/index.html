@@ -2913,6 +2913,9 @@
       resetCharacter();
       setSpeechBubble("I'll play any instrument — what do you want to hear?");
       document.getElementById('prompt').value = '';
+      document.getElementById('lockKey').value = '';
+      document.getElementById('lockTempo').value = '';
+      updateLockState();
       closeVariationPanel();
       sessionCounter++;
       const nameInput = document.getElementById('sessionNameInput');
