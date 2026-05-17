@@ -3419,6 +3419,17 @@
     function showIterationBar(variation) {
       seedVariation = variation;
 
+      // Auto-heart if not already in session
+      if (!sessionItems.some(s => s.midi_url === variation.midi_url)) {
+        const item = { ...variation };
+        sessionItems.push(item);
+        sessionSaved = false;
+        const idx = currentVariations.findIndex(v => v && v.midi_url === variation.midi_url);
+        if (idx !== -1) updateCloudHeartState(idx, true);
+        renderSessionPanel();
+        saveSessionToStorage();
+      }
+
 
       // Show seed indicator inline in the settings bar
       const indicator = document.getElementById('seedIndicator');
