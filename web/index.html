@@ -3235,7 +3235,10 @@
       };
       if (v.midi_url) await download(v.midi_url);
       if (v.wav_url) await download(v.wav_url);
-      posthog.capture('file_downloaded', { file_type: 'both', source: 'cloud' });
+      if (v.drum_stems) {
+        for (const url of Object.values(v.drum_stems)) await download(url);
+      }
+      posthog.capture('file_downloaded', { file_type: v.is_drums ? 'drums+stems' : 'both', source: 'cloud' });
     }
 
     function cloudMoreLikeThis(e, idx) {

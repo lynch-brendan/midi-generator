@@ -254,6 +254,29 @@ def _build_track_data(notes: List[Dict], tempo_bpm: int, gm_patch: int, channel:
     return track_bytes
 
 
+_DRUM_GROUPS = {
+    "kick":    {35, 36},
+    "snare":   {37, 38, 39, 40},
+    "hihat":   {42, 44, 46},
+    "toms":    {41, 43, 45, 47, 48, 50},
+    "cymbals": {49, 51, 52, 53, 55, 57, 59},
+}
+
+
+def write_drum_stems(output_dir: Path, base_name: str, notes: List[Dict], tempo_bpm: int, bars: int = None) -> Dict[str, Path]:
+    """Write one MIDI file per drum piece group. Returns {group_name: path} for non-empty groups."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    stems = {}
+    for group, pitches in _DRUM_GROUPS.items():
+        group_notes = [n for n in notes if int(n["pitch"]) in pitches]
+        if not group_notes:
+            continue
+        path = output_dir / f"{base_name}_{group}.mid"
+        write_midi(path, group_notes, tempo_bpm, gm_patch=0, channel=9, bars=bars)
+        stems[group] = path
+    return stems
+
+
 def write_midi(output_path: Path, notes: List[Dict], tempo_bpm: int, gm_patch: int, channel: int = 0, bars: int = None) -> None:
     """Write a MIDI Format 0 file to output_path."""
     track_data = _build_track_data(notes, tempo_bpm, gm_patch, channel, bars=bars)

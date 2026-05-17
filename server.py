@@ -25,7 +25,7 @@ APP_URL = os.environ.get("APP_URL", "http://localhost:8000")
 sys.path.insert(0, str(Path(__file__).parent))
 
 from core.claude_client import stream_variations, stream_thinking
-from core.midi_writer import write_midi
+from core.midi_writer import write_midi, write_drum_stems
 from core.audio_renderer import render_midi_to_wav
 from core.expression import apply_expression
 from core.drum_synth import render_drum_pattern
@@ -274,6 +274,13 @@ def _process_variation(var: dict, gm_patch: int, slug: str, is_drums: bool = Fal
 
     drum_kit = var.get("drum_kit", None) if effective_drums else None
 
+    # Write per-piece drum stem MIDIs
+    drum_stem_urls = {}
+    if effective_drums:
+        base_name = f"{idx}-{var_slug}"
+        stems = write_drum_stems(out_dir, base_name, notes_with_expression, info.tempo, bars=bars)
+        drum_stem_urls = {group: f"/output/{slug}/{path.name}" for group, path in stems.items()}
+
     future = _wav_executor.submit(_render_wav, list(notes), info.tempo, bars, effective_drums, drum_kit, midi_path, wav_path, effective_patch)
     future.result(timeout=30)
 
@@ -290,6 +297,7 @@ def _process_variation(var: dict, gm_patch: int, slug: str, is_drums: bool = Fal
         "is_drums": effective_drums,
         "midi_url": f"/output/{slug}/{midi_path.name}",
         "wav_url": f"/output/{slug}/{wav_path.name}" if wav_path.exists() else None,
+        "drum_stems": drum_stem_urls if drum_stem_urls else None,
     }
 
 
