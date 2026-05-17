@@ -14,7 +14,7 @@ GM patch routing:
   26 jazz, 27 clean               → clean electric
   28 muted, 29 overdrive, 30 dist → distorted
 """
-import wave, struct, array, re, math
+import wave, struct, array, re, math, random
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -401,25 +401,34 @@ def render_guitar_pattern(
         total_samples = int((bars * 4.0 / beats_per_second) * SAMPLE_RATE)
         buf = [0.0] * total_samples
 
-        MIN_STRUM_GAP = 0.2  # beats — anything faster than a 16th note is unintentional rapid fire
-        last_strum_beat = -99.0
-
+        # Snap all chord groups to nearest 16th-note grid and merge any collisions
+        # (keeps highest-velocity group when two land on the same grid slot)
+        GRID = 0.25
+        strum_events: Dict[float, Tuple] = {}
         for group in groups:
-            start_beat = float(min(n["time"] for n in group))
-            if start_beat - last_strum_beat < MIN_STRUM_GAP:
-                continue
+            if len(group) < 2:
+                continue  # skip single melody notes
+            raw_beat = float(min(n["time"] for n in group))
+            snapped = round(raw_beat / GRID) * GRID
             velocity = max(min(int(n.get("velocity", 100)), 127) for n in group)
             duration_beats = max(float(n.get("duration", 1.0)) for n in group)
+            pitches = [int(n["pitch"]) for n in group]
+            if snapped not in strum_events or velocity > strum_events[snapped][1]:
+                strum_events[snapped] = (pitches, velocity, duration_beats)
 
-            if len(group) >= 2:
-                pitches = [int(n["pitch"]) for n in group]
-                result = _detect_chord(pitches)
-                if result is None:
-                    continue  # unrecognisable cluster — skip rather than play a wrong chord
-                root_pc, quality = result
-            else:
-                continue  # single melody note — let the surrounding chord strums carry it
+        MIN_STRUM_GAP = 0.2
+        last_strum_beat = -99.0
 
+        for start_beat in sorted(strum_events):
+            if start_beat - last_strum_beat < MIN_STRUM_GAP:
+                continue
+
+            pitches, velocity, duration_beats = strum_events[start_beat]
+            result = _detect_chord(pitches)
+            if result is None:
+                continue
+
+            root_pc, quality = result
             sample_path = _find_sample(index, root_pc, quality)
             if sample_path is None:
                 continue
@@ -427,6 +436,11 @@ def render_guitar_pattern(
             raw = _load_sample(sample_path, max_seconds=4.0)
             if raw is None:
                 continue
+
+            # Humanize velocity: downbeats slightly louder, small per-strum variation
+            is_downbeat = (start_beat % 1.0) < 0.01
+            vel = velocity + (5 if is_downbeat else 0) + random.randint(-8, 8)
+            vel_scale = max(30, min(127, vel)) / 127.0
 
             # Trim to note duration + 1.5 s natural decay
             play_sec = duration_beats / beats_per_second + 1.5
@@ -439,7 +453,6 @@ def render_guitar_pattern(
                 tone[i] *= 1.0 - (i - (use_len - fade_len)) / fade_len
 
             last_strum_beat = start_beat
-            vel_scale = velocity / 127.0
             start_sample = int(start_beat / beats_per_second * SAMPLE_RATE)
             for i, s in enumerate(tone):
                 dest = start_sample + i
