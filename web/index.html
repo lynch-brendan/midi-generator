@@ -3415,28 +3415,6 @@
     function showIterationBar(variation) {
       seedVariation = variation;
 
-      // Auto-save to session if not already there
-      if (!sessionItems.some(s => s.midi_url === variation.midi_url)) {
-        const item = { ...variation };
-        sessionItems.push(item);
-        fetch('/api/promote-files', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ midi_url: variation.midi_url, wav_url: variation.wav_url })
-        }).then(r => r.ok ? r.json() : null).then(data => {
-          if (!data) return;
-          item.midi_url = data.midi_url;
-          item.wav_url = data.wav_url;
-          renderSessionPanel();
-          saveSessionToStorage();
-        }).catch(() => {});
-        // Update the cloud heart state if visible
-        const idx = currentVariations.findIndex(v => v && v.midi_url === variation.midi_url);
-        if (idx !== -1) updateCloudHeartState(idx, true);
-        renderSessionPanel();
-        saveSessionToStorage();
-      }
-
 
       // Show seed indicator inline in the settings bar
       const indicator = document.getElementById('seedIndicator');
