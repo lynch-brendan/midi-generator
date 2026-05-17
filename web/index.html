@@ -1419,6 +1419,8 @@
     .session-item-remove:hover { color: var(--red); }
     .session-item-seed { color: var(--text-dim); font-size: 0.78rem; transition: color 0.15s; background: none; border: none; cursor: pointer; padding: 3px 5px; border-radius: 4px; }
     .session-item-seed:hover { color: var(--accent); }
+    .session-item.seed-active { background: color-mix(in srgb, var(--accent) 10%, transparent); border-left: 2px solid var(--accent); }
+    .session-item.seed-active .session-item-seed:first-of-type { color: var(--accent); }
 
     .session-footer {
       padding-top: 14px;
@@ -2062,7 +2064,8 @@
     let currentVariations = [];
     let activeCloudIdx = -1;
     let sessionItems = [];        // hearted variations: [{...variation, sessionIdx}]
-    let seedVariation = null;     // variation being iterated on via "More like this"
+    let seedVariation = null;     // primary seed (single build-on-this)
+    let activeSeeds = [];         // all seeds selected for multi-context generation
     let lastUserPrompt = "";
     let projects = [];
     let openProjectId = null;
@@ -2730,7 +2733,9 @@
       if (promptInput) promptInput.value = '';
 
       const activeSeed = seedVariation;
+      const activeSeeds_snapshot = [...activeSeeds];
       seedVariation = null; // prevent re-use, but keep the card visible until done
+      activeSeeds = [];
 
       unlockAudio();
 
@@ -2748,7 +2753,13 @@
 
       try {
         const body = { prompt, ...getLocks() };
-        if (activeSeed) body.seed_variation = activeSeed;
+        if (activeSeeds_snapshot.length > 1) {
+          body.seed_variations = activeSeeds_snapshot;
+        } else if (activeSeeds_snapshot.length === 1) {
+          body.seed_variation = activeSeeds_snapshot[0];
+        } else if (activeSeed) {
+          body.seed_variation = activeSeed;
+        }
         const res = await fetch("/api/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -2936,7 +2947,8 @@
         const emoji = getInstrumentEmoji(item.instrument || '');
         const meta = [item.key, item.tempo ? item.tempo + ' BPM' : null].filter(Boolean).join(' · ');
         const el = document.createElement('div');
-        el.className = 'session-item';
+        const isSeeded = activeSeeds.some(s => s.midi_url === item.midi_url);
+        el.className = 'session-item' + (isSeeded ? ' seed-active' : '');
         el.innerHTML = `
           <span class="session-item-emoji" onclick="openSessionItemDetail(${i})" style="cursor:pointer">${emoji || '🎵'}</span>
           <div class="session-item-info" onclick="openSessionItemDetail(${i})" style="cursor:pointer">
@@ -3432,7 +3444,11 @@
     }
 
     function showIterationBar(variation) {
-      seedVariation = variation;
+      // Add to activeSeeds if not already there (additive)
+      if (!activeSeeds.some(s => s.midi_url === variation.midi_url)) {
+        activeSeeds.push(variation);
+      }
+      seedVariation = activeSeeds[0];
 
       // Auto-heart if not already in session
       if (!sessionItems.some(s => s.midi_url === variation.midi_url)) {
@@ -3441,17 +3457,17 @@
         sessionSaved = false;
         const idx = currentVariations.findIndex(v => v && v.midi_url === variation.midi_url);
         if (idx !== -1) updateCloudHeartState(idx, true);
-        renderSessionPanel();
         saveSessionToStorage();
       }
+      renderSessionPanel(); // always re-render to sync seed-active highlights
 
-
-      // Show seed indicator inline in the settings bar
+      // Show seed indicator
       const indicator = document.getElementById('seedIndicator');
       const cardName = document.getElementById('seedCardName');
       if (cardName) {
-        const parts = [variation.name, variation.tempo ? variation.tempo + ' BPM' : null, variation.key || null].filter(Boolean);
-        cardName.textContent = parts.join(' · ');
+        cardName.textContent = activeSeeds.length > 1
+          ? `${activeSeeds.length} loops selected`
+          : [variation.name, variation.tempo ? variation.tempo + ' BPM' : null, variation.key || null].filter(Boolean).join(' · ');
       }
       if (indicator) indicator.classList.add('visible');
 
@@ -3475,9 +3491,11 @@
 
     function clearSeed() {
       seedVariation = null;
+      activeSeeds = [];
       const indicator = document.getElementById('seedIndicator');
       if (indicator) indicator.classList.remove('visible');
       document.querySelectorAll('.thought-cloud.seed').forEach(c => c.classList.remove('seed'));
+      document.querySelectorAll('.session-item.seed-active').forEach(el => el.classList.remove('seed-active'));
       const input = document.getElementById('prompt');
       if (input) input.placeholder = 'e.g. funky bass riff in E minor';
     }
