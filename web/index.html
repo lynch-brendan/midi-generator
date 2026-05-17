@@ -1809,6 +1809,18 @@
     </div>
   </div>
 
+  <!-- Lock suggestion modal -->
+  <div id="lockSuggestModal" class="modal-overlay hidden" onclick="if(event.target===this)_lockSuggestSkip()">
+    <div class="modal-box" style="max-width:320px;">
+      <p style="font-size:1rem;font-weight:600;margin:0 0 6px;" id="lockSuggestTitle"></p>
+      <p style="font-size:0.82rem;color:var(--text-muted);margin:0 0 18px;">Want to lock this before generating?</p>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="modal-btn-secondary" onclick="_lockSuggestSkip()">No thanks</button>
+        <button class="modal-btn-primary" onclick="_lockSuggestApply()">Yes, lock it</button>
+      </div>
+    </div>
+  </div>
+
   <!-- New session confirmation modal -->
   <div id="newSessionModal" class="modal-overlay hidden" onclick="if(event.target===this)closeNewSessionModal()">
     <div class="modal-box" style="max-width:340px;">
@@ -2629,11 +2641,77 @@
       }, durationMs);
     }
 
+    let _lockSuggestCallback = null;
+    let _lockSuggestData = null;
+
+    function _lockSuggestSkip() {
+      document.getElementById('lockSuggestModal').classList.add('hidden');
+      if (_lockSuggestCallback) { const cb = _lockSuggestCallback; _lockSuggestCallback = null; cb(); }
+    }
+
+    function _lockSuggestApply() {
+      if (_lockSuggestData) {
+        if (_lockSuggestData.bpm) { document.getElementById('lockTempo').value = _lockSuggestData.bpm; }
+        if (_lockSuggestData.key) { document.getElementById('lockKey').value = _lockSuggestData.key; }
+        updateLockState();
+        document.getElementById('promptLockSuggestions').innerHTML = '';
+      }
+      _lockSuggestSkip();
+    }
+
+    function _checkPromptLockSuggestions(prompt, callback) {
+      const currentKey = document.getElementById('lockKey').value;
+      const currentTempo = document.getElementById('lockTempo').value;
+      const suggestions = [];
+
+      const bpmMatch = prompt.match(/\b(\d{2,3})\s*bpm\b/i);
+      if (bpmMatch) {
+        const bpm = parseInt(bpmMatch[1]);
+        if (bpm >= 40 && bpm <= 240 && String(bpm) !== currentTempo) suggestions.push({ bpm });
+      }
+
+      const keyPattern = /\b(C#|Db|D#|Eb|F#|Gb|G#|Ab|A#|Bb|C|D|E|F|G|A|B)\s+(major|minor|maj|min)\b/i;
+      const keyMatch = prompt.match(keyPattern);
+      if (keyMatch) {
+        const aliases = { 'C#': 'Db', 'D#': 'Eb', 'Gb': 'F#', 'G#': 'Ab', 'A#': 'Bb' };
+        let note = aliases[keyMatch[1]] || keyMatch[1].charAt(0).toUpperCase() + keyMatch[1].slice(1);
+        const quality = keyMatch[2].toLowerCase().startsWith('maj') ? 'major' : 'minor';
+        const keyValue = `${note} ${quality}`;
+        if (_VALID_KEYS.includes(keyValue) && keyValue !== currentKey) suggestions.push({ key: keyValue });
+      }
+
+      if (suggestions.length === 0) { callback(); return; }
+
+      const data = Object.assign({}, ...suggestions);
+      const parts = [];
+      if (data.key) parts.push(`key → ${data.key}`);
+      if (data.bpm) parts.push(`BPM → ${data.bpm}`);
+      document.getElementById('lockSuggestTitle').textContent = `Lock ${parts.join(' & ')}?`;
+      _lockSuggestData = data;
+      _lockSuggestCallback = callback;
+      document.getElementById('lockSuggestModal').classList.remove('hidden');
+    }
+
     async function generate(overridePrompt) {
       const promptInput = document.getElementById("prompt");
       const prompt = overridePrompt !== undefined ? overridePrompt : promptInput.value.trim();
       if (!prompt && !seedVariation) return;
 
+      // Intercept if prompt contains unset key/BPM
+      if (overridePrompt === undefined) {
+        let proceeded = false;
+        _checkPromptLockSuggestions(prompt, () => {
+          proceeded = true;
+          _doGenerate(prompt, promptInput);
+        });
+        if (!proceeded) return;
+        return;
+      }
+
+      _doGenerate(prompt, promptInput);
+    }
+
+    async function _doGenerate(prompt, promptInput) {
       lastUserPrompt = prompt;
       posthog.capture('generate_submitted', { prompt, is_iteration: !!seedVariation });
       if (promptInput) promptInput.value = '';
