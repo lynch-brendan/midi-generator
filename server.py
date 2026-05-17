@@ -823,6 +823,36 @@ async def get_email_opens(request: Request, db=Depends(get_db)):
 
 
 # ---------------------------------------------------------------------------
+# Email click tracking
+# ---------------------------------------------------------------------------
+
+_CLICKS_FILE = Path(__file__).parent / "email_clicks.json"
+
+@app.get("/track/click")
+async def track_click(id: str = "", request: Request = None):
+    import base64
+    from fastapi.responses import RedirectResponse
+    try:
+        email = base64.urlsafe_b64decode(id + "==").decode()
+        clicks = json.loads(_CLICKS_FILE.read_text()) if _CLICKS_FILE.exists() else []
+        clicks.append({"email": email, "ts": datetime.utcnow().isoformat(), "ip": request.headers.get("x-forwarded-for", "")})
+        _CLICKS_FILE.write_text(json.dumps(clicks))
+        print(f"[email-click] {email}")
+    except Exception:
+        pass
+    return RedirectResponse(url="https://museaimusician.com", status_code=302)
+
+
+@app.get("/api/email-clicks")
+async def get_email_clicks(request: Request, db=Depends(get_db)):
+    user = get_current_user(request, db) if db is not None else None
+    admin_emails = {x.strip().lower() for x in os.environ.get("ADMIN_EMAILS", "").split(",") if x.strip()}
+    if not user or user.email.lower() not in admin_emails:
+        raise HTTPException(status_code=403, detail="Admin only")
+    return JSONResponse(json.loads(_CLICKS_FILE.read_text()) if _CLICKS_FILE.exists() else [])
+
+
+# ---------------------------------------------------------------------------
 # Admin: user report
 # ---------------------------------------------------------------------------
 
