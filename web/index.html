@@ -1211,6 +1211,13 @@
 
     .btn-session-clear:hover { color: var(--text-muted); }
 
+    .btn-session-close {
+      background: none; border: none; color: var(--text-dim);
+      font-size: 1rem; cursor: pointer; padding: 2px 5px; border-radius: 4px;
+      line-height: 1; transition: color 0.15s;
+    }
+    .btn-session-close:hover { color: var(--text-muted); }
+
     /* Session title bar — always centered in full viewport */
     .session-title-bar {
       position: fixed;
@@ -1845,7 +1852,10 @@
   <div class="session-panel" id="sessionPanel">
     <div class="session-header">
       <span class="session-title" id="sessionPanelTitle">Session 1</span>
-      <button class="btn-session-clear" onclick="clearSession()" title="Clear session">clear</button>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <button class="btn-session-clear" onclick="clearSession()" title="Clear session">clear</button>
+        <button class="btn-session-close" onclick="closeSessionPanel(true)" title="Hide panel">‹</button>
+      </div>
     </div>
     <div class="session-items" id="sessionItems">
       <p class="session-empty">Heart a variation to start<br>building your session.</p>
@@ -2929,10 +2939,10 @@
       countEl.textContent = sessionItems.length;
       sessionBtn.style.display = sessionItems.length > 0 ? 'block' : 'none';
 
-      // On desktop, slide in when items exist, slide away when cleared
+      // On desktop, slide in when items exist (unless user manually closed it)
       if (isDesktop()) {
-        if (sessionItems.length > 0) openSessionPanel();
-        else closeSessionPanel();
+        if (sessionItems.length > 0 && !sessionPanelHidden) openSessionPanel();
+        else if (sessionItems.length === 0) { sessionPanelHidden = false; closeSessionPanel(); }
       }
 
       if (sessionItems.length === 0) {
@@ -3096,6 +3106,7 @@
 
     let sessionCounter = 1;
     let sessionSaved = false;
+    let sessionPanelHidden = false; // user manually closed the panel
 
     function promptNewSession() {
       if (sessionItems.length === 0 || sessionSaved) { newSession(); return; }
@@ -3152,17 +3163,19 @@
 
     function toggleSessionPanel() {
       const panel = document.getElementById('sessionPanel');
-      panel.classList.contains('visible') ? closeSessionPanel() : openSessionPanel();
+      panel.classList.contains('visible') ? closeSessionPanel(true) : openSessionPanel();
     }
 
     function isDesktop() { return window.innerWidth >= 900; }
 
     function openSessionPanel() {
+      sessionPanelHidden = false;
       document.getElementById('sessionPanel').classList.add('visible');
       if (!isDesktop()) document.getElementById('sessionOverlay').classList.add('open');
     }
 
-    function closeSessionPanel() {
+    function closeSessionPanel(userAction = false) {
+      if (userAction && isDesktop()) sessionPanelHidden = true;
       document.getElementById('sessionPanel').classList.remove('visible');
       document.getElementById('sessionOverlay').classList.remove('open');
     }
