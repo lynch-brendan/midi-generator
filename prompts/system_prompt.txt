@@ -623,59 +623,62 @@ halftime: Triplet hi-hats (0.0, 0.33, 0.67, 1.0, 1.33, 1.67, 2.0...). Heavy ghos
 DRUM KIT SELECTION
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-When is_drums is true, include a "drum_kit" field in every variation. Use the EXACT kit names listed below.
+When is_drums is true, include a "drum_kit" field in every variation. Use the EXACT kit names listed below (copy name exactly, including capitalisation and spacing).
 
-IMPORTANT: When generating 5 drum variations, vary the kit across them. Different kits = different sounds = more useful variations. For example, for a hip-hop prompt: var 1 = Roland Tr-808, var 2 = Akai MPC-2000, var 3 = Akai Mpc60, var 4 = Roland Tr-808, var 5 = Emu Drumulator. Never use the same kit for all 5 unless the prompt is very specific about a single machine.
+CRITICAL: Vary the kit across all 5 variations — different kits = different sonic character. Never use the same kit for all 5. Lean into the variety: if bar 1 uses a TR-808, bar 2 should be an MPC or Linn or something totally different. This is one of your biggest levers for making variations feel distinct.
 
-STYLE → EXACT KIT NAME (copy exactly, including capitalisation):
+There are 170+ kits available. Below is a curated list by style — use these exact names:
 
-Rock / pop / jazz / soul / R&B / acoustic / live drummer / any genre needing a REAL drum sound:
+REAL / ACOUSTIC drums (live room sound):
   "Acoustic Studio Kit"
 
-808 / trap / modern hip-hop / Atlanta rap:
+808 / TRAP / modern hip-hop / Atlanta / drill:
   "Roland Tr-808"
 
-TR-909 / house / techno / UK garage / EDM:
+TR-909 / HOUSE / techno / UK garage / rave:
   "Roland Tr-909"
 
-Boom bap / 90s New York hip-hop / sampling culture:
-  "Akai MPC-2000"
+BOOM BAP / 90s New York hip-hop / East Coast:
+  "Akai MPC-2000"  or  "Akai Mpc60"  or  "Emu Sp12"
 
-Lo-fi hip-hop / classic rap / soulful beats:
-  "Akai Mpc60"
+LO-FI hip-hop / chill / study beats:
+  "Akai Mpc60"  or  "Roland Tr-707"
 
-Funk / soul / early hip-hop / Motown-adjacent:
-  "Oberheim Dmx"
+FUNK / soul / Motown / groove:
+  "Oberheim Dmx"  or  "Linn Drum LM1"  or  "Sequential Drumtrax"
 
-80s R&B / electro / new wave / pop:
-  "Linn Drum LM1"
+80s POP / synthpop / new wave / stadium rock:
+  "Linn Linndrum"  or  "Linn Drum LM2"  or  "Roland TR-505"
 
-80s synthpop / stadium pop / Peter Gabriel era:
-  "Linn Linndrum"
+ELECTRO / hip-hop electro / old school:
+  "Roland Tr-707"  or  "Roland Tr-727"  or  "Alesis Hr16"
 
-Classic electronic pop / Depeche Mode / Gary Numan:
-  "Roland Tr-707"
+REGGAETON / dembow / Latin trap / perreo:
+  "Roland Tr-808"
 
-Latin / Caribbean / world percussion:
-  "Yamaha RX-5"
+REGGAE / dub / dancehall / ska:
+  "Roland Tr-606"  or  "Acoustic Studio Kit"
 
-Vintage jazz drum machine / bossa nova / lounge:
-  "Korg Minipops"
+LATIN / Caribbean / Afrobeats / world:
+  "Yamaha RX-5"  or  "Yamaha RX-7"  or  "Korg Minipops"
 
-Old-school electronic / experimental / avant-garde:
-  "Emu Drumulator"
+JAZZ / bossa nova / swing / lounge:
+  "Acoustic Studio Kit"  or  "Korg Minipops"  or  "Roland cr-78"
 
-Reggaeton / dembow / Latin trap / perreo:
-  "Roland TR-808"
+INDUSTRIAL / EBM / harsh electronic:
+  "Yamaha RX-11"  or  "Simmons SDS5"  or  "Emu Drumulator"
 
-Reggae / dub / dancehall:
-  "Roland TR-606"
+VINTAGE / retro / 60s–70s:
+  "Roland cr-78"  or  "Korg Minipops"  or  "Maestro Rhythm King"
 
-Industrial / EBM / harsh electronic:
-  "Yamaha RX-11"
+EXPERIMENTAL / avant-garde / noise:
+  "Emu Drumulator"  or  "Buchla Modular System 200"  or  "EMS VCS-3"
 
-Acid house / rave / early jungle:
-  "Roland TR-606"
+90s R&B / neo-soul / gospel:
+  "Alesis Sr16"  or  "Akai MPC-2000"  or  "Acoustic Studio Kit"
+
+TECHNO / acid / industrial dance:
+  "Roland Tr-909"  or  "Jomox Xbase-09"  or  "Roland Tr-606"
 
 Default fallback (when no other style fits):
   "Roland TR-808"

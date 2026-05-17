@@ -201,8 +201,11 @@ def auto_map_kit(kit_dir: Path) -> Dict[int, str]:
                 return fname
         return None
 
-    kick  = _first_match("kick", "bd", "bass drum", "bassdrum", "bsdrum", "kick1", "kick_1")
-    snare = _first_match("snare", "sd", "snr", "sn1", "sn_1", "_sn.", "_sn_", "-sn-", "-sn.")
+    # Prefer "hard" and "medium" variants over "brush", "ghost", "soft" qualifiers
+    kick  = (_first_match("kick_hard", "kick_med") or
+             _first_match("kick", "bd", "bass drum", "bassdrum", "bsdrum", "kick1", "kick_1"))
+    snare = (_first_match("snare_hard", "snare_med") or
+             _first_match("snare", "sd", "snr", "sn1", "sn_1", "_sn.", "_sn_", "-sn-", "-sn."))
     rim   = _first_match("rim", "rs", "rimshot", "sidestick", "side_stick", "side-stick")
     clap  = _first_match("clap", "cp", "clp")
     chh   = _first_match("closed hat", "closed_hat", "closed-hat", "hat_c", "hat-c",
