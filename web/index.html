@@ -2154,6 +2154,13 @@
       }
     }
 
+    window.addEventListener("beforeunload", (e) => {
+      if (sessionItems.length > 0) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    });
+
     document.addEventListener("visibilitychange", () => {
       if (document.hidden || !autoPlayEnabled) return;
       if (autoPlayWaitingForIdx >= 0 && currentVariations[autoPlayWaitingForIdx]) {
