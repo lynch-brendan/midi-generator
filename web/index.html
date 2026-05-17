@@ -2374,7 +2374,7 @@
       if (!cloud) return;
       cloud.className = "thought-cloud visible";
       const metaParts = [variation.key, variation.tempo ? variation.tempo + ' BPM' : null].filter(Boolean);
-      cloud.innerHTML = `<div class="cloud-top"><span class="cloud-name">${escHtml(variation.name)}</span><button class="cloud-play" title="Play">▶</button></div>${metaParts.length ? `<span class="cloud-meta">${escHtml(metaParts.join(' · '))}</span>` : ''}<div class="cloud-action-strip"><div class="cloud-action-btn cloud-keep-btn" onclick="heartCloud(event,${idx})"><span>♥</span><span class="btn-label">keep this</span></div><div class="cloud-action-btn cloud-more-btn" onclick="cloudMoreLikeThis(event,${idx})"><span>✦</span><span class="btn-label">build on this</span></div><div class="cloud-action-btn cloud-lock-btn" onclick="cloudLockKeyTempo(event,${idx})"><span>🔗</span><span class="btn-label">lock key & bpm</span></div></div>`;
+      cloud.innerHTML = `<div class="cloud-top"><span class="cloud-name">${escHtml(variation.name)}</span><button class="cloud-play" title="Play">▶</button></div>${metaParts.length ? `<span class="cloud-meta">${escHtml(metaParts.join(' · '))}</span>` : ''}<div class="cloud-action-strip"><div class="cloud-action-btn cloud-keep-btn" onclick="heartCloud(event,${idx})"><span>♥</span><span class="btn-label">keep this</span></div><div class="cloud-action-btn cloud-more-btn" onclick="cloudMoreLikeThis(event,${idx})"><span>✦</span><span class="btn-label">build on this</span></div><div class="cloud-action-btn cloud-lock-btn" onclick="cloudLockKeyTempo(event,${idx})"><span>🔗</span><span class="btn-label">lock key & bpm</span></div><div class="cloud-action-btn cloud-dl-btn" onclick="cloudDownloadBoth(event,${idx})"><span>↓</span><span class="btn-label">download</span></div></div>`;
       cloud.addEventListener("click", () => selectCloud(idx));
       cloud.querySelector(".cloud-play").addEventListener("click", (e) => {
         e.stopPropagation();
@@ -3196,6 +3196,24 @@
       clearTimeout(_lockPopupTimer);
       const popup = document.getElementById('lockPopup');
       if (popup) popup.classList.remove('visible');
+    }
+
+    async function cloudDownloadBoth(e, idx) {
+      e.stopPropagation();
+      const v = currentVariations[idx];
+      if (!v) return;
+      const download = async (url) => {
+        const resp = await fetch(url);
+        const blob = await resp.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = url.split('/').pop();
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(a.href);
+      };
+      if (v.midi_url) await download(v.midi_url);
+      if (v.wav_url) await download(v.wav_url);
+      posthog.capture('file_downloaded', { file_type: 'both', source: 'cloud' });
     }
 
     function cloudLockKeyTempo(e, idx) {
