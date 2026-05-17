@@ -1347,6 +1347,14 @@
     }
     .btn-new-session:hover { color: var(--text-muted); }
 
+    .lock-suggestion-pill {
+      font-size: 0.72rem; padding: 3px 10px; border-radius: 20px;
+      background: var(--bg-card); border: 1px solid var(--border-soft);
+      color: var(--text-muted); cursor: pointer; transition: background 0.15s, color 0.15s;
+      white-space: nowrap;
+    }
+    .lock-suggestion-pill:hover { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+
     .session-items {
       flex: 1;
       display: flex;
@@ -1879,9 +1887,10 @@
       <p id="genStatus" style="font-size:0.78rem;color:var(--text-muted);text-align:center;min-height:18px;margin-bottom:4px;letter-spacing:0.01em;"></p>
 
       <div class="input-row">
-        <input type="text" id="prompt" placeholder="e.g. funky bass riff in E minor" />
+        <input type="text" id="prompt" placeholder="e.g. funky bass riff in E minor" oninput="detectPromptLocks()" />
         <button class="generate" id="generateBtn" onclick="generate()">Generate</button>
       </div>
+      <div id="promptLockSuggestions" style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;min-height:24px;margin-top:6px;"></div>
       <p style="font-size:0.65rem;color:var(--text-dim);margin:4px 0 0;letter-spacing:0.02em;text-align:center;">All output is royalty free.</p>
 
       <div class="examples">
@@ -2126,6 +2135,57 @@
         if (cloudIdx >= 0) updateCloudPlayBtn(cloudIdx, '▶');
         _activeAudio = audio;
       });
+    }
+
+    const _VALID_KEYS = ["C major","C minor","Db major","Db minor","D major","D minor","Eb major","Eb minor","E major","E minor","F major","F minor","F# major","F# minor","G major","G minor","Ab major","Ab minor","A major","A minor","Bb major","Bb minor","B major","B minor"];
+
+    function detectPromptLocks() {
+      const text = document.getElementById('prompt').value;
+      const container = document.getElementById('promptLockSuggestions');
+      container.innerHTML = '';
+
+      const currentKey = document.getElementById('lockKey').value;
+      const currentTempo = document.getElementById('lockTempo').value;
+
+      // Detect BPM
+      const bpmMatch = text.match(/\b(\d{2,3})\s*bpm\b/i);
+      if (bpmMatch) {
+        const bpm = parseInt(bpmMatch[1]);
+        if (bpm >= 40 && bpm <= 240 && String(bpm) !== currentTempo) {
+          const pill = document.createElement('button');
+          pill.className = 'lock-suggestion-pill';
+          pill.textContent = `lock BPM to ${bpm}`;
+          pill.onclick = () => {
+            document.getElementById('lockTempo').value = bpm;
+            updateLockState();
+            container.innerHTML = '';
+          };
+          container.appendChild(pill);
+        }
+      }
+
+      // Detect key — e.g. "in D minor", "D minor", "key of F# major"
+      const keyPattern = /\b(C|C#|Db|D|D#|Eb|E|F|F#|Gb|G|G#|Ab|A|A#|Bb|B)\s+(major|minor|maj|min)\b/i;
+      const keyMatch = text.match(keyPattern);
+      if (keyMatch) {
+        let note = keyMatch[1];
+        const quality = keyMatch[2].toLowerCase().startsWith('maj') ? 'major' : 'minor';
+        // Normalize flats/sharps to match select options
+        const aliases = { 'C#': 'Db', 'D#': 'Eb', 'Gb': 'F#', 'G#': 'Ab', 'A#': 'Bb' };
+        note = aliases[note] || note.charAt(0).toUpperCase() + note.slice(1);
+        const keyValue = `${note} ${quality}`;
+        if (_VALID_KEYS.includes(keyValue) && keyValue !== currentKey) {
+          const pill = document.createElement('button');
+          pill.className = 'lock-suggestion-pill';
+          pill.textContent = `lock key to ${keyValue}`;
+          pill.onclick = () => {
+            document.getElementById('lockKey').value = keyValue;
+            updateLockState();
+            container.innerHTML = '';
+          };
+          container.appendChild(pill);
+        }
+      }
     }
 
     function updateLockState() {
