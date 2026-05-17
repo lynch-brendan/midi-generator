@@ -105,7 +105,8 @@ BAR LENGTH GUIDE:
 Choose "bars" per variation based on musical role. Notes must fill the full chosen length.
 
   1 bar  (4.0 beats)  — single-bar ostinatos, tight one-bar grooves, electronic motifs
-  2 bars (8.0 beats)  — bass lines, funk riffs, chord comping, most loops. DEFAULT for rhythm/groove roles.
+  2 bars (8.0 beats)  — bass lines, funk riffs, most loops. DEFAULT for rhythm/groove roles.
+  4 bars (16.0 beats) — melodies, jazz phrases, call-and-response, chord progressions, guitar strumming/picking. DEFAULT for melodic roles AND guitar.
   4 bars (16.0 beats) — melodies, jazz phrases, call-and-response, chord progressions. DEFAULT for melodic roles.
   8 bars (32.0 beats) — extended solos, blues forms, long narrative phrases
 
