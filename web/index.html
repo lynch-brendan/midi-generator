@@ -3175,12 +3175,14 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             name,
-            files: sessionItems.map(v => ({
-              name: v.name,
-              prompt: v.prompt || lastUserPrompt,
-              midi_url: v.midi_url,
-              wav_url: v.wav_url || null,
-            })),
+            files: sessionItems
+              .filter((v, i, arr) => arr.findIndex(x => x.midi_url === v.midi_url) === i)
+              .map(v => ({
+                name: v.name,
+                prompt: v.prompt || lastUserPrompt,
+                midi_url: v.midi_url,
+                wav_url: v.wav_url || null,
+              })),
           }),
         });
         if (!res.ok) {
