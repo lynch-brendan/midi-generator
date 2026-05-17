@@ -3108,6 +3108,14 @@
     let sessionSaved = false;
     let sessionPanelHidden = false; // user manually closed the panel
 
+    function setSessionName(name) {
+      const nameInput = document.getElementById('sessionNameInput');
+      const title = document.getElementById('sessionPanelTitle');
+      const placeholder = `Session ${sessionCounter}`;
+      if (nameInput) { nameInput.value = name || ''; nameInput.placeholder = placeholder; }
+      if (title) title.textContent = name && name.trim() ? name.trim() : placeholder;
+    }
+
     function promptNewSession() {
       if (sessionItems.length === 0 || sessionSaved) { newSession(); return; }
       const msg = document.getElementById('newSessionMsg');
@@ -3144,11 +3152,7 @@
       updateLockState();
       closeVariationPanel();
       sessionCounter++;
-      const nameInput = document.getElementById('sessionNameInput');
-      nameInput.value = '';
-      nameInput.placeholder = `Session ${sessionCounter}`;
-      const title = document.getElementById('sessionPanelTitle');
-      if (title) title.textContent = `Session ${sessionCounter}`;
+      setSessionName('');
       renderSessionPanel();
       closeSessionPanel();
     }
@@ -3236,6 +3240,7 @@
         }
         posthog.capture('project_saved', { name, variation_count: sessionItems.length });
         sessionSaved = true;
+        setSessionName(name); // keep panel title in sync with saved name
         if (fromModal) closeSaveProjectModal();
         btn.textContent = fromModal ? 'Saved ✓' : 'Saved ✓';
         setTimeout(() => {
@@ -3325,7 +3330,7 @@
           key: null,
           character: '',
         }));
-        document.getElementById('sessionNameInput').value = projectName;
+        setSessionName(projectName);
         renderSessionPanel();
         closeLibraryDrawer();
         openSessionPanel();
@@ -3521,7 +3526,7 @@
     document.getElementById("sessionNameInput").addEventListener("keydown", e => { if (e.key === "Enter") saveProject(); });
     document.getElementById("sessionNameInput").addEventListener("input", e => {
       const title = document.getElementById("sessionPanelTitle");
-      if (title) title.textContent = e.target.value.trim() || "Session 1";
+      if (title) title.textContent = e.target.value.trim() || `Session ${sessionCounter}`;
     });
 
     document.getElementById("projectNameInput").addEventListener("keydown", e => {
