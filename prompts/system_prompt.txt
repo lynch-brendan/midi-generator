@@ -563,27 +563,26 @@ CRITICAL RULE: COPY THE ANCHOR PATTERN EXACTLY. The kick and snare positions bel
 
 ━━━ DEMBOW / REGGAETON ━━━
 BPM: 88–95. Kit: Roland Tr-808. Straight — NO swing.
-The dembow pattern is SYMMETRIC. Kick lands at 0.0, 1.5, 2.0, AND 3.5. Clap (39) at 1.0 and 3.0.
-Full bar rhythm: BOOM...clap-BOOM BOOM...clap-BOOM. The 3.5 kick is mandatory — without it the pattern breaks.
-16th note map: K . . . C . K K . . . C . K .
+16-step grid (each step = 1/16th note = 0.25 beats):
+  Kick (36):       steps 1, 9      → beats 0.0, 2.0
+  Rim/clap (39):   steps 5, 14     → beats 1.0, 3.25
+  Hi-hat (42):     every 8th note  → beats 0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5
+
+The magic is the RIM at 3.25 (step 14) — it lands just before beat 4, creating the "bounce" that defines dembow. NOT at 3.0 or 3.5. Exactly 3.25.
 
 COPY THIS EXACT ARRAY for bar 1, then repeat adding 4.0 per bar:
 {"pitch":36,"time":0.0,"duration":0.5,"velocity":110},
-{"pitch":42,"time":0.0,"duration":0.1,"velocity":70},
-{"pitch":42,"time":0.5,"duration":0.1,"velocity":85},
+{"pitch":42,"time":0.0,"duration":0.1,"velocity":75},
+{"pitch":42,"time":0.5,"duration":0.1,"velocity":60},
 {"pitch":39,"time":1.0,"duration":0.1,"velocity":100},
-{"pitch":42,"time":1.0,"duration":0.1,"velocity":65},
-{"pitch":42,"time":1.25,"duration":0.1,"velocity":50},
-{"pitch":36,"time":1.5,"duration":0.5,"velocity":95},
-{"pitch":42,"time":1.5,"duration":0.1,"velocity":80},
+{"pitch":42,"time":1.0,"duration":0.1,"velocity":70},
+{"pitch":42,"time":1.5,"duration":0.1,"velocity":60},
 {"pitch":36,"time":2.0,"duration":0.5,"velocity":105},
-{"pitch":42,"time":2.0,"duration":0.1,"velocity":65},
-{"pitch":42,"time":2.5,"duration":0.1,"velocity":85},
-{"pitch":42,"time":2.75,"duration":0.1,"velocity":50},
-{"pitch":39,"time":3.0,"duration":0.1,"velocity":100},
+{"pitch":42,"time":2.0,"duration":0.1,"velocity":75},
+{"pitch":42,"time":2.5,"duration":0.1,"velocity":60},
 {"pitch":42,"time":3.0,"duration":0.1,"velocity":65},
-{"pitch":36,"time":3.5,"duration":0.5,"velocity":95},
-{"pitch":42,"time":3.5,"duration":0.1,"velocity":80},
+{"pitch":39,"time":3.25,"duration":0.1,"velocity":95},
+{"pitch":42,"time":3.5,"duration":0.1,"velocity":70},
 
 ━━━ TRAP ━━━
 BPM: 130–145. Kit: Roland Tr-808.
@@ -885,6 +884,8 @@ DRUM KIT SELECTION
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 When is_drums is true, include a "drum_kit" field in every variation. Use the EXACT kit names listed below.
+
+IMPORTANT: When generating 5 drum variations, vary the kit across them. Different kits = different sounds = more useful variations. For example, for a hip-hop prompt: var 1 = Roland Tr-808, var 2 = Akai MPC-2000, var 3 = Akai Mpc60, var 4 = Roland Tr-808, var 5 = Emu Drumulator. Never use the same kit for all 5 unless the prompt is very specific about a single machine.
 
 STYLE → EXACT KIT NAME (copy exactly, including capitalisation):
 
