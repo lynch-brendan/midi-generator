@@ -232,6 +232,8 @@
 
     button.generate:hover { opacity: 0.8; }
     button.generate:disabled { opacity: 0.35; cursor: not-allowed; }
+    button.generate.generating { background: var(--bg-card); color: var(--text-muted); border: 1px solid var(--border-soft); opacity: 1; cursor: pointer; }
+    button.generate.generating:hover { opacity: 0.7; }
 
     /* -----------------------------------------------------------------------
        Usage indicator
@@ -2582,7 +2584,9 @@
       unlockAudio();
 
       const btn = document.getElementById("generateBtn");
-      btn.disabled = true;
+      btn.textContent = "Stop";
+      btn.onclick = () => { if (abortController) abortController.abort(); };
+      btn.classList.add("generating");
       clearClouds();
       resetCharacter();
       clearTypewriter();
@@ -2658,7 +2662,9 @@
         }
       } finally {
         abortController = null;
-        btn.disabled = false;
+        btn.textContent = "Generate";
+        btn.onclick = generate;
+        btn.classList.remove("generating");
         clearSeed();
         if (currentUser) refreshUsage();
       }
