@@ -1799,6 +1799,12 @@
       <button id="autoPlayToggle" onclick="toggleAutoPlay()" title="Toggle auto-play" style="background:none;border:none;font-size:0.72rem;cursor:pointer;display:flex;align-items:center;gap:4px;letter-spacing:0.01em;color:var(--text-muted);padding:0 12px;">
         Auto-play <span id="autoPlayState" style="font-weight:600;">on</span>
       </button>
+      <div style="display:flex;align-items:center;gap:5px;padding:0 8px;">
+        <span style="font-size:0.72rem;color:var(--text-muted);">vol</span>
+        <input type="range" id="volumeSlider" min="0" max="1" step="0.02" value="1"
+          oninput="setGlobalVolume(this.value)"
+          style="width:56px;accent-color:var(--accent);cursor:pointer;" />
+      </div>
       <div id="seedIndicator">
         <span class="seed-ind-label">✦ evolving from</span>
         <span class="seed-ind-name" id="seedCardName"></span>
@@ -2104,6 +2110,13 @@
     let _activeAudio = null;
     let _playingCloudIdx = -1;
     let _audioGen = 0; // incremented on every stopPlayback to invalidate pending onEnd callbacks
+    let _globalVolume = 1;
+
+    function setGlobalVolume(val) {
+      _globalVolume = parseFloat(val);
+      if (_activeAudio) _activeAudio.volume = _globalVolume;
+      if (sessionAudio) sessionAudio.volume = _globalVolume;
+    }
 
     function updateCloudPlayBtn(idx, icon) {
       const cloud = document.querySelector(`.thought-cloud[data-idx="${idx}"]`);
@@ -2127,6 +2140,7 @@
       stopPlayback();
       const gen = _audioGen;
       const audio = new Audio(v.wav_url);
+      audio.volume = _globalVolume;
       _activeAudio = audio;
       _playingCloudIdx = cloudIdx;
       if (cloudIdx >= 0) updateCloudPlayBtn(cloudIdx, '⏸');
@@ -3039,6 +3053,7 @@
         sessionAudio.play().catch(() => {});
       } else {
         sessionAudio = new Audio(item.wav_url);
+        sessionAudio.volume = _globalVolume;
         sessionAudioIdx = i;
         sessionAudio.play().catch(() => {});
         sessionAudio.addEventListener('ended', () => {
