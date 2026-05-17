@@ -1458,32 +1458,48 @@
       display: flex;
       border-top: 1px solid var(--border-soft);
       z-index: 2;
-      overflow: hidden;
+      overflow: visible;
       border-radius: 0 0 27px 27px;
     }
-    .cloud-keep-strip, .cloud-more-strip {
+    .cloud-action-btn {
+      position: relative;
       flex: 1;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 3px;
-      padding: 5px 6px;
-      font-size: 0.62rem;
+      padding: 5px 4px;
+      font-size: 0.75rem;
       color: var(--text-dim);
       cursor: pointer;
       background: transparent;
       transition: background 0.15s, color 0.15s;
       user-select: none;
+      border-right: 1px solid var(--border-soft);
+    }
+    .cloud-action-btn:last-child { border-right: none; }
+    .cloud-action-btn:hover { color: var(--text-muted); background: color-mix(in srgb, var(--bg-card) 80%, transparent); }
+    .cloud-action-btn.kept { background: var(--accent); color: var(--accent-fg); }
+    .cloud-action-btn.kept:hover { background: var(--accent); }
+    .cloud-action-btn .btn-label {
+      position: absolute;
+      bottom: calc(100% + 6px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--text);
+      color: var(--bg-input);
+      font-size: 0.58rem;
+      white-space: nowrap;
+      padding: 3px 7px;
+      border-radius: 5px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.15s;
+      z-index: 310;
       letter-spacing: 0.02em;
     }
-    .cloud-keep-strip { border-right: 1px solid var(--border-soft); }
-    .cloud-keep-strip:hover { color: var(--text-muted); background: var(--bg-card); }
-    .cloud-keep-strip.kept { background: var(--accent); color: var(--accent-fg); border-right-color: transparent; }
-    .cloud-more-strip { border-right: 1px solid var(--border-soft); }
-    .cloud-more-strip:hover { color: var(--text-muted); background: var(--bg-card); }
-    .cloud-lock-strip { flex: none; padding: 5px 8px; display: flex; align-items: center; justify-content: center; gap: 3px; font-size: 0.62rem; color: var(--text-dim); cursor: pointer; background: transparent; transition: background 0.15s, color 0.15s; user-select: none; }
-    .cloud-lock-strip:hover { color: var(--text-muted); background: var(--bg-card); }
-    .cloud-lock-strip.locked { color: #c9a227; }
+    .cloud-action-btn:hover .btn-label { opacity: 1; }
+    @media (hover: none) { .cloud-action-btn .btn-label { display: none; } }
+    .cloud-lock-btn.locked { color: #c9a227; }
 
     /* Lock popup — appears when building on a variation */
     #lockPopup {
@@ -2358,7 +2374,7 @@
       if (!cloud) return;
       cloud.className = "thought-cloud visible";
       const metaParts = [variation.key, variation.tempo ? variation.tempo + ' BPM' : null].filter(Boolean);
-      cloud.innerHTML = `<div class="cloud-top"><span class="cloud-name">${escHtml(variation.name)}</span><button class="cloud-play" title="Play">▶</button></div>${metaParts.length ? `<span class="cloud-meta">${escHtml(metaParts.join(' · '))}</span>` : ''}<div class="cloud-action-strip"><div class="cloud-keep-strip" onclick="heartCloud(event,${idx})"><span>♥</span><span class="keep-label">keep this</span></div><div class="cloud-more-strip" onclick="cloudMoreLikeThis(event,${idx})"><span>✦</span><span>build on this</span></div><div class="cloud-lock-strip" onclick="lockCloudToThis(event,${idx})" title="Lock BPM/key to this variation">🔗</div></div>`;
+      cloud.innerHTML = `<div class="cloud-top"><span class="cloud-name">${escHtml(variation.name)}</span><button class="cloud-play" title="Play">▶</button></div>${metaParts.length ? `<span class="cloud-meta">${escHtml(metaParts.join(' · '))}</span>` : ''}<div class="cloud-action-strip"><div class="cloud-action-btn cloud-keep-btn" onclick="heartCloud(event,${idx})"><span>♥</span><span class="btn-label">keep this</span></div><div class="cloud-action-btn cloud-more-btn" onclick="cloudMoreLikeThis(event,${idx})"><span>✦</span><span class="btn-label">build on this</span></div><div class="cloud-action-btn cloud-lock-btn" onclick="cloudLockKeyTempo(event,${idx})"><span>🔗</span><span class="btn-label">lock key & bpm</span></div></div>`;
       cloud.addEventListener("click", () => selectCloud(idx));
       cloud.querySelector(".cloud-play").addEventListener("click", (e) => {
         e.stopPropagation();
@@ -2376,7 +2392,7 @@
       });
       // Restore kept state if already in session
       if (currentVariations[idx] && sessionItems.some(s => s.midi_url === currentVariations[idx].midi_url)) {
-        const strip = cloud.querySelector(".cloud-keep-strip");
+        const strip = cloud.querySelector(".cloud-keep-btn");
         if (strip) { strip.classList.add("kept"); strip.querySelector(".keep-label").textContent = "kept ✓"; }
       }
 
@@ -3182,13 +3198,16 @@
       if (popup) popup.classList.remove('visible');
     }
 
-    function lockCloudToThis(e, idx) {
+    function cloudLockKeyTempo(e, idx) {
       e.stopPropagation();
       const v = currentVariations[idx];
       if (!v) return;
-      lockToVariation(v);
-      const strip = document.querySelector(`.thought-cloud[data-idx="${idx}"] .cloud-lock-strip`);
-      if (strip) strip.classList.add('locked');
+      if (v.key) { document.getElementById('lockKey').value = v.key; }
+      if (v.tempo) { document.getElementById('lockTempo').value = v.tempo; }
+      updateLockState();
+      const btn = document.querySelector(`.thought-cloud[data-idx="${idx}"] .cloud-lock-btn`);
+      if (btn) btn.classList.add('locked');
+      showToast(`Locked to ${v.key || ''} · ${v.tempo} BPM`);
     }
 
     function cloudMoreLikeThis(e, idx) {
