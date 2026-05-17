@@ -29,6 +29,7 @@ from core.midi_writer import write_midi, write_drum_stems
 from core.audio_renderer import render_midi_to_wav
 from core.expression import apply_expression
 from core.drum_synth import render_drum_pattern
+from core.drum_patterns import apply_skeleton
 from core.guitar_synth import render_guitar_pattern
 from core.variations import extract_variation_info, validate_variation, sanitize_variation
 from core.auth import create_jwt, get_current_user, google_auth_url, exchange_google_code
@@ -269,6 +270,11 @@ def _process_variation(var: dict, gm_patch: int, slug: str, is_drums: bool = Fal
             n["time"] = round(round(float(n["time"]) / grid) * grid, 4)
 
     bars = _infer_bars(notes, declared=var.get("bars"))
+
+    if effective_drums:
+        drum_genre = var.get("drum_genre", "default")
+        notes = apply_skeleton(notes, drum_genre, bars)
+
     notes_with_expression = apply_expression(notes, effective_patch, expression_level, effective_drums)
     write_midi(midi_path, notes_with_expression, info.tempo, effective_patch, channel, bars=bars)
 
