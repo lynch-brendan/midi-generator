@@ -49,15 +49,34 @@ PITCH:
 - MIDI middle C = 60 (C4). D4=62, E4=64, F4=65, G4=67, A4=69, Bb4=70, B4=71, C5=72
 - Choose a musically appropriate register for the instrument:
     Trumpet: 55–84 (sweet spot: 60–79)
+    Muted Trumpet: 55–82 (sweet spot: 58–77)
     Alto sax: 49–79 (sweet spot: 56–74)
     Tenor sax: 44–74 (sweet spot: 52–69)
+    Baritone sax: 36–65 (sweet spot: 41–60)
     Flute: 60–96 (sweet spot: 65–88)
+    Oboe: 58–91 (sweet spot: 62–84)
+    Clarinet: 50–90 (sweet spot: 55–80)
+    Bassoon: 34–72 (sweet spot: 38–65)
+    French Horn: 34–77 (sweet spot: 41–72)
+    Trombone: 40–72 (sweet spot: 45–67)
+    Tuba: 28–60 (sweet spot: 33–55)
     Violin: 55–93 (sweet spot: 60–84)
+    Viola: 48–84 (sweet spot: 53–79)
     Cello: 36–72 (sweet spot: 40–65)
     Piano melody: 60–88 (right hand); bass: 36–60 (left hand)
+    Electric Piano (Rhodes/Wurlitzer): 52–88 (sweet spot: 55–84) — both hands, full chord voicings
+    Harpsichord: 48–84 (sweet spot: 52–81)
+    Organ: 36–84 (sweet spot: 48–79) — sustained chords, both hands
+    Vibraphone: 53–89 (sweet spot: 60–84)
+    Marimba: 45–96 (sweet spot: 53–84)
+    Kalimba: 60–84 (sweet spot: 65–81) — limited range, percussive, no chords
+    Steel Drums: 60–96 (sweet spot: 65–89)
     Bass guitar: 28–55 (sweet spot: 33–50)
+    Fretless Bass: 28–55 (sweet spot: 33–50) — same range as bass, smoother phrasing
+    Slap Bass: 28–55 (sweet spot: 33–50) — punchy, short durations (0.25)
     Guitar: 40–84 (sweet spot: 45–76)
-    Trombone: 40–72 (sweet spot: 45–67)
+    Synth Lead: 48–96 (sweet spot: 55–88) — single melodic line, no chords
+    Synth Pad: 36–84 (sweet spot: 43–79) — long sustained chords, low velocity (40–70)
 
 DURATION (in beats, where 1.0 = quarter note):
 - 0.25 = sixteenth note
@@ -142,7 +161,9 @@ Each variation has an `expression` field. Choose one value that describes the ov
 - **"moderate"** — natural expression. Use for: most melodic playing — standard jazz, pop, folk, lyrical passages.
 - **"expressive"** — full feel. Use for: blues, soul, passionate solos, romantic strings, gospel, any variation described as emotional or raw.
 
-Piano, bass, and drums should always be "none".
+Piano, electric piano (funk/R&B), organ, harpsichord, marimba, kalimba, steel drums, synth pad, bass, and drums should always be "none".
+Fretless bass, vibraphone, oboe, clarinet, French horn use "moderate" or "expressive".
+Synth lead uses "subtle" or "moderate".
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STYLE PLAYBOOKS
@@ -241,6 +262,112 @@ ELECTRONIC / SYNTH:
 - Synth leads: use octave jumps for drama, return to root for grounding
 - Pads: long durations (2.0-4.0), low velocity (45-65), dense chord voicings, slow movement
 - Acid bassline: synth bass (gm_patch 38 or 39), lots of 16th note movement, alternates between root and b7, uses 0.25 and 0.5 durations
+
+ELECTRIC PIANO (Rhodes / Wurlitzer — patches 4–5):
+- The Rhodes is the soul and R&B instrument. Think D'Angelo, J Dilla, Herbie Hancock.
+- Voicings: rich 7th and 9th chords (Dm9, Cmaj7, G13). Never plain triads.
+- Left hand: bass note or root+5th on beats 1 and 3. Right hand: chord comp on 2 and 4.
+- Rhodes plays with feel — slightly behind the beat (+0.02 to +0.04 on chord hits).
+- For lo-fi: slow tempos (70-85 BPM), lots of space, notes ring into each other (long durations 1.5-2.0).
+- For soul/funk: short chord stabs (0.25 duration) on upbeats, bass note anchors the groove.
+- Expression: "subtle" for lo-fi/jazz, "none" for locked-in funk/R&B comp parts.
+
+ORGAN (Hammond B3 — patch 16):
+- The organ sustains infinitely — use long durations (1.0–4.0), let chords breathe and ring.
+- Gospel/soul organ: big chord stabs on beats 2 and 4, left hand bass walk. Think Jimmy Smith.
+- Jazz organ: walking bass in the left hand (low register 36–52), chord voicings right hand (55–72).
+- Organ does NOT have attack — velocity controls intensity but there's no transient. Use legato overlapping notes.
+- The "gospel shout": full chord, velocity 100–115, short duration (0.5), on the "and" of 2 and 4.
+- Expression: "none" (the expression system doesn't apply well — organ has no natural pitch bend).
+- Never play staccato on organ — it sounds wrong. Minimum duration 0.5 beats.
+
+VIBRAPHONE (patch 11):
+- The vibraphone is the jazz mallet instrument. Think Milt Jackson, Bobby Hutcherson.
+- Chord voicings with the mallets: 2–4 note chords at the same time, same as piano.
+- Jazz vibes: swing feel, lots of space, chord-melody approach (melody note on top with harmony below).
+- Lo-fi vibes: slower tempos, simple pentatonic lines, resonant long notes (duration 1.0–2.0).
+- The attack is percussive — high velocity (80–100) on melody notes, softer on chord tones (55–70).
+- Expression: "subtle" for jazz, "none" for rhythmic/percussive parts.
+
+MARIMBA (patch 12):
+- Percussive and bright. Used in Latin, world music, Steve Reich minimalism, and lo-fi.
+- Plays short notes (duration 0.25–0.5) — the marimba decays fast, long durations sound wrong.
+- Chord voicings possible: 2-note intervals (3rds, 6ths) played simultaneously.
+- Latin marimba: fast 8th note or 16th note patterns, syncopated, bright and energetic.
+- Minimalist marimba: repeating melodic cells that phase and evolve slightly.
+- Expression: "none" — percussive attack, no sustain-based expression.
+
+KALIMBA (patch 108):
+- The kalimba (thumb piano) has a small range and a very pure, bell-like tone.
+- Limited range: keep notes between 60–81. Avoid extremes — it sounds thin outside this range.
+- Monophonic or simple 2-note harmonies only. No full chord voicings.
+- Soft and intimate: velocity 45–75. Never loud.
+- Patterns: simple arpeggiated figures, falling melodic lines, repeating ostinatos.
+- Best styles: ambient, meditation, lo-fi, world music, children's music.
+- Expression: "none".
+
+STEEL DRUMS (patch 114):
+- Bright, Caribbean, joyful. Think Trinidad Carnival, reggae intros, island pop.
+- Melodic and percussive: short-to-medium durations (0.25–0.75). Notes ring but decay.
+- Common patterns: pentatonic or diatonic runs, syncopated melodic riffs, call-and-response.
+- Tempo: 100–140 BPM for uptempo Caribbean feel; 75–95 BPM for laid-back island groove.
+- Often plays the melody while bass and percussion carry the groove.
+- Expression: "none" — percussive attack instrument.
+
+HARPSICHORD (patch 6):
+- The harpsichord has NO dynamics — velocity barely matters. Use 65–80 for everything.
+- Baroque and early classical: ornaments, trills (alternating notes at 0.125 duration), sequences.
+- Full chord voicings: the harpsichord comps harmony constantly. Think basso continuo.
+- No sustain — notes cut off cleanly. Durations 0.25–0.5 for most notes, up to 1.0 for bass.
+- Style: J.S. Bach, Scarlatti, counterpoint, ground bass patterns.
+- Expression: "none".
+
+FRENCH HORN (patch 60):
+- Rich, cinematic, warm. Monophonic (one note at a time).
+- Plays in the mid-to-low brass register: best between 41–72 (sweet spot 48–67).
+- Long sustained notes (duration 1.0–3.0) for cinematic pads, shorter for fanfares.
+- The horn has a wide dynamic range: pp (30) for mysterious distant horn calls, ff (110) for heroic moments.
+- Works in pairs (implied): if writing two variations, one can be the "answer" to the other's "call."
+- Expression: "moderate" for lyrical passages, "expressive" for emotional/romantic moments.
+
+OBOE (patch 68):
+- Reedy, piercing, expressive. Monophonic.
+- Classical/orchestral: lyrical melodic lines, ornaments, long phrases with breath marks (gaps).
+- Folk/world: bright and direct, pentatonic scales, modal flavors.
+- Range is tight — keep it in the sweet spot (62–84). Avoid extremes.
+- Duration: mix of 0.5 and 1.0 for flowing lines; 0.25 for ornamental quick notes.
+- Expression: "moderate" to "expressive" — the oboe's voice is inherently emotional.
+
+CLARINET (patch 71):
+- Warm in the low register ("chalumeau"), bright in the high register. Monophonic.
+- Jazz clarinet (New Orleans, swing): swung 8ths, chromatic runs, lots of ornamentation.
+- Classical clarinet: smooth legato lines, wide leaps (octaves), dynamic swells.
+- Wide usable range — can go from 50 (low and breathy) to 86 (high and bright). Use the contrast.
+- Expression: "moderate" for classical/folk, "expressive" for jazz/blues clarinet solos.
+
+FRETLESS BASS (patch 35):
+- Smooth, liquid, vocal. Same pitches as bass guitar but the phrasing is different.
+- Fretless glides between notes — use approach notes generously (chromatic semitone before target).
+- Best in jazz, fusion, neo-soul, and ambient. Think Jaco Pastorius.
+- Slightly longer note durations than regular bass (0.75–1.0 instead of 0.5) — notes connect more.
+- Keep in the low register: 28–52. Occasional melodic moment up to 60.
+- Expression: "moderate" — the fretless voice is naturally expressive.
+
+SYNTH LEAD (patches 80–87):
+- A single melodic line, usually in a mid-to-high register. Monophonic.
+- Common patches: 80 (square/retro), 81 (sawtooth/classic lead), 87 (bass+lead, fat).
+- Electronic/synthwave: long sustained notes (1.0–2.0), dramatic octave jumps, motif repetition.
+- Acid lead: fast 16th notes, lots of chromatic movement, alternates between root and b7.
+- Choose the right patch for the style: square (80) = retro/chiptune, sawtooth (81) = classic synth, voice (85) = dreamy/ethereal.
+- Expression: "subtle" for clean electronic, "moderate" for more expressive synth leads.
+
+SYNTH PAD (patches 88–95):
+- Sustained, atmospheric, textural. Long durations (2.0–4.0). Low velocity (40–70).
+- Full chord voicings spread across a wide register — pads fill space harmonically.
+- Pads change slowly — one chord per bar or even every 2 bars is correct. Do NOT arpeggiate pads.
+- Common patches: 89 (warm pad), 90 (polysynth), 91 (choir pad), 95 (sweep pad).
+- Use in ambient, electronic, cinematic, and neo-soul contexts.
+- Expression: "none" — the pad itself is the texture, not a performative voice.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PHRASE CONSTRUCTION
