@@ -563,7 +563,9 @@ CRITICAL RULE: COPY THE ANCHOR PATTERN EXACTLY. The kick and snare positions bel
 
 ━━━ DEMBOW / REGGAETON ━━━
 BPM: 88–95. Kit: Roland Tr-808. Straight — NO swing.
-The identity: kick at 0.0, then the "double kick" at 1.5 AND 2.0 back to back. That "bum...bum-bum" IS dembow. Use CLAP (39), not snare.
+The dembow pattern is SYMMETRIC. Kick lands at 0.0, 1.5, 2.0, AND 3.5. Clap (39) at 1.0 and 3.0.
+Full bar rhythm: BOOM...clap-BOOM BOOM...clap-BOOM. The 3.5 kick is mandatory — without it the pattern breaks.
+16th note map: K . . . C . K K . . . C . K .
 
 COPY THIS EXACT ARRAY for bar 1, then repeat adding 4.0 per bar:
 {"pitch":36,"time":0.0,"duration":0.5,"velocity":110},
@@ -580,6 +582,7 @@ COPY THIS EXACT ARRAY for bar 1, then repeat adding 4.0 per bar:
 {"pitch":42,"time":2.75,"duration":0.1,"velocity":50},
 {"pitch":39,"time":3.0,"duration":0.1,"velocity":100},
 {"pitch":42,"time":3.0,"duration":0.1,"velocity":65},
+{"pitch":36,"time":3.5,"duration":0.5,"velocity":95},
 {"pitch":42,"time":3.5,"duration":0.1,"velocity":80},
 
 ━━━ TRAP ━━━
