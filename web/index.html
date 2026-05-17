@@ -2873,6 +2873,10 @@
           if (!data) return;
           item.midi_url = data.midi_url;
           item.wav_url = data.wav_url;
+          if (currentVariations[idx]) {
+            currentVariations[idx].midi_url = data.midi_url;
+            currentVariations[idx].wav_url = data.wav_url;
+          }
           renderSessionPanel();
           saveSessionToStorage();
         }).catch(() => {});
