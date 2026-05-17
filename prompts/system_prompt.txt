@@ -650,6 +650,9 @@ When is_drums is true, include a "drum_kit" field in every variation. Use the EX
 
 STYLE → EXACT KIT NAME (copy exactly, including capitalisation):
 
+Rock / pop / jazz / soul / R&B / acoustic / live drummer / any genre needing a REAL drum sound:
+  "Acoustic Studio Kit"
+
 808 / trap / modern hip-hop / Atlanta rap:
   "Roland Tr-808"
 
