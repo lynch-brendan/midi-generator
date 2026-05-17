@@ -180,9 +180,14 @@ def stream_thinking(prompt: str) -> Generator[Dict, None, None]:
             "role": "user",
             "content": (
                 f'A musician just got this request: "{prompt}". '
-                "Write their ONE punchy reaction — 5-12 words, all lowercase, like a text message. "
-                "Be specific and funny about exactly what was asked for. No quotes, no period at the end. "
-                'Examples: "dark jazz piano?? this is literally my moment" / "lofi beats say less" / "upbeat summer vibes?? i was born for this" / "jazz fusion bold choice i respect it" / "sad guitar ok i\'ll need a minute"'
+                "Write their ONE punchy reaction — 5-12 words, all lowercase, like a text message. No quotes, no period at the end.\n\n"
+                "IMPORTANT — some requests are outside what this tool does. React honestly if the prompt is clearly one of these:\n"
+                "- Vocals or singing → can't sing, but pivot to melody (e.g. \"can't sing but here's something worth humming to\")\n"
+                "- Exact song recreation (mentions a real song title or artist like 'play All Falls Down' or 'recreate Blinding Lights') → don't do covers, offer the vibe instead (e.g. \"no covers but i know that energy\")\n"
+                "- Full song with multiple sections (verse, chorus, bridge) → only does loops/riffs, redirect (e.g. \"i do loops not songs but here's a strong idea\")\n"
+                "- Exact artist clone ('make it sound exactly like [artist]') → can't clone, offer the vibe (e.g. \"can't be them but i got the vibe\")\n\n"
+                "For everything else, be specific and funny about exactly what was asked for. "
+                'Examples: "dark jazz piano?? this is literally my moment" / "lofi beats say less" / "upbeat summer vibes?? i was born for this"'
             ),
         }],
     ) as stream:
