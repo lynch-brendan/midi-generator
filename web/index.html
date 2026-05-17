@@ -1417,8 +1417,7 @@
     .session-item-dl:hover { color: var(--text); }
     .session-item-remove { color: var(--border); }
     .session-item-remove:hover { color: var(--red); }
-    .session-item-seed { color: var(--text-dim); font-size: 0.78rem; opacity: 0; transition: opacity 0.15s, color 0.15s; }
-    .session-item:hover .session-item-seed { opacity: 1; }
+    .session-item-seed { color: var(--text-dim); font-size: 0.78rem; transition: color 0.15s; }
     .session-item-seed:hover { color: var(--accent); }
 
     .session-footer {
@@ -2927,15 +2926,30 @@
             ${meta ? `<div class="session-item-meta">${escHtml(meta)}</div>` : ''}
           </div>
           <div class="session-item-actions">
-            ${item.notes ? `<button class="session-item-seed" title="More like this" onclick="seedFromSession(${i})">✦</button>` : ''}
-            <button class="session-item-seed" title="Lock BPM/key to this" onclick="lockToVariation(sessionItems[${i}])">🔗</button>
             ${item.wav_url ? `<button class="session-item-play" id="session-play-${i}" title="Play / Pause" onclick="playSessionItem(${i})">▶</button>` : ''}
-            ${item.midi_url ? `<a class="session-item-dl" href="${escHtml(item.midi_url)}" download title="Download MIDI">MIDI</a>` : ''}
-            ${item.wav_url ? `<a class="session-item-dl" href="${escHtml(item.wav_url)}" download title="Download WAV">WAV</a>` : ''}
+            ${item.notes ? `<button class="session-item-seed" title="More like this" onclick="seedFromSession(${i})">✦</button>` : ''}
+            <button class="session-item-seed" title="Lock key & BPM" onclick="lockToVariation(sessionItems[${i}])">🔗</button>
+            <button class="session-item-dl" title="Download" onclick="sessionDownload(${i})">↓</button>
             <button class="session-item-remove" title="Remove" onclick="removeSessionItem(${i})">✕</button>
           </div>`;
         container.appendChild(el);
       });
+    }
+
+    async function sessionDownload(i) {
+      const item = sessionItems[i];
+      if (!item) return;
+      const dl = async (url) => {
+        const resp = await fetch(url);
+        const blob = await resp.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = url.split('/').pop();
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(a.href);
+      };
+      if (item.midi_url) await dl(item.midi_url);
+      if (item.wav_url) await dl(item.wav_url);
     }
 
     function getInstrumentEmoji(name) {
