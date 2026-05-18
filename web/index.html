@@ -2418,7 +2418,12 @@
       }
       renderAuthArea();
       if (currentUser) {
-        posthog.identify(currentUser.email, { email: currentUser.email, name: currentUser.name });
+        const OWNER_EMAILS = ['lynchbrendanwillis@gmail.com', 'vowringscompany@gmail.com', 'bdawglynch101@gmail.com'];
+        if (OWNER_EMAILS.includes(currentUser.email)) {
+          posthog.opt_out_capturing();
+        } else {
+          posthog.identify(currentUser.email, { email: currentUser.email, name: currentUser.name });
+        }
         document.getElementById("libraryBtn").style.display = "block";
         await Promise.all([refreshUsage(), loadProjects()]);
       }
