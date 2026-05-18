@@ -170,6 +170,50 @@ def _seed_user_message(prompt: str, seed: dict, lock_key: str = None, lock_tempo
     )
 
 
+def _multi_seed_user_message(prompt: str, seeds: list, lock_key: str = None, lock_tempo: int = None) -> str:
+    """Build a prompt that gives Claude the full arrangement context of multiple loops."""
+    direction = prompt.strip() or "add something that fits this arrangement"
+    key_rule = (
+        f'Every variation MUST use "{lock_key}" as its key and scale_notes.'
+        if lock_key else
+        "Each variation must have its own key and scale_notes."
+    )
+
+    # Summarize each seed concisely — instrument, key, tempo, and notes
+    seed_summaries = []
+    for i, seed in enumerate(seeds, 1):
+        fields = {k: v for k, v in seed.items() if k not in ("midi_url", "wav_url", "note_count", "character", "name")}
+        seed_summaries.append(f"LOOP {i} ({seed.get('instrument', 'unknown')}):\n{json.dumps(fields, indent=2)}")
+
+    seeds_block = "\n\n".join(seed_summaries)
+
+    instruments = [s.get("instrument", "unknown") for s in seeds]
+    tempos = list({s.get("tempo") for s in seeds if s.get("tempo")})
+    keys = list({s.get("key") for s in seeds if s.get("key")})
+
+    return (
+        f"The user is building an arrangement with {len(seeds)} existing loop(s). "
+        f"Current instruments: {', '.join(instruments)}. "
+        f"Tempos in session: {', '.join(str(t) for t in tempos)} BPM. "
+        f"Keys in session: {', '.join(keys)}.\n\n"
+        f"{seeds_block}\n\n"
+        f"USER REQUEST: \"{direction}\"\n\n"
+        "Think like an arranger looking at a session. Ask yourself:\n"
+        "- What's the rhythmic space? If the loops are busy on every 16th note, leave gaps. If they're sparse, fill more.\n"
+        "- What's the harmonic content? The new part should complement the chord tones already present, not clash.\n"
+        "- What's missing from this arrangement? A counter-melody? A pad? A rhythmic accent? A bass anchor?\n"
+        "- What register is free? If everything is in the mid-range, go high or low.\n"
+        "- Match the tempo of the existing loops unless the user asks otherwise.\n\n"
+        "Generate 5 variations that fulfill the request and fit musically with the existing loops. "
+        "Each variation must be genuinely different from the others — vary density, register, and dynamics. "
+        f"{key_rule} "
+        "Each variation must include a 'bars' field. "
+        "The last note must land at or near bars × 4.0 beats. "
+        "Return ONLY raw JSON, no markdown."
+        + _lock_constraints(lock_key, lock_tempo)
+    )
+
+
 def stream_thinking(prompt: str) -> Generator[Dict, None, None]:
     """Stream a funny one-liner reaction to the user's prompt into the speech bubble."""
     client = anthropic.Anthropic()
@@ -195,7 +239,7 @@ def stream_thinking(prompt: str) -> Generator[Dict, None, None]:
             yield {"type": "thought", "token": text}
 
 
-def stream_variations(prompt: str, seed_variation: dict = None, lock_key: str = None, lock_tempo: int = None) -> Generator[Dict, None, None]:
+def stream_variations(prompt: str, seed_variation: dict = None, lock_key: str = None, lock_tempo: int = None, seed_variations: list = None) -> Generator[Dict, None, None]:
     """
     Stream Claude's response and yield parsed objects as they become available.
     Yields: one 'meta' dict first, then one 'variation' dict per variation, then 'done'.
@@ -206,8 +250,11 @@ def stream_variations(prompt: str, seed_variation: dict = None, lock_key: str = 
     client = anthropic.Anthropic()
     system_prompt = _load_system_prompt()
 
-    if seed_variation:
-        user_content = _seed_user_message(prompt, seed_variation, lock_key, lock_tempo)
+    if seed_variations and len(seed_variations) > 1:
+        user_content = _multi_seed_user_message(prompt, seed_variations, lock_key, lock_tempo)
+    elif seed_variation or (seed_variations and len(seed_variations) == 1):
+        single = seed_variation or seed_variations[0]
+        user_content = _seed_user_message(prompt, single, lock_key, lock_tempo)
     else:
         user_content = _user_message(prompt, lock_key, lock_tempo)
     messages = [{"role": "user", "content": user_content}]
