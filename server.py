@@ -359,6 +359,8 @@ async def generate(req: GenerateRequest, request: Request, db=Depends(get_db)):
                 elif event["type"] == "done":
                     yield f"data: {json.dumps(event)}\n\n"
         except Exception as e:
+            import traceback
+            print(f"[generate error] {e}\n{traceback.format_exc()}")
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
     response = StreamingResponse(event_stream(), media_type="text/event-stream")
