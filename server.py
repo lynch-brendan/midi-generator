@@ -926,7 +926,11 @@ async def posthog_proxy(path: str, request: Request):
             headers=headers,
             timeout=10,
         )
-    return JSONResponse(content=resp.json() if resp.content else {}, status_code=resp.status_code)
+    try:
+        content = resp.json() if resp.content else {}
+    except Exception:
+        content = {}
+    return JSONResponse(content=content, status_code=resp.status_code)
 
 
 # ---------------------------------------------------------------------------
