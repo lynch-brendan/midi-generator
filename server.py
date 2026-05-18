@@ -184,6 +184,7 @@ def _check_and_increment_generation(user, db, ip: str) -> None:
 class GenerateRequest(BaseModel):
     prompt: str
     seed_variation: Optional[dict] = None
+    seed_variations: Optional[list] = None
     lock_key: Optional[str] = None
     lock_tempo: Optional[int] = None
 
@@ -344,7 +345,7 @@ async def generate(req: GenerateRequest, request: Request, db=Depends(get_db)):
         try:
             for event in stream_thinking(req.prompt):
                 yield f"data: {json.dumps(event)}\n\n"
-            for event in stream_variations(req.prompt, seed_variation=req.seed_variation, lock_key=req.lock_key, lock_tempo=req.lock_tempo):
+            for event in stream_variations(req.prompt, seed_variation=req.seed_variation, lock_key=req.lock_key, lock_tempo=req.lock_tempo, seed_variations=req.seed_variations):
                 if event["type"] == "meta":
                     gm_patch = event["gm_patch"]
                     is_drums = event.get("is_drums", False)
@@ -796,7 +797,6 @@ async def list_project_files(project_id: str, request: Request, db=Depends(get_d
 # Email open tracking
 # ---------------------------------------------------------------------------
 
-_OPENS_FILE = Path(__file__).parent / "email_opens.json"
 _TRANSPARENT_GIF = (
     b"GIF89a\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\x00\x00\x00"
     b"!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01"
@@ -804,15 +804,36 @@ _TRANSPARENT_GIF = (
 )
 
 
+def _log_email_event(db, table: str, email: str, ip: str):
+    try:
+        db.execute(
+            text(f"CREATE TABLE IF NOT EXISTS {table} (id SERIAL PRIMARY KEY, email TEXT, ts TIMESTAMPTZ DEFAULT NOW(), ip TEXT)"),
+        )
+        db.execute(text(f"INSERT INTO {table} (email, ip) VALUES (:email, :ip)"), {"email": email, "ip": ip})
+        db.commit()
+    except Exception as e:
+        print(f"[{table}] db error: {e}")
+
+
+def _get_email_events(db, table: str):
+    try:
+        db.execute(text(f"CREATE TABLE IF NOT EXISTS {table} (id SERIAL PRIMARY KEY, email TEXT, ts TIMESTAMPTZ DEFAULT NOW(), ip TEXT)"))
+        db.commit()
+        rows = db.execute(text(f"SELECT email, ts, ip FROM {table} ORDER BY ts DESC")).fetchall()
+        return [{"email": r[0], "ts": r[1].isoformat(), "ip": r[2]} for r in rows]
+    except Exception:
+        return []
+
+
 @app.get("/track/open")
-async def track_open(id: str = "", request: Request = None):
+async def track_open(id: str = "", request: Request = None, db=Depends(get_db)):
     import base64
     from fastapi.responses import Response
     try:
         email = base64.urlsafe_b64decode(id + "==").decode()
-        opens = json.loads(_OPENS_FILE.read_text()) if _OPENS_FILE.exists() else []
-        opens.append({"email": email, "ts": datetime.utcnow().isoformat(), "ip": request.headers.get("x-forwarded-for", "")})
-        _OPENS_FILE.write_text(json.dumps(opens))
+        ip = request.headers.get("x-forwarded-for", "") if request else ""
+        if db is not None:
+            _log_email_event(db, "email_opens", email, ip)
         print(f"[email-open] {email}")
     except Exception:
         pass
@@ -825,24 +846,22 @@ async def get_email_opens(request: Request, db=Depends(get_db)):
     admin_emails = {x.strip().lower() for x in os.environ.get("ADMIN_EMAILS", "").split(",") if x.strip()}
     if not user or user.email.lower() not in admin_emails:
         raise HTTPException(status_code=403, detail="Admin only")
-    return JSONResponse(json.loads(_OPENS_FILE.read_text()) if _OPENS_FILE.exists() else [])
+    return JSONResponse(_get_email_events(db, "email_opens") if db is not None else [])
 
 
 # ---------------------------------------------------------------------------
 # Email click tracking
 # ---------------------------------------------------------------------------
 
-_CLICKS_FILE = Path(__file__).parent / "email_clicks.json"
-
 @app.get("/track/click")
-async def track_click(id: str = "", request: Request = None):
+async def track_click(id: str = "", request: Request = None, db=Depends(get_db)):
     import base64
     from fastapi.responses import RedirectResponse
     try:
         email = base64.urlsafe_b64decode(id + "==").decode()
-        clicks = json.loads(_CLICKS_FILE.read_text()) if _CLICKS_FILE.exists() else []
-        clicks.append({"email": email, "ts": datetime.utcnow().isoformat(), "ip": request.headers.get("x-forwarded-for", "")})
-        _CLICKS_FILE.write_text(json.dumps(clicks))
+        ip = request.headers.get("x-forwarded-for", "") if request else ""
+        if db is not None:
+            _log_email_event(db, "email_clicks", email, ip)
         print(f"[email-click] {email}")
     except Exception:
         pass
@@ -855,7 +874,7 @@ async def get_email_clicks(request: Request, db=Depends(get_db)):
     admin_emails = {x.strip().lower() for x in os.environ.get("ADMIN_EMAILS", "").split(",") if x.strip()}
     if not user or user.email.lower() not in admin_emails:
         raise HTTPException(status_code=403, detail="Admin only")
-    return JSONResponse(json.loads(_CLICKS_FILE.read_text()) if _CLICKS_FILE.exists() else [])
+    return JSONResponse(_get_email_events(db, "email_clicks") if db is not None else [])
 
 
 # ---------------------------------------------------------------------------
