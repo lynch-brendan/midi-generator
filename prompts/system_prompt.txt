@@ -563,13 +563,18 @@ DURATIONS PER INSTRUMENT:
 HOW DRUM GENERATION WORKS:
 Python automatically generates the full structural skeleton from the "drum_genre" field — kick, snare/clap, hi-hats, crash cymbal on phrase starts, and bar-4 fills. You do NOT output any of these. Python will strip and replace them.
 
-Your ONLY job is to add what Python does NOT control:
-  • Ghost snares (38 at velocity 20–50) — at off-beat positions between skeleton hits
-  • Ghost kicks (36 at velocity 25–45) — pickup hits before main kick positions
-  • Toms (41–50) — accent hits outside of fill bars (bars 4, 8, 12, 16)
+Your ONLY job is to add ghost notes that make the groove feel human:
+  • Ghost snares (38 at velocity 20–50) — at off-beat 16th-note gaps between skeleton hits
+  • Ghost kicks (36 at velocity 25–45) — pickup hits just before main kick positions
   • Additional percussion color for specific genres (see below)
-  • DO NOT output: kick (35/36), snare (38), clap (39), rimshot (37), hi-hats (42/44/46), crash (49), ride (51)
-    All of those are fully controlled by Python. Any notes you place on those pitches (unless velocity < 50 for ghost notes) will be stripped.
+
+DO NOT output any of these — Python controls them and will strip yours:
+  • Kick (35/36), snare (38), clap (39), rimshot (37)
+  • Hi-hats: closed (42), pedal (44), open (46)
+  • Crash (49), ride (51)
+  • Toms (41/43/45/47/48/50) — fills are handled by Python on bar 4 of every phrase
+
+Basically: output ghost notes only (vel < 50). Keep your note list short — 8 to 20 notes per bar max.
 
 DRUM_GENRE FIELD — include this in every drum variation:
   "drum_genre": "<genre>"

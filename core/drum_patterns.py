@@ -20,7 +20,7 @@ _PATTERNS: Dict[str, dict] = {
     # Straight 8th-note hats — no swing, mechanical grid.
     "dembow": {
         "bar_length": 1,
-        "controlled_pitches": {35, 36, 38, 39, 40, 42, 44, 46, 49},
+        "controlled_pitches": {35, 36, 38, 39, 40, 41, 43, 45, 47, 48, 50, 42, 44, 46, 49},
         "crash_on_phrase_start": False,
         "skeleton": [
             {"pitch": 36, "time": 0.0,  "velocity": 110, "duration": 0.5},
@@ -48,7 +48,7 @@ _PATTERNS: Dict[str, dict] = {
     # 32nd-note roll before phrase end (bar 2 / fill bar).
     "trap": {
         "bar_length": 2,
-        "controlled_pitches": {35, 36, 38, 39, 40, 42, 44, 46, 49},
+        "controlled_pitches": {35, 36, 38, 39, 40, 41, 43, 45, 47, 48, 50, 42, 44, 46, 49},
         "crash_on_phrase_start": False,
         "skeleton": [
             # Bar 1: kick, snare, 8th hats, open hat on snare
@@ -107,7 +107,7 @@ _PATTERNS: Dict[str, dict] = {
     # Kick on 1+2.5+3 with ghost. Swung 8th hats (+0.05 on offbeats). OHH on "and of 4".
     "boom_bap": {
         "bar_length": 1,
-        "controlled_pitches": {35, 36, 38, 39, 40, 42, 44, 46, 49},
+        "controlled_pitches": {35, 36, 38, 39, 40, 41, 43, 45, 47, 48, 50, 42, 44, 46, 49},
         "crash_on_phrase_start": True,
         "crash_velocity": 72,
         "skeleton": [
@@ -151,7 +151,7 @@ _PATTERNS: Dict[str, dict] = {
     # Four-on-floor + clap on 2+4. CHH on beats, OHH on every offbeat (jacking pattern).
     "house": {
         "bar_length": 1,
-        "controlled_pitches": {35, 36, 38, 39, 40, 42, 44, 46, 49},
+        "controlled_pitches": {35, 36, 38, 39, 40, 41, 43, 45, 47, 48, 50, 42, 44, 46, 49},
         "crash_on_phrase_start": True,
         "crash_velocity": 88,
         "skeleton": [
@@ -179,7 +179,7 @@ _PATTERNS: Dict[str, dict] = {
     # Syncopated kick. All 16th hats. OHH on "e of beats 2+4" (Clyde Stubblefield position).
     "funk": {
         "bar_length": 1,
-        "controlled_pitches": {35, 36, 38, 39, 40, 42, 44, 46, 49},
+        "controlled_pitches": {35, 36, 38, 39, 40, 41, 43, 45, 47, 48, 50, 42, 44, 46, 49},
         "crash_on_phrase_start": True,
         "crash_velocity": 88,
         "skeleton": [
@@ -243,7 +243,7 @@ _PATTERNS: Dict[str, dict] = {
     # No closed hat — ride carries time.
     "jazz_swing": {
         "bar_length": 1,
-        "controlled_pitches": {35, 36, 44, 49, 51},
+        "controlled_pitches": {35, 36, 41, 43, 44, 45, 47, 48, 49, 50, 51},
         "crash_on_phrase_start": False,
         "skeleton": [
             {"pitch": 36, "time": 0.0,  "velocity": 32,  "duration": 0.5},
@@ -281,7 +281,7 @@ _PATTERNS: Dict[str, dict] = {
     # ONE-DROP: kick + cross-stick on beat 3 ONLY. Hats on upbeats only (no downbeats).
     "reggae": {
         "bar_length": 1,
-        "controlled_pitches": {35, 36, 37, 38, 39, 40, 42, 44, 46, 49},
+        "controlled_pitches": {35, 36, 37, 38, 39, 40, 41, 43, 45, 47, 48, 50, 42, 44, 46, 49},
         "crash_on_phrase_start": False,
         "skeleton": [
             {"pitch": 36, "time": 2.0,  "velocity": 112, "duration": 0.5},
@@ -311,7 +311,7 @@ _PATTERNS: Dict[str, dict] = {
     # Kick 1+3, snare 2+4. Steady 8th hats. Crash on phrase start and after fill.
     "rock": {
         "bar_length": 1,
-        "controlled_pitches": {35, 36, 38, 39, 40, 42, 44, 46, 49},
+        "controlled_pitches": {35, 36, 38, 39, 40, 41, 43, 45, 47, 48, 50, 42, 44, 46, 49},
         "crash_on_phrase_start": True,
         "crash_velocity": 108,
         "skeleton": [
@@ -348,7 +348,7 @@ _PATTERNS: Dict[str, dict] = {
     # OHH at same positions for lift.
     "afrobeats": {
         "bar_length": 1,
-        "controlled_pitches": {35, 36, 37, 38, 39, 40, 42, 44, 46, 49},
+        "controlled_pitches": {35, 36, 37, 38, 39, 40, 41, 43, 45, 47, 48, 50, 42, 44, 46, 49},
         "crash_on_phrase_start": False,
         "skeleton": [
             {"pitch": 36, "time": 0.0,  "velocity": 108, "duration": 0.5},
@@ -406,7 +406,7 @@ _PATTERNS: Dict[str, dict] = {
     # 32nd hat roll before phrase end. No crash.
     "uk_drill": {
         "bar_length": 2,
-        "controlled_pitches": {35, 36, 38, 39, 40, 42, 44, 46, 49},
+        "controlled_pitches": {35, 36, 38, 39, 40, 41, 43, 45, 47, 48, 50, 42, 44, 46, 49},
         "crash_on_phrase_start": False,
         "skeleton": [
             {"pitch": 36, "time": 0.0,  "velocity": 112, "duration": 0.5},
@@ -442,7 +442,7 @@ _PATTERNS: Dict[str, dict] = {
     # OHH on swung "and of 2" and "and of 4". No crash (dusty, worn-in aesthetic).
     "lofi": {
         "bar_length": 1,
-        "controlled_pitches": {35, 36, 38, 39, 40, 42, 44, 46, 49},
+        "controlled_pitches": {35, 36, 38, 39, 40, 41, 43, 45, 47, 48, 50, 42, 44, 46, 49},
         "crash_on_phrase_start": False,
         "skeleton": [
             {"pitch": 36, "time": 0.0,  "velocity": 100, "duration": 0.5},
@@ -486,7 +486,7 @@ _PATTERNS: Dict[str, dict] = {
     # 3-2 son clave on rimshot. Kick on steps 1,7,9,15. Featherlight 8th hats (vel 45-55).
     "bossa_nova": {
         "bar_length": 2,
-        "controlled_pitches": {35, 36, 37, 38, 39, 40, 42, 44, 46, 49},
+        "controlled_pitches": {35, 36, 37, 38, 39, 40, 41, 43, 45, 47, 48, 50, 42, 44, 46, 49},
         "crash_on_phrase_start": False,
         "skeleton": [
             {"pitch": 36, "time": 0.0,  "velocity": 85, "duration": 0.5},
@@ -528,7 +528,7 @@ _PATTERNS: Dict[str, dict] = {
     # OHH with snare. Dense ghost-heavy tom fill.
     "halftime": {
         "bar_length": 1,
-        "controlled_pitches": {35, 36, 38, 39, 40, 42, 44, 46, 49},
+        "controlled_pitches": {35, 36, 38, 39, 40, 41, 43, 45, 47, 48, 50, 42, 44, 46, 49},
         "crash_on_phrase_start": True,
         "crash_velocity": 92,
         "skeleton": [
@@ -573,7 +573,7 @@ _PATTERNS: Dict[str, dict] = {
 
     "default": {
         "bar_length": 1,
-        "controlled_pitches": {35, 36, 38, 39, 40, 42, 44, 46, 49},
+        "controlled_pitches": {35, 36, 38, 39, 40, 41, 43, 45, 47, 48, 50, 42, 44, 46, 49},
         "crash_on_phrase_start": True,
         "crash_velocity": 88,
         "skeleton": [
