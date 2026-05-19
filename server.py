@@ -34,7 +34,6 @@ from core.guitar_synth import render_guitar_pattern
 from core.variations import extract_variation_info, validate_variation, sanitize_variation
 from core.auth import create_jwt, get_current_user, google_auth_url, exchange_google_code
 from core.storage import upload_to_r2, r2_enabled
-from core.storage import upload_to_r2, r2_enabled
 
 app = FastAPI()
 
@@ -50,7 +49,40 @@ def _cleanup_output_dir():
             if folder.is_dir() and folder.stat().st_mtime < cutoff:
                 shutil.rmtree(folder, ignore_errors=True)
     except Exception as e:
-        print(f"[cleanup] error: {e}")
+        print(f"[cleanup] local output error: {e}")
+
+def _cleanup_r2_generated():
+    """Delete R2 files under generated/ older than 24 hours."""
+    if not r2_enabled():
+        return
+    try:
+        import boto3, time
+        from botocore.config import Config
+        from datetime import timezone
+        account_id = os.environ["R2_ACCOUNT_ID"]
+        s3 = boto3.client(
+            "s3",
+            endpoint_url=f"https://{account_id}.r2.cloudflarestorage.com",
+            aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
+            aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
+            config=Config(signature_version="s3v4"),
+            region_name="auto",
+        )
+        bucket = os.environ["R2_BUCKET_NAME"]
+        cutoff = datetime.now(timezone.utc).timestamp() - 24 * 3600
+        paginator = s3.get_paginator("list_objects_v2")
+        to_delete = []
+        for page in paginator.paginate(Bucket=bucket, Prefix="generated/"):
+            for obj in page.get("Contents", []):
+                if obj["LastModified"].timestamp() < cutoff:
+                    to_delete.append({"Key": obj["Key"]})
+        if to_delete:
+            # R2 delete_objects accepts max 1000 keys at a time
+            for i in range(0, len(to_delete), 1000):
+                s3.delete_objects(Bucket=bucket, Delete={"Objects": to_delete[i:i+1000]})
+            print(f"[cleanup] deleted {len(to_delete)} expired R2 generated files")
+    except Exception as e:
+        print(f"[cleanup] R2 error: {e}")
 
 def _start_cleanup_thread():
     import threading, time
@@ -58,6 +90,7 @@ def _start_cleanup_thread():
         while True:
             time.sleep(1800)  # every 30 minutes
             _cleanup_output_dir()
+            _cleanup_r2_generated()
     t = threading.Thread(target=loop, daemon=True)
     t.start()
 
