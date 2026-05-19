@@ -4,13 +4,15 @@ Sources: MusicRadar, Attack Magazine, drum-patterns.com, Jazz Night School, Band
 
 Python controls: kick, snare/clap, hi-hats (CHH/OHH/pedal), crash on phrase starts,
                  and bar-4 fills (tom runs, snare rolls, hat bursts per genre).
-Claude controls: ghost notes (vel < 55), toms outside fill bars, non-standard percussion.
+Claude controls: ghost notes (vel < 55) only.
+Velocity humanization: ±8 random spread applied to every skeleton note at render time.
 
 Public API:
     get_skeleton(genre, bars)          -> List[Dict]
     apply_skeleton(notes, genre, bars) -> List[Dict]
 """
 import math
+import random
 from typing import List, Dict, Optional, Set
 
 _PATTERNS: Dict[str, dict] = {
@@ -592,14 +594,404 @@ _PATTERNS: Dict[str, dict] = {
         ],
         "fill": None,
     },
+
+    # ── TRAP VARIANTS ─────────────────────────────────────────────────────────
+
+    # Ultra-minimal: kick only beat 1, snare beat 3. Spacious.
+    "trap_minimal": {
+        "bar_length": 1,
+        "controlled_pitches": {35, 36, 38, 39, 40, 41, 43, 45, 47, 48, 50, 42, 44, 46, 49},
+        "crash_on_phrase_start": False,
+        "skeleton": [
+            {"pitch": 36, "time": 0.0,  "velocity": 115, "duration": 0.5},
+            {"pitch": 38, "time": 2.0,  "velocity": 120, "duration": 0.1},
+            {"pitch": 42, "time": 0.0,  "velocity": 85,  "duration": 0.1},
+            {"pitch": 42, "time": 0.5,  "velocity": 52,  "duration": 0.1},
+            {"pitch": 42, "time": 1.0,  "velocity": 80,  "duration": 0.1},
+            {"pitch": 42, "time": 1.5,  "velocity": 48,  "duration": 0.1},
+            {"pitch": 42, "time": 2.0,  "velocity": 78,  "duration": 0.1},
+            {"pitch": 42, "time": 2.5,  "velocity": 52,  "duration": 0.1},
+            {"pitch": 42, "time": 3.0,  "velocity": 80,  "duration": 0.1},
+            {"pitch": 42, "time": 3.5,  "velocity": 48,  "duration": 0.1},
+            {"pitch": 46, "time": 2.0,  "velocity": 92,  "duration": 0.5},
+        ],
+        "fill": [
+            {"pitch": 36, "time": 0.0,   "velocity": 115, "duration": 0.5},
+            {"pitch": 38, "time": 2.0,   "velocity": 120, "duration": 0.1},
+            {"pitch": 42, "time": 0.0,   "velocity": 85,  "duration": 0.1},
+            {"pitch": 42, "time": 0.5,   "velocity": 52,  "duration": 0.1},
+            {"pitch": 42, "time": 1.0,   "velocity": 80,  "duration": 0.1},
+            {"pitch": 42, "time": 1.5,   "velocity": 48,  "duration": 0.1},
+            {"pitch": 42, "time": 2.0,   "velocity": 78,  "duration": 0.1},
+            {"pitch": 42, "time": 2.5,   "velocity": 52,  "duration": 0.1},
+            {"pitch": 42, "time": 3.0,   "velocity": 80,  "duration": 0.1},
+            {"pitch": 42, "time": 3.25,  "velocity": 40,  "duration": 0.05},
+            {"pitch": 42, "time": 3.375, "velocity": 55,  "duration": 0.05},
+            {"pitch": 42, "time": 3.5,   "velocity": 70,  "duration": 0.05},
+            {"pitch": 42, "time": 3.625, "velocity": 88,  "duration": 0.05},
+            {"pitch": 42, "time": 3.75,  "velocity": 105, "duration": 0.05},
+            {"pitch": 46, "time": 2.0,   "velocity": 92,  "duration": 0.5},
+        ],
+    },
+
+    # Dense: busier kick, 16th-note hat grid, more energetic
+    "trap_busy": {
+        "bar_length": 1,
+        "controlled_pitches": {35, 36, 38, 39, 40, 41, 43, 45, 47, 48, 50, 42, 44, 46, 49},
+        "crash_on_phrase_start": False,
+        "skeleton": [
+            {"pitch": 36, "time": 0.0,  "velocity": 112, "duration": 0.5},
+            {"pitch": 36, "time": 0.75, "velocity": 80,  "duration": 0.5},
+            {"pitch": 36, "time": 2.5,  "velocity": 88,  "duration": 0.5},
+            {"pitch": 36, "time": 3.25, "velocity": 72,  "duration": 0.5},
+            {"pitch": 38, "time": 2.0,  "velocity": 118, "duration": 0.1},
+            # 16th-note hats
+            {"pitch": 42, "time": 0.0,  "velocity": 88,  "duration": 0.1},
+            {"pitch": 42, "time": 0.25, "velocity": 50,  "duration": 0.1},
+            {"pitch": 42, "time": 0.5,  "velocity": 75,  "duration": 0.1},
+            {"pitch": 42, "time": 0.75, "velocity": 48,  "duration": 0.1},
+            {"pitch": 42, "time": 1.0,  "velocity": 85,  "duration": 0.1},
+            {"pitch": 42, "time": 1.25, "velocity": 50,  "duration": 0.1},
+            {"pitch": 42, "time": 1.5,  "velocity": 72,  "duration": 0.1},
+            {"pitch": 42, "time": 1.75, "velocity": 45,  "duration": 0.1},
+            {"pitch": 42, "time": 2.0,  "velocity": 82,  "duration": 0.1},
+            {"pitch": 42, "time": 2.25, "velocity": 50,  "duration": 0.1},
+            {"pitch": 42, "time": 2.5,  "velocity": 72,  "duration": 0.1},
+            {"pitch": 42, "time": 2.75, "velocity": 45,  "duration": 0.1},
+            {"pitch": 42, "time": 3.0,  "velocity": 85,  "duration": 0.1},
+            {"pitch": 42, "time": 3.25, "velocity": 50,  "duration": 0.1},
+            {"pitch": 42, "time": 3.5,  "velocity": 72,  "duration": 0.1},
+            {"pitch": 42, "time": 3.75, "velocity": 45,  "duration": 0.1},
+            {"pitch": 46, "time": 2.0,  "velocity": 88,  "duration": 0.5},
+        ],
+        "fill": [
+            {"pitch": 36, "time": 0.0,   "velocity": 112, "duration": 0.5},
+            {"pitch": 36, "time": 0.75,  "velocity": 80,  "duration": 0.5},
+            {"pitch": 36, "time": 2.5,   "velocity": 88,  "duration": 0.5},
+            {"pitch": 38, "time": 2.0,   "velocity": 118, "duration": 0.1},
+            {"pitch": 42, "time": 0.0,   "velocity": 88,  "duration": 0.1},
+            {"pitch": 42, "time": 0.25,  "velocity": 50,  "duration": 0.1},
+            {"pitch": 42, "time": 0.5,   "velocity": 75,  "duration": 0.1},
+            {"pitch": 42, "time": 0.75,  "velocity": 48,  "duration": 0.1},
+            {"pitch": 42, "time": 1.0,   "velocity": 85,  "duration": 0.1},
+            {"pitch": 42, "time": 1.25,  "velocity": 50,  "duration": 0.1},
+            {"pitch": 42, "time": 1.5,   "velocity": 72,  "duration": 0.1},
+            {"pitch": 42, "time": 1.75,  "velocity": 45,  "duration": 0.1},
+            {"pitch": 42, "time": 2.0,   "velocity": 82,  "duration": 0.1},
+            {"pitch": 42, "time": 2.5,   "velocity": 72,  "duration": 0.1},
+            {"pitch": 42, "time": 3.0,   "velocity": 85,  "duration": 0.1},
+            {"pitch": 42, "time": 3.25,  "velocity": 42,  "duration": 0.05},
+            {"pitch": 42, "time": 3.375, "velocity": 58,  "duration": 0.05},
+            {"pitch": 42, "time": 3.5,   "velocity": 72,  "duration": 0.05},
+            {"pitch": 42, "time": 3.625, "velocity": 90,  "duration": 0.05},
+            {"pitch": 42, "time": 3.75,  "velocity": 108, "duration": 0.05},
+            {"pitch": 46, "time": 2.0,   "velocity": 88,  "duration": 0.5},
+        ],
+    },
+
+    # ── BOOM BAP VARIANTS ─────────────────────────────────────────────────────
+
+    # Heavy NYC feel: extra kick anticipation before beat 2 + more syncopation
+    "boom_bap_heavy": {
+        "bar_length": 1,
+        "controlled_pitches": {35, 36, 38, 39, 40, 41, 43, 45, 47, 48, 50, 42, 44, 46, 49},
+        "crash_on_phrase_start": True,
+        "crash_velocity": 78,
+        "skeleton": [
+            {"pitch": 36, "time": 0.0,  "velocity": 108, "duration": 0.5},
+            {"pitch": 36, "time": 0.75, "velocity": 58,  "duration": 0.5},
+            {"pitch": 36, "time": 1.5,  "velocity": 98,  "duration": 0.5},
+            {"pitch": 36, "time": 2.5,  "velocity": 90,  "duration": 0.5},
+            {"pitch": 36, "time": 3.5,  "velocity": 62,  "duration": 0.5},
+            {"pitch": 38, "time": 1.0,  "velocity": 105, "duration": 0.1},
+            {"pitch": 38, "time": 3.0,  "velocity": 105, "duration": 0.1},
+            {"pitch": 42, "time": 0.0,  "velocity": 88,  "duration": 0.1},
+            {"pitch": 42, "time": 0.55, "velocity": 52,  "duration": 0.1},
+            {"pitch": 42, "time": 1.0,  "velocity": 82,  "duration": 0.1},
+            {"pitch": 42, "time": 1.55, "velocity": 50,  "duration": 0.1},
+            {"pitch": 42, "time": 2.0,  "velocity": 88,  "duration": 0.1},
+            {"pitch": 42, "time": 2.55, "velocity": 52,  "duration": 0.1},
+            {"pitch": 42, "time": 3.0,  "velocity": 82,  "duration": 0.1},
+            {"pitch": 46, "time": 3.55, "velocity": 80,  "duration": 0.5},
+        ],
+        "fill": [
+            {"pitch": 36, "time": 0.0,  "velocity": 108, "duration": 0.5},
+            {"pitch": 36, "time": 0.75, "velocity": 58,  "duration": 0.5},
+            {"pitch": 36, "time": 1.5,  "velocity": 98,  "duration": 0.5},
+            {"pitch": 36, "time": 2.5,  "velocity": 90,  "duration": 0.5},
+            {"pitch": 38, "time": 1.0,  "velocity": 105, "duration": 0.1},
+            {"pitch": 38, "time": 3.0,  "velocity": 82,  "duration": 0.1},
+            {"pitch": 38, "time": 3.25, "velocity": 92,  "duration": 0.1},
+            {"pitch": 38, "time": 3.5,  "velocity": 102, "duration": 0.1},
+            {"pitch": 38, "time": 3.75, "velocity": 115, "duration": 0.1},
+            {"pitch": 42, "time": 0.0,  "velocity": 88,  "duration": 0.1},
+            {"pitch": 42, "time": 0.55, "velocity": 52,  "duration": 0.1},
+            {"pitch": 42, "time": 1.0,  "velocity": 82,  "duration": 0.1},
+            {"pitch": 42, "time": 1.55, "velocity": 50,  "duration": 0.1},
+            {"pitch": 42, "time": 2.0,  "velocity": 88,  "duration": 0.1},
+            {"pitch": 42, "time": 2.55, "velocity": 52,  "duration": 0.1},
+        ],
+    },
+
+    # Chill / west coast: simpler kick, more relaxed swing
+    "boom_bap_chill": {
+        "bar_length": 1,
+        "controlled_pitches": {35, 36, 38, 39, 40, 41, 43, 45, 47, 48, 50, 42, 44, 46, 49},
+        "crash_on_phrase_start": True,
+        "crash_velocity": 65,
+        "skeleton": [
+            {"pitch": 36, "time": 0.0,  "velocity": 100, "duration": 0.5},
+            {"pitch": 36, "time": 2.5,  "velocity": 92,  "duration": 0.5},
+            {"pitch": 38, "time": 1.0,  "velocity": 95,  "duration": 0.1},
+            {"pitch": 38, "time": 3.0,  "velocity": 95,  "duration": 0.1},
+            {"pitch": 42, "time": 0.0,  "velocity": 78,  "duration": 0.1},
+            {"pitch": 42, "time": 0.55, "velocity": 45,  "duration": 0.1},
+            {"pitch": 42, "time": 1.0,  "velocity": 72,  "duration": 0.1},
+            {"pitch": 42, "time": 1.55, "velocity": 42,  "duration": 0.1},
+            {"pitch": 42, "time": 2.0,  "velocity": 78,  "duration": 0.1},
+            {"pitch": 42, "time": 2.55, "velocity": 45,  "duration": 0.1},
+            {"pitch": 42, "time": 3.0,  "velocity": 72,  "duration": 0.1},
+            {"pitch": 46, "time": 3.55, "velocity": 68,  "duration": 0.5},
+        ],
+        "fill": [
+            {"pitch": 36, "time": 0.0,  "velocity": 100, "duration": 0.5},
+            {"pitch": 36, "time": 2.5,  "velocity": 92,  "duration": 0.5},
+            {"pitch": 38, "time": 1.0,  "velocity": 95,  "duration": 0.1},
+            {"pitch": 38, "time": 3.0,  "velocity": 72,  "duration": 0.1},
+            {"pitch": 38, "time": 3.25, "velocity": 82,  "duration": 0.1},
+            {"pitch": 38, "time": 3.5,  "velocity": 92,  "duration": 0.1},
+            {"pitch": 38, "time": 3.75, "velocity": 105, "duration": 0.1},
+            {"pitch": 42, "time": 0.0,  "velocity": 78,  "duration": 0.1},
+            {"pitch": 42, "time": 0.55, "velocity": 45,  "duration": 0.1},
+            {"pitch": 42, "time": 1.0,  "velocity": 72,  "duration": 0.1},
+            {"pitch": 42, "time": 1.55, "velocity": 42,  "duration": 0.1},
+            {"pitch": 42, "time": 2.0,  "velocity": 78,  "duration": 0.1},
+            {"pitch": 42, "time": 2.55, "velocity": 45,  "duration": 0.1},
+        ],
+    },
+
+    # ── ROCK VARIANTS ─────────────────────────────────────────────────────────
+
+    # Driving: kick on all 4 beats (AC/DC style)
+    "rock_driving": {
+        "bar_length": 1,
+        "controlled_pitches": {35, 36, 38, 39, 40, 41, 43, 45, 47, 48, 50, 42, 44, 46, 49},
+        "crash_on_phrase_start": True,
+        "crash_velocity": 110,
+        "skeleton": [
+            {"pitch": 36, "time": 0.0,  "velocity": 115, "duration": 0.5},
+            {"pitch": 36, "time": 1.0,  "velocity": 105, "duration": 0.5},
+            {"pitch": 36, "time": 2.0,  "velocity": 112, "duration": 0.5},
+            {"pitch": 36, "time": 3.0,  "velocity": 108, "duration": 0.5},
+            {"pitch": 38, "time": 1.0,  "velocity": 118, "duration": 0.1},
+            {"pitch": 38, "time": 3.0,  "velocity": 118, "duration": 0.1},
+            {"pitch": 42, "time": 0.0,  "velocity": 92,  "duration": 0.1},
+            {"pitch": 42, "time": 0.5,  "velocity": 74,  "duration": 0.1},
+            {"pitch": 42, "time": 1.0,  "velocity": 90,  "duration": 0.1},
+            {"pitch": 42, "time": 1.5,  "velocity": 72,  "duration": 0.1},
+            {"pitch": 42, "time": 2.0,  "velocity": 92,  "duration": 0.1},
+            {"pitch": 42, "time": 2.5,  "velocity": 74,  "duration": 0.1},
+            {"pitch": 42, "time": 3.0,  "velocity": 90,  "duration": 0.1},
+            {"pitch": 42, "time": 3.5,  "velocity": 72,  "duration": 0.1},
+        ],
+        "fill": [
+            {"pitch": 36, "time": 0.0,  "velocity": 115, "duration": 0.5},
+            {"pitch": 36, "time": 2.0,  "velocity": 112, "duration": 0.5},
+            {"pitch": 50, "time": 0.0,  "velocity": 98,  "duration": 0.1},
+            {"pitch": 50, "time": 0.5,  "velocity": 92,  "duration": 0.1},
+            {"pitch": 38, "time": 1.0,  "velocity": 105, "duration": 0.1},
+            {"pitch": 38, "time": 1.5,  "velocity": 98,  "duration": 0.1},
+            {"pitch": 48, "time": 2.0,  "velocity": 95,  "duration": 0.1},
+            {"pitch": 48, "time": 2.5,  "velocity": 90,  "duration": 0.1},
+            {"pitch": 45, "time": 3.0,  "velocity": 92,  "duration": 0.1},
+            {"pitch": 41, "time": 3.5,  "velocity": 90,  "duration": 0.1},
+        ],
+    },
+
+    # Half-time rock: snare only on beat 3, heavier feel
+    "rock_halftime": {
+        "bar_length": 1,
+        "controlled_pitches": {35, 36, 38, 39, 40, 41, 43, 45, 47, 48, 50, 42, 44, 46, 49},
+        "crash_on_phrase_start": True,
+        "crash_velocity": 108,
+        "skeleton": [
+            {"pitch": 36, "time": 0.0,  "velocity": 115, "duration": 0.5},
+            {"pitch": 36, "time": 1.5,  "velocity": 88,  "duration": 0.5},
+            {"pitch": 36, "time": 2.0,  "velocity": 112, "duration": 0.5},
+            {"pitch": 38, "time": 2.0,  "velocity": 122, "duration": 0.1},
+            {"pitch": 42, "time": 0.0,  "velocity": 90,  "duration": 0.1},
+            {"pitch": 42, "time": 0.5,  "velocity": 72,  "duration": 0.1},
+            {"pitch": 42, "time": 1.0,  "velocity": 88,  "duration": 0.1},
+            {"pitch": 42, "time": 1.5,  "velocity": 70,  "duration": 0.1},
+            {"pitch": 42, "time": 2.0,  "velocity": 90,  "duration": 0.1},
+            {"pitch": 42, "time": 2.5,  "velocity": 72,  "duration": 0.1},
+            {"pitch": 42, "time": 3.0,  "velocity": 88,  "duration": 0.1},
+            {"pitch": 42, "time": 3.5,  "velocity": 70,  "duration": 0.1},
+        ],
+        "fill": [
+            {"pitch": 36, "time": 0.0,  "velocity": 115, "duration": 0.5},
+            {"pitch": 36, "time": 2.0,  "velocity": 112, "duration": 0.5},
+            {"pitch": 50, "time": 0.0,  "velocity": 95,  "duration": 0.1},
+            {"pitch": 50, "time": 0.5,  "velocity": 90,  "duration": 0.1},
+            {"pitch": 38, "time": 1.0,  "velocity": 100, "duration": 0.1},
+            {"pitch": 38, "time": 1.5,  "velocity": 95,  "duration": 0.1},
+            {"pitch": 48, "time": 2.0,  "velocity": 92,  "duration": 0.1},
+            {"pitch": 48, "time": 2.5,  "velocity": 88,  "duration": 0.1},
+            {"pitch": 45, "time": 3.0,  "velocity": 90,  "duration": 0.1},
+            {"pitch": 41, "time": 3.5,  "velocity": 88,  "duration": 0.1},
+        ],
+    },
+
+    # ── HOUSE VARIANTS ────────────────────────────────────────────────────────
+
+    # Deep house: sparse open hats, more hypnotic
+    "house_deep": {
+        "bar_length": 1,
+        "controlled_pitches": {35, 36, 38, 39, 40, 41, 43, 45, 47, 48, 50, 42, 44, 46, 49},
+        "crash_on_phrase_start": True,
+        "crash_velocity": 82,
+        "skeleton": [
+            {"pitch": 36, "time": 0.0,  "velocity": 112, "duration": 0.5},
+            {"pitch": 36, "time": 1.0,  "velocity": 108, "duration": 0.5},
+            {"pitch": 36, "time": 2.0,  "velocity": 112, "duration": 0.5},
+            {"pitch": 36, "time": 3.0,  "velocity": 108, "duration": 0.5},
+            {"pitch": 39, "time": 1.0,  "velocity": 95,  "duration": 0.1},
+            {"pitch": 39, "time": 3.0,  "velocity": 95,  "duration": 0.1},
+            # 16th CHH on downbeats only — more spacious
+            {"pitch": 42, "time": 0.0,  "velocity": 78,  "duration": 0.1},
+            {"pitch": 42, "time": 0.25, "velocity": 48,  "duration": 0.1},
+            {"pitch": 42, "time": 1.0,  "velocity": 72,  "duration": 0.1},
+            {"pitch": 42, "time": 1.25, "velocity": 48,  "duration": 0.1},
+            {"pitch": 42, "time": 2.0,  "velocity": 78,  "duration": 0.1},
+            {"pitch": 42, "time": 2.25, "velocity": 48,  "duration": 0.1},
+            {"pitch": 42, "time": 3.0,  "velocity": 72,  "duration": 0.1},
+            {"pitch": 42, "time": 3.25, "velocity": 48,  "duration": 0.1},
+            # OHH only on "and of 2" and "and of 4"
+            {"pitch": 46, "time": 1.5,  "velocity": 88,  "duration": 0.4},
+            {"pitch": 46, "time": 3.5,  "velocity": 85,  "duration": 0.4},
+        ],
+        "fill": None,
+    },
+
+    # ── FUNK VARIANTS ─────────────────────────────────────────────────────────
+
+    # Heavy groove: simpler kick, massive backbeat, more room for ghost notes
+    "funk_heavy": {
+        "bar_length": 1,
+        "controlled_pitches": {35, 36, 38, 39, 40, 41, 43, 45, 47, 48, 50, 42, 44, 46, 49},
+        "crash_on_phrase_start": True,
+        "crash_velocity": 90,
+        "skeleton": [
+            {"pitch": 36, "time": 0.0,  "velocity": 112, "duration": 0.5},
+            {"pitch": 36, "time": 2.0,  "velocity": 105, "duration": 0.5},
+            {"pitch": 36, "time": 3.0,  "velocity": 90,  "duration": 0.5},
+            {"pitch": 38, "time": 1.0,  "velocity": 115, "duration": 0.1},
+            {"pitch": 38, "time": 3.0,  "velocity": 115, "duration": 0.1},
+            {"pitch": 42, "time": 0.0,  "velocity": 98,  "duration": 0.1},
+            {"pitch": 42, "time": 0.25, "velocity": 55,  "duration": 0.1},
+            {"pitch": 42, "time": 0.5,  "velocity": 78,  "duration": 0.1},
+            {"pitch": 42, "time": 0.75, "velocity": 50,  "duration": 0.1},
+            {"pitch": 42, "time": 1.0,  "velocity": 95,  "duration": 0.1},
+            {"pitch": 42, "time": 1.5,  "velocity": 78,  "duration": 0.1},
+            {"pitch": 42, "time": 1.75, "velocity": 50,  "duration": 0.1},
+            {"pitch": 42, "time": 2.0,  "velocity": 98,  "duration": 0.1},
+            {"pitch": 42, "time": 2.25, "velocity": 55,  "duration": 0.1},
+            {"pitch": 42, "time": 2.5,  "velocity": 78,  "duration": 0.1},
+            {"pitch": 42, "time": 2.75, "velocity": 50,  "duration": 0.1},
+            {"pitch": 42, "time": 3.0,  "velocity": 95,  "duration": 0.1},
+            {"pitch": 42, "time": 3.5,  "velocity": 78,  "duration": 0.1},
+            {"pitch": 42, "time": 3.75, "velocity": 50,  "duration": 0.1},
+            {"pitch": 46, "time": 1.25, "velocity": 90,  "duration": 0.25},
+            {"pitch": 46, "time": 3.25, "velocity": 90,  "duration": 0.25},
+        ],
+        "fill": [
+            {"pitch": 36, "time": 0.0,  "velocity": 112, "duration": 0.5},
+            {"pitch": 36, "time": 2.0,  "velocity": 105, "duration": 0.5},
+            {"pitch": 38, "time": 1.0,  "velocity": 115, "duration": 0.1},
+            {"pitch": 42, "time": 0.0,  "velocity": 98,  "duration": 0.1},
+            {"pitch": 42, "time": 0.25, "velocity": 55,  "duration": 0.1},
+            {"pitch": 42, "time": 0.5,  "velocity": 78,  "duration": 0.1},
+            {"pitch": 42, "time": 0.75, "velocity": 50,  "duration": 0.1},
+            {"pitch": 42, "time": 1.0,  "velocity": 95,  "duration": 0.1},
+            {"pitch": 42, "time": 1.5,  "velocity": 78,  "duration": 0.1},
+            {"pitch": 42, "time": 1.75, "velocity": 50,  "duration": 0.1},
+            {"pitch": 42, "time": 2.0,  "velocity": 98,  "duration": 0.1},
+            {"pitch": 42, "time": 2.25, "velocity": 55,  "duration": 0.1},
+            {"pitch": 42, "time": 2.5,  "velocity": 78,  "duration": 0.1},
+            {"pitch": 42, "time": 2.75, "velocity": 50,  "duration": 0.1},
+            {"pitch": 46, "time": 1.25, "velocity": 90,  "duration": 0.25},
+            {"pitch": 50, "time": 3.0,  "velocity": 100, "duration": 0.1},
+            {"pitch": 38, "time": 3.25, "velocity": 92,  "duration": 0.1},
+            {"pitch": 48, "time": 3.5,  "velocity": 95,  "duration": 0.1},
+            {"pitch": 45, "time": 3.75, "velocity": 90,  "duration": 0.1},
+        ],
+    },
+
+    # ── LOFI VARIANTS ─────────────────────────────────────────────────────────
+
+    # Lazy / Nujabes style: sparser, even more swung
+    "lofi_lazy": {
+        "bar_length": 1,
+        "controlled_pitches": {35, 36, 38, 39, 40, 41, 43, 45, 47, 48, 50, 42, 44, 46, 49},
+        "crash_on_phrase_start": False,
+        "skeleton": [
+            {"pitch": 36, "time": 0.0,  "velocity": 95,  "duration": 0.5},
+            {"pitch": 36, "time": 2.0,  "velocity": 88,  "duration": 0.5},
+            {"pitch": 38, "time": 1.0,  "velocity": 90,  "duration": 0.1},
+            {"pitch": 38, "time": 3.0,  "velocity": 85,  "duration": 0.1},
+            # Very swung 8th hats (offbeats at +0.15 = Dilla maximum)
+            {"pitch": 42, "time": 0.0,  "velocity": 68,  "duration": 0.1},
+            {"pitch": 42, "time": 0.65, "velocity": 40,  "duration": 0.1},
+            {"pitch": 42, "time": 1.0,  "velocity": 62,  "duration": 0.1},
+            {"pitch": 42, "time": 1.65, "velocity": 38,  "duration": 0.1},
+            {"pitch": 42, "time": 2.0,  "velocity": 68,  "duration": 0.1},
+            {"pitch": 42, "time": 2.65, "velocity": 40,  "duration": 0.1},
+            {"pitch": 42, "time": 3.0,  "velocity": 62,  "duration": 0.1},
+            {"pitch": 46, "time": 1.65, "velocity": 60,  "duration": 0.4},
+            {"pitch": 46, "time": 3.65, "velocity": 58,  "duration": 0.4},
+        ],
+        "fill": [
+            {"pitch": 36, "time": 0.0,  "velocity": 95,  "duration": 0.5},
+            {"pitch": 36, "time": 2.0,  "velocity": 88,  "duration": 0.5},
+            {"pitch": 38, "time": 1.0,  "velocity": 90,  "duration": 0.1},
+            {"pitch": 42, "time": 0.0,  "velocity": 68,  "duration": 0.1},
+            {"pitch": 42, "time": 0.65, "velocity": 40,  "duration": 0.1},
+            {"pitch": 42, "time": 1.0,  "velocity": 62,  "duration": 0.1},
+            {"pitch": 42, "time": 1.65, "velocity": 38,  "duration": 0.1},
+            {"pitch": 42, "time": 2.0,  "velocity": 68,  "duration": 0.1},
+            {"pitch": 42, "time": 2.65, "velocity": 40,  "duration": 0.1},
+            {"pitch": 42, "time": 3.0,  "velocity": 62,  "duration": 0.1},
+            {"pitch": 46, "time": 1.65, "velocity": 60,  "duration": 0.4},
+            {"pitch": 38, "time": 3.25, "velocity": 68,  "duration": 0.1},
+            {"pitch": 38, "time": 3.5,  "velocity": 78,  "duration": 0.1},
+            {"pitch": 38, "time": 3.75, "velocity": 90,  "duration": 0.1},
+        ],
+    },
 }
 
 _ALIASES = {
     "reggaeton": "dembow",
     "latin trap": "dembow",
     "perreo": "dembow",
+    "trap minimal": "trap_minimal",
+    "minimal trap": "trap_minimal",
+    "trap sparse": "trap_minimal",
+    "trap dense": "trap_busy",
+    "trap heavy": "trap_busy",
     "boom bap": "boom_bap",
     "boom-bap": "boom_bap",
+    "boom bap heavy": "boom_bap_heavy",
+    "boom bap chill": "boom_bap_chill",
+    "boom bap light": "boom_bap_chill",
+    "rock driving": "rock_driving",
+    "driving rock": "rock_driving",
+    "rock halftime": "rock_halftime",
+    "house deep": "house_deep",
+    "deep house": "house_deep",
+    "funk heavy": "funk_heavy",
+    "heavy funk": "funk_heavy",
+    "lofi lazy": "lofi_lazy",
+    "lazy lofi": "lofi_lazy",
     "hip hop": "boom_bap",
     "hip-hop": "boom_bap",
     "jazz": "jazz_swing",
@@ -636,6 +1028,11 @@ def _normalize(genre: str) -> str:
     return "default"
 
 
+def _humanize(velocity: int, spread: int = 8) -> int:
+    """Apply random velocity variation so the same skeleton sounds different each generation."""
+    return max(1, min(127, velocity + random.randint(-spread, spread)))
+
+
 def _build_skeleton(pattern: dict, bars: int) -> List[Dict]:
     groove = pattern["skeleton"]
     fill = pattern.get("fill")
@@ -656,12 +1053,14 @@ def _build_skeleton(pattern: dict, bars: int) -> List[Dict]:
                 "velocity": crash_vel, "duration": 1.0,
             })
 
-        if is_fill_bar:
-            for n in fill:
+        source = fill if is_fill_bar else None
+        if source is not None:
+            for n in source:
+                vel = _humanize(n["velocity"], spread=7) if n["pitch"] != 49 else n["velocity"]
                 notes.append({
                     "pitch": n["pitch"],
                     "time": round(bar_start + n["time"], 4),
-                    "velocity": n["velocity"],
+                    "velocity": vel,
                     "duration": n.get("duration", 0.1),
                 })
         else:
@@ -670,10 +1069,11 @@ def _build_skeleton(pattern: dict, bars: int) -> List[Dict]:
             for n in groove:
                 t = n["time"]
                 if cycle_offset <= t < cycle_offset + 4.0:
+                    vel = _humanize(n["velocity"], spread=8) if n["pitch"] != 49 else n["velocity"]
                     notes.append({
                         "pitch": n["pitch"],
                         "time": round(bar_start + (t - cycle_offset), 4),
-                        "velocity": n["velocity"],
+                        "velocity": vel,
                         "duration": n.get("duration", 0.1),
                     })
 

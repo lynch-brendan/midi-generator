@@ -580,20 +580,33 @@ DRUM_GENRE FIELD — include this in every drum variation:
   "drum_genre": "<genre>"
 
 Valid genre values and what Python generates for each:
-  "dembow"     — 4-on-floor kick + syncopated clap + straight 8th hats. BPM 88–95.
-  "trap"       — sparse kick + half-time snare + 8th hats + OHH on snare + 32nd rolls. BPM 130–145.
-  "boom_bap"   — syncopated kick + swung 8th hats + OHH "and of 4" + crash bar 1. BPM 85–98.
-  "house"      — 4-on-floor kick + clap 2+4 + CHH on beats + OHH on all offbeats. BPM 120–130.
-  "funk"       — Funky Drummer kick + 16th hats + OHH on "e of 2+4" + crash bar 1. BPM 95–115.
-  "jazz_swing" — feathered kick + pedal HH 2+4 + ride spang-a-lang. BPM 120–200.
-  "reggae"     — one-drop kick+cross-stick beat 3 + upbeat-only hats + OHH "and of 4". BPM 65–90.
-  "rock"       — kick 1+3 + snare 2+4 + 8th hats + crash every 4 bars + descending tom fill. BPM 110–145.
-  "afrobeats"  — kick 1+3 + snare 2+4 + cross-stick on 0.5/2.5 + 16th hats + crash phrases. BPM 95–112.
-  "uk_drill"   — half-time snare + tresillo hats (0,0.75,1.5,2.0,2.75,3.5) + 32nd rolls. BPM 138–142.
-  "lofi"       — kick + swung 8th hats (Dilla feel) + OHH "and of 2+4". BPM 65–85.
-  "bossa_nova" — 2-bar clave kick+rimshot + featherlight 8th hats (vel 45–55). BPM 120–160.
-  "halftime"   — kick beat 1 + snare beat 3 + triplet hats (12/bar) + OHH on snare. BPM 70–95.
-  "default"    — kick 1+3 + snare 2+4 + 8th hats. Use when no genre fits.
+
+Base genres:
+  "dembow"        — 4-on-floor kick + syncopated clap + straight 8th hats. BPM 88–95.
+  "trap"          — sparse kick + half-time snare + 8th hats + OHH on snare + 32nd rolls. BPM 130–145.
+  "boom_bap"      — syncopated kick + swung 8th hats + OHH "and of 4" + crash bar 1. BPM 85–98.
+  "house"         — 4-on-floor + clap 2+4 + CHH on beats + OHH on ALL offbeats (jacking). BPM 120–130.
+  "funk"          — Funky Drummer kick + dense 16th hats + OHH on "e of 2+4" + crash. BPM 95–115.
+  "jazz_swing"    — feathered kick + pedal HH 2+4 + ride spang-a-lang. BPM 120–200.
+  "reggae"        — one-drop beat 3 only + upbeat-only hats + OHH "and of 4". BPM 65–90.
+  "rock"          — kick 1+3 + snare 2+4 + 8th hats + crash every phrase + tom fill. BPM 110–145.
+  "afrobeats"     — kick 1+3 + snare 2+4 + cross-stick 0.5/2.5 + dense 16th hats. BPM 95–112.
+  "uk_drill"      — half-time snare + tresillo hats + 32nd rolls. BPM 138–142.
+  "lofi"          — kick syncopated + Dilla-swung 8th hats + OHH "and of 2+4". BPM 65–85.
+  "bossa_nova"    — 2-bar clave kick+rimshot + featherlight 8th hats (vel 45–55). BPM 120–160.
+  "halftime"      — kick beat 1 + snare beat 3 + 8th-triplet hats + OHH on snare. BPM 70–95.
+  "default"       — kick 1+3 + snare 2+4 + 8th hats. Use when no genre fits.
+
+Variants (use these when you want a different feel within the genre family):
+  "trap_minimal"    — ultra-sparse trap: kick beat 1 only, max space. Moody/cinematic.
+  "trap_busy"       — busier trap: more kick syncopation + 16th-note hat grid. Energetic.
+  "boom_bap_heavy"  — extra syncopated kick, heavier NYC feel. Classic Pete Rock territory.
+  "boom_bap_chill"  — sparser kick, more relaxed west-coast swing. Chill/instrumental.
+  "rock_driving"    — kick on all 4 beats (AC/DC style). Maximum drive.
+  "rock_halftime"   — snare only on beat 3, heavy half-time rock feel.
+  "house_deep"      — deep house: less open-hat frenzy, more hypnotic CHH groove.
+  "funk_heavy"      — cleaner kick, maximum backbeat weight. James Brown at peak power.
+  "lofi_lazy"       — maximum Dilla swing (+0.15 offbeats), ultra-relaxed. Nujabes vibes.
 
 WHAT YOU SHOULD ADD (ghost notes and color only):
 
