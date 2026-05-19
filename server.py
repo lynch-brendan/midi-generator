@@ -34,6 +34,7 @@ from core.guitar_synth import render_guitar_pattern
 from core.variations import extract_variation_info, validate_variation, sanitize_variation
 from core.auth import create_jwt, get_current_user, google_auth_url, exchange_google_code
 from core.storage import upload_to_r2, r2_enabled
+from core.storage import upload_to_r2, r2_enabled
 
 app = FastAPI()
 
@@ -314,6 +315,28 @@ def _process_variation(var: dict, gm_patch: int, slug: str, is_drums: bool = Fal
     future = _wav_executor.submit(_render_wav, list(notes), info.tempo, bars, effective_drums, drum_kit, midi_path, wav_path, effective_patch)
     future.result(timeout=30)
 
+    # Upload to R2 immediately so URLs survive container restarts
+    r2_prefix = f"generated/{slug}/{idx}-{var_slug}"
+    midi_url = f"/output/{slug}/{midi_path.name}"
+    wav_url = f"/output/{slug}/{wav_path.name}" if wav_path.exists() else None
+
+    if r2_enabled():
+        r2_midi = upload_to_r2(midi_path, f"{r2_prefix}.mid")
+        if r2_midi:
+            midi_url = r2_midi
+        if wav_path.exists():
+            r2_wav = upload_to_r2(wav_path, f"{r2_prefix}.wav")
+            if r2_wav:
+                wav_url = r2_wav
+        # Upload drum stems to R2 too
+        if drum_stem_urls:
+            r2_stems = {}
+            for group, local_url in drum_stem_urls.items():
+                stem_path = out_dir / Path(local_url).name
+                r2_stem = upload_to_r2(stem_path, f"{r2_prefix}_{group}.mid")
+                r2_stems[group] = r2_stem if r2_stem else local_url
+            drum_stem_urls = r2_stems
+
     return {
         "id": info.id,
         "name": info.name,
@@ -325,8 +348,8 @@ def _process_variation(var: dict, gm_patch: int, slug: str, is_drums: bool = Fal
         "notes": notes,
         "gm_patch": effective_patch,
         "is_drums": effective_drums,
-        "midi_url": f"/output/{slug}/{midi_path.name}",
-        "wav_url": f"/output/{slug}/{wav_path.name}" if wav_path.exists() else None,
+        "midi_url": midi_url,
+        "wav_url": wav_url,
         "drum_stems": drum_stem_urls if drum_stem_urls else None,
     }
 
