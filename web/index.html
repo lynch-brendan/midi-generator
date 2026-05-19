@@ -3766,74 +3766,116 @@
     // First-use guided tooltip tour
     // ==========================================================================
 
-    const _TOUR_STEPS = [
+    // Steps before generation — target static elements
+    const _PRE_GEN_STEPS = [
+      {
+        getEl: () => document.getElementById('prompt'),
+        text: 'Type any musical idea — "sad piano", "boom bap beat at 90 BPM", anything. I\'ll play 5 versions instantly.',
+        arrow: 'arrow-down',
+      },
+    ];
+
+    // Steps after generation — target buttons on cloud 0
+    const _POST_GEN_STEPS = [
       {
         selector: '.cloud-keep-btn',
-        text: 'Save anything you like — it goes to your session on the left.',
+        text: '♥ Save anything you like — it goes to your session.',
         arrow: 'arrow-up',
       },
       {
         selector: '.cloud-more-btn',
-        text: 'Build a bassline for it, a B section, a counter-melody — anything. Just describe what you want next.',
+        text: '✦ Build on this — get a bassline, a B section, or push it in a new direction.',
         arrow: 'arrow-up',
       },
       {
         selector: '.cloud-lock-btn',
-        text: 'Lock the key and BPM so every idea fits the same track.',
+        text: '🔗 Lock the key & BPM so everything you make fits the same track.',
         arrow: 'arrow-up',
       },
       {
         selector: '.cloud-dl-btn',
-        text: 'Download MIDI or WAV and drag it straight into your DAW. It\'s yours.',
+        text: '↓ Download MIDI or WAV — drag it straight into your DAW. It\'s yours.',
         arrow: 'arrow-up',
       },
     ];
 
+    const _ALL_STEPS = [..._PRE_GEN_STEPS, ..._POST_GEN_STEPS];
     let _tourIdx = 0;
     let _tourTimer = null;
+    let _tourStarted = false;
 
-    function showTooltipTour() {
+    function startTourIfNew() {
       if (localStorage.getItem('muse_tour_done')) return;
+      if (_tourStarted) return;
+      _tourStarted = true;
       _tourIdx = 0;
       _showTourStep();
     }
 
+    function showTooltipTour() {
+      // Called after generation — jump to post-gen steps
+      if (localStorage.getItem('muse_tour_done')) return;
+      _tourIdx = _PRE_GEN_STEPS.length;
+      _showTourStep();
+    }
+
     function _showTourStep() {
-      const step = _TOUR_STEPS[_tourIdx];
+      const step = _ALL_STEPS[_tourIdx];
       if (!step) { dismissTooltips(); return; }
 
-      // Always target the button on the first cloud
-      const targetEl = document.querySelector('.thought-cloud[data-idx="0"] ' + step.selector);
+      let targetEl;
+      if (step.getEl) {
+        targetEl = step.getEl();
+      } else {
+        targetEl = document.querySelector('.thought-cloud[data-idx="0"] ' + step.selector);
+      }
       if (!targetEl) { _tourIdx++; _showTourStep(); return; }
 
       const rect = targetEl.getBoundingClientRect();
       const el = document.getElementById('featureTooltip');
-      const W = 210;
+      const W = 220;
 
       document.getElementById('featureTooltipText').textContent = step.text;
 
-      // Progress dots
+      // Progress dots (only show during post-gen steps)
       const dotsEl = document.getElementById('featureTooltipDots');
-      dotsEl.innerHTML = _TOUR_STEPS.map((_, i) =>
-        `<span style="width:5px;height:5px;border-radius:50%;background:${i === _tourIdx ? 'var(--bg)' : 'rgba(255,255,255,0.35)'}"></span>`
-      ).join('');
+      if (_tourIdx >= _PRE_GEN_STEPS.length) {
+        const postIdx = _tourIdx - _PRE_GEN_STEPS.length;
+        dotsEl.innerHTML = _POST_GEN_STEPS.map((_, i) =>
+          `<span style="width:5px;height:5px;border-radius:50%;background:${i === postIdx ? 'var(--bg)' : 'rgba(255,255,255,0.35)'}"></span>`
+        ).join('');
+      } else {
+        dotsEl.innerHTML = '';
+      }
 
       el.className = 'feature-tooltip ' + step.arrow;
-
-      // Position tooltip below the button (arrow points up to it)
-      const top = rect.bottom + 10;
-      const left = rect.left + rect.width / 2 - W / 2;
       el.style.width = W + 'px';
+
+      let top, left;
+      if (step.arrow === 'arrow-down') {
+        // Tooltip above element, arrow points down
+        top = rect.top - 10;
+        left = rect.left + rect.width / 2 - W / 2;
+        el.style.transform = 'translateY(-100%)';
+      } else {
+        // Tooltip below element, arrow points up
+        top = rect.bottom + 10;
+        left = rect.left + rect.width / 2 - W / 2;
+        el.style.transform = '';
+      }
       el.style.top = Math.max(8, top) + 'px';
       el.style.left = Math.max(8, Math.min(window.innerWidth - W - 8, left)) + 'px';
       el.classList.add('visible');
 
       if (_tourTimer) clearTimeout(_tourTimer);
-      _tourTimer = setTimeout(() => {
-        _tourIdx++;
-        if (_tourIdx < _TOUR_STEPS.length) _showTourStep();
-        else dismissTooltips();
-      }, 4000);
+      // Pre-gen step stays until they generate; post-gen steps auto-advance
+      if (_tourIdx >= _PRE_GEN_STEPS.length) {
+        _tourTimer = setTimeout(() => {
+          _tourIdx++;
+          if (_tourIdx < _ALL_STEPS.length) _showTourStep();
+          else dismissTooltips();
+        }, 4000);
+      }
     }
 
     function dismissTooltips() {
@@ -3841,6 +3883,9 @@
       document.getElementById('featureTooltip').classList.remove('visible');
       localStorage.setItem('muse_tour_done', '1');
     }
+
+    // Kick off pre-gen step immediately on first visit
+    setTimeout(startTourIfNew, 600);
 
     // First-time speech bubble
     (function() {
