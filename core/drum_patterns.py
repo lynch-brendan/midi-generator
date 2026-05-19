@@ -84,24 +84,66 @@ _PATTERNS: Dict[str, dict] = {
             {"pitch": 42, "time": 7.75, "velocity": 102, "duration": 0.05},
             {"pitch": 46, "time": 6.0,  "velocity": 88,  "duration": 0.5},
         ],
-        "fill": [
-            # Fill bar: normal kick+snare + intensified 32nd roll at end
-            {"pitch": 36, "time": 0.0,   "velocity": 112, "duration": 0.5},
-            {"pitch": 36, "time": 2.5,   "velocity": 85,  "duration": 0.5},
-            {"pitch": 38, "time": 2.0,   "velocity": 118, "duration": 0.1},
-            {"pitch": 42, "time": 0.0,   "velocity": 90,  "duration": 0.1},
-            {"pitch": 42, "time": 0.5,   "velocity": 58,  "duration": 0.1},
-            {"pitch": 42, "time": 1.0,   "velocity": 85,  "duration": 0.1},
-            {"pitch": 42, "time": 1.5,   "velocity": 52,  "duration": 0.1},
-            {"pitch": 42, "time": 2.0,   "velocity": 80,  "duration": 0.1},
-            {"pitch": 42, "time": 2.5,   "velocity": 58,  "duration": 0.1},
-            {"pitch": 42, "time": 3.0,   "velocity": 85,  "duration": 0.1},
-            {"pitch": 42, "time": 3.25,  "velocity": 40,  "duration": 0.05},
-            {"pitch": 42, "time": 3.375, "velocity": 55,  "duration": 0.05},
-            {"pitch": 42, "time": 3.5,   "velocity": 70,  "duration": 0.05},
-            {"pitch": 42, "time": 3.625, "velocity": 88,  "duration": 0.05},
-            {"pitch": 42, "time": 3.75,  "velocity": 105, "duration": 0.05},
-            {"pitch": 46, "time": 2.0,   "velocity": 88,  "duration": 0.5},
+        "fills": [
+            # Variant 1: 32nd hat roll
+            [
+                {"pitch": 36, "time": 0.0,   "velocity": 112, "duration": 0.5},
+                {"pitch": 36, "time": 2.5,   "velocity": 85,  "duration": 0.5},
+                {"pitch": 38, "time": 2.0,   "velocity": 118, "duration": 0.1},
+                {"pitch": 42, "time": 0.0,   "velocity": 90,  "duration": 0.1},
+                {"pitch": 42, "time": 0.5,   "velocity": 58,  "duration": 0.1},
+                {"pitch": 42, "time": 1.0,   "velocity": 85,  "duration": 0.1},
+                {"pitch": 42, "time": 1.5,   "velocity": 52,  "duration": 0.1},
+                {"pitch": 42, "time": 2.0,   "velocity": 80,  "duration": 0.1},
+                {"pitch": 42, "time": 2.5,   "velocity": 58,  "duration": 0.1},
+                {"pitch": 42, "time": 3.0,   "velocity": 85,  "duration": 0.1},
+                {"pitch": 42, "time": 3.25,  "velocity": 40,  "duration": 0.05},
+                {"pitch": 42, "time": 3.375, "velocity": 55,  "duration": 0.05},
+                {"pitch": 42, "time": 3.5,   "velocity": 70,  "duration": 0.05},
+                {"pitch": 42, "time": 3.625, "velocity": 88,  "duration": 0.05},
+                {"pitch": 42, "time": 3.75,  "velocity": 105, "duration": 0.05},
+                {"pitch": 46, "time": 2.0,   "velocity": 88,  "duration": 0.5},
+            ],
+            # Variant 2: pull back (silence 3.0-3.375) then hard burst
+            [
+                {"pitch": 36, "time": 0.0,   "velocity": 112, "duration": 0.5},
+                {"pitch": 36, "time": 2.5,   "velocity": 85,  "duration": 0.5},
+                {"pitch": 38, "time": 2.0,   "velocity": 118, "duration": 0.1},
+                {"pitch": 42, "time": 0.0,   "velocity": 90,  "duration": 0.1},
+                {"pitch": 42, "time": 0.5,   "velocity": 58,  "duration": 0.1},
+                {"pitch": 42, "time": 1.0,   "velocity": 85,  "duration": 0.1},
+                {"pitch": 42, "time": 1.5,   "velocity": 52,  "duration": 0.1},
+                {"pitch": 42, "time": 2.0,   "velocity": 80,  "duration": 0.1},
+                {"pitch": 42, "time": 2.5,   "velocity": 58,  "duration": 0.1},
+                # silence 3.0–3.375, then explosion
+                {"pitch": 42, "time": 3.375, "velocity": 52,  "duration": 0.05},
+                {"pitch": 42, "time": 3.5,   "velocity": 72,  "duration": 0.05},
+                {"pitch": 42, "time": 3.625, "velocity": 92,  "duration": 0.05},
+                {"pitch": 42, "time": 3.75,  "velocity": 112, "duration": 0.05},
+                {"pitch": 46, "time": 2.0,   "velocity": 88,  "duration": 0.5},
+            ],
+            # Variant 3: progressive density 8th→16th→32nd
+            [
+                {"pitch": 36, "time": 0.0,   "velocity": 112, "duration": 0.5},
+                {"pitch": 36, "time": 2.5,   "velocity": 85,  "duration": 0.5},
+                {"pitch": 38, "time": 2.0,   "velocity": 118, "duration": 0.1},
+                {"pitch": 42, "time": 0.0,   "velocity": 85,  "duration": 0.1},
+                {"pitch": 42, "time": 0.5,   "velocity": 55,  "duration": 0.1},
+                {"pitch": 42, "time": 1.0,   "velocity": 82,  "duration": 0.1},
+                {"pitch": 42, "time": 1.5,   "velocity": 52,  "duration": 0.1},
+                {"pitch": 42, "time": 2.0,   "velocity": 82,  "duration": 0.1},
+                {"pitch": 42, "time": 2.25,  "velocity": 65,  "duration": 0.1},
+                {"pitch": 42, "time": 2.5,   "velocity": 75,  "duration": 0.1},
+                {"pitch": 42, "time": 2.75,  "velocity": 62,  "duration": 0.1},
+                {"pitch": 42, "time": 3.0,   "velocity": 78,  "duration": 0.05},
+                {"pitch": 42, "time": 3.125, "velocity": 68,  "duration": 0.05},
+                {"pitch": 42, "time": 3.25,  "velocity": 82,  "duration": 0.05},
+                {"pitch": 42, "time": 3.375, "velocity": 72,  "duration": 0.05},
+                {"pitch": 42, "time": 3.5,   "velocity": 90,  "duration": 0.05},
+                {"pitch": 42, "time": 3.625, "velocity": 98,  "duration": 0.05},
+                {"pitch": 42, "time": 3.75,  "velocity": 110, "duration": 0.05},
+                {"pitch": 46, "time": 2.0,   "velocity": 88,  "duration": 0.5},
+            ],
         ],
     },
 
@@ -129,23 +171,44 @@ _PATTERNS: Dict[str, dict] = {
             {"pitch": 42, "time": 3.0,  "velocity": 80,  "duration": 0.1},
             {"pitch": 46, "time": 3.55, "velocity": 75,  "duration": 0.5},
         ],
-        "fill": [
-            # Snare roll on beat 4 (steps 13-16)
-            {"pitch": 36, "time": 0.0,  "velocity": 105, "duration": 0.5},
-            {"pitch": 36, "time": 1.25, "velocity": 52,  "duration": 0.5},
-            {"pitch": 36, "time": 1.5,  "velocity": 95,  "duration": 0.5},
-            {"pitch": 36, "time": 2.5,  "velocity": 88,  "duration": 0.5},
-            {"pitch": 38, "time": 1.0,  "velocity": 100, "duration": 0.1},
-            {"pitch": 38, "time": 3.0,  "velocity": 78,  "duration": 0.1},
-            {"pitch": 38, "time": 3.25, "velocity": 90,  "duration": 0.1},
-            {"pitch": 38, "time": 3.5,  "velocity": 100, "duration": 0.1},
-            {"pitch": 38, "time": 3.75, "velocity": 112, "duration": 0.1},
-            {"pitch": 42, "time": 0.0,  "velocity": 85,  "duration": 0.1},
-            {"pitch": 42, "time": 0.55, "velocity": 50,  "duration": 0.1},
-            {"pitch": 42, "time": 1.0,  "velocity": 80,  "duration": 0.1},
-            {"pitch": 42, "time": 1.55, "velocity": 48,  "duration": 0.1},
-            {"pitch": 42, "time": 2.0,  "velocity": 85,  "duration": 0.1},
-            {"pitch": 42, "time": 2.55, "velocity": 50,  "duration": 0.1},
+        "fills": [
+            # Variant 1: snare roll beat 4
+            [
+                {"pitch": 36, "time": 0.0,  "velocity": 105, "duration": 0.5},
+                {"pitch": 36, "time": 1.25, "velocity": 52,  "duration": 0.5},
+                {"pitch": 36, "time": 1.5,  "velocity": 95,  "duration": 0.5},
+                {"pitch": 36, "time": 2.5,  "velocity": 88,  "duration": 0.5},
+                {"pitch": 38, "time": 1.0,  "velocity": 100, "duration": 0.1},
+                {"pitch": 38, "time": 3.0,  "velocity": 78,  "duration": 0.1},
+                {"pitch": 38, "time": 3.25, "velocity": 90,  "duration": 0.1},
+                {"pitch": 38, "time": 3.5,  "velocity": 100, "duration": 0.1},
+                {"pitch": 38, "time": 3.75, "velocity": 112, "duration": 0.1},
+                {"pitch": 42, "time": 0.0,  "velocity": 85,  "duration": 0.1},
+                {"pitch": 42, "time": 0.55, "velocity": 50,  "duration": 0.1},
+                {"pitch": 42, "time": 1.0,  "velocity": 80,  "duration": 0.1},
+                {"pitch": 42, "time": 1.55, "velocity": 48,  "duration": 0.1},
+                {"pitch": 42, "time": 2.0,  "velocity": 85,  "duration": 0.1},
+                {"pitch": 42, "time": 2.55, "velocity": 50,  "duration": 0.1},
+            ],
+            # Variant 2: high tom + snare alternating (MPC-style)
+            [
+                {"pitch": 36, "time": 0.0,  "velocity": 105, "duration": 0.5},
+                {"pitch": 36, "time": 1.25, "velocity": 52,  "duration": 0.5},
+                {"pitch": 36, "time": 1.5,  "velocity": 95,  "duration": 0.5},
+                {"pitch": 36, "time": 2.5,  "velocity": 88,  "duration": 0.5},
+                {"pitch": 38, "time": 1.0,  "velocity": 100, "duration": 0.1},
+                {"pitch": 50, "time": 3.0,  "velocity": 90,  "duration": 0.1},
+                {"pitch": 38, "time": 3.25, "velocity": 80,  "duration": 0.1},
+                {"pitch": 50, "time": 3.5,  "velocity": 85,  "duration": 0.1},
+                {"pitch": 38, "time": 3.75, "velocity": 108, "duration": 0.1},
+                {"pitch": 42, "time": 0.0,  "velocity": 85,  "duration": 0.1},
+                {"pitch": 42, "time": 0.55, "velocity": 50,  "duration": 0.1},
+                {"pitch": 42, "time": 1.0,  "velocity": 80,  "duration": 0.1},
+                {"pitch": 42, "time": 1.55, "velocity": 48,  "duration": 0.1},
+                {"pitch": 42, "time": 2.0,  "velocity": 85,  "duration": 0.1},
+                {"pitch": 42, "time": 2.55, "velocity": 50,  "duration": 0.1},
+                {"pitch": 46, "time": 3.55, "velocity": 78,  "duration": 0.4},
+            ],
         ],
     },
 
@@ -212,31 +275,69 @@ _PATTERNS: Dict[str, dict] = {
             {"pitch": 46, "time": 1.25, "velocity": 85,  "duration": 0.25},
             {"pitch": 46, "time": 3.25, "velocity": 85,  "duration": 0.25},
         ],
-        "fill": [
-            # Keep kick+snare, 16th hats beats 1-3, tom descent on beat 4
-            {"pitch": 36, "time": 0.0,  "velocity": 110, "duration": 0.5},
-            {"pitch": 36, "time": 0.5,  "velocity": 82,  "duration": 0.5},
-            {"pitch": 36, "time": 1.25, "velocity": 70,  "duration": 0.5},
-            {"pitch": 36, "time": 2.0,  "velocity": 100, "duration": 0.5},
-            {"pitch": 38, "time": 1.0,  "velocity": 108, "duration": 0.1},
-            # 16th hats beats 1-3
-            {"pitch": 42, "time": 0.0,  "velocity": 95,  "duration": 0.1},
-            {"pitch": 42, "time": 0.25, "velocity": 52,  "duration": 0.1},
-            {"pitch": 42, "time": 0.5,  "velocity": 75,  "duration": 0.1},
-            {"pitch": 42, "time": 0.75, "velocity": 48,  "duration": 0.1},
-            {"pitch": 42, "time": 1.0,  "velocity": 92,  "duration": 0.1},
-            {"pitch": 42, "time": 1.5,  "velocity": 75,  "duration": 0.1},
-            {"pitch": 42, "time": 1.75, "velocity": 48,  "duration": 0.1},
-            {"pitch": 42, "time": 2.0,  "velocity": 95,  "duration": 0.1},
-            {"pitch": 42, "time": 2.25, "velocity": 52,  "duration": 0.1},
-            {"pitch": 42, "time": 2.5,  "velocity": 75,  "duration": 0.1},
-            {"pitch": 42, "time": 2.75, "velocity": 48,  "duration": 0.1},
-            {"pitch": 46, "time": 1.25, "velocity": 85,  "duration": 0.25},
-            # Tom descent on beat 4 (hats stop here)
-            {"pitch": 50, "time": 3.0,  "velocity": 95,  "duration": 0.1},
-            {"pitch": 38, "time": 3.25, "velocity": 88,  "duration": 0.1},
-            {"pitch": 48, "time": 3.5,  "velocity": 92,  "duration": 0.1},
-            {"pitch": 45, "time": 3.75, "velocity": 88,  "duration": 0.1},
+        "fills": [
+            # Variant 1: tom descent beat 4
+            [
+                {"pitch": 36, "time": 0.0,  "velocity": 110, "duration": 0.5},
+                {"pitch": 36, "time": 0.5,  "velocity": 82,  "duration": 0.5},
+                {"pitch": 36, "time": 1.25, "velocity": 70,  "duration": 0.5},
+                {"pitch": 36, "time": 2.0,  "velocity": 100, "duration": 0.5},
+                {"pitch": 38, "time": 1.0,  "velocity": 108, "duration": 0.1},
+                {"pitch": 42, "time": 0.0,  "velocity": 95,  "duration": 0.1},
+                {"pitch": 42, "time": 0.25, "velocity": 52,  "duration": 0.1},
+                {"pitch": 42, "time": 0.5,  "velocity": 75,  "duration": 0.1},
+                {"pitch": 42, "time": 0.75, "velocity": 48,  "duration": 0.1},
+                {"pitch": 42, "time": 1.0,  "velocity": 92,  "duration": 0.1},
+                {"pitch": 42, "time": 1.5,  "velocity": 75,  "duration": 0.1},
+                {"pitch": 42, "time": 1.75, "velocity": 48,  "duration": 0.1},
+                {"pitch": 42, "time": 2.0,  "velocity": 95,  "duration": 0.1},
+                {"pitch": 42, "time": 2.25, "velocity": 52,  "duration": 0.1},
+                {"pitch": 42, "time": 2.5,  "velocity": 75,  "duration": 0.1},
+                {"pitch": 42, "time": 2.75, "velocity": 48,  "duration": 0.1},
+                {"pitch": 46, "time": 1.25, "velocity": 85,  "duration": 0.25},
+                {"pitch": 50, "time": 3.0,  "velocity": 95,  "duration": 0.1},
+                {"pitch": 38, "time": 3.25, "velocity": 88,  "duration": 0.1},
+                {"pitch": 48, "time": 3.5,  "velocity": 92,  "duration": 0.1},
+                {"pitch": 45, "time": 3.75, "velocity": 88,  "duration": 0.1},
+            ],
+            # Variant 2: snare triplet flam run beat 4
+            [
+                {"pitch": 36, "time": 0.0,  "velocity": 110, "duration": 0.5},
+                {"pitch": 36, "time": 0.5,  "velocity": 82,  "duration": 0.5},
+                {"pitch": 36, "time": 1.25, "velocity": 70,  "duration": 0.5},
+                {"pitch": 36, "time": 2.0,  "velocity": 100, "duration": 0.5},
+                {"pitch": 38, "time": 1.0,  "velocity": 108, "duration": 0.1},
+                {"pitch": 42, "time": 0.0,  "velocity": 95,  "duration": 0.1},
+                {"pitch": 42, "time": 0.25, "velocity": 52,  "duration": 0.1},
+                {"pitch": 42, "time": 0.5,  "velocity": 75,  "duration": 0.1},
+                {"pitch": 42, "time": 0.75, "velocity": 48,  "duration": 0.1},
+                {"pitch": 42, "time": 1.0,  "velocity": 92,  "duration": 0.1},
+                {"pitch": 42, "time": 1.5,  "velocity": 75,  "duration": 0.1},
+                {"pitch": 42, "time": 1.75, "velocity": 48,  "duration": 0.1},
+                {"pitch": 42, "time": 2.0,  "velocity": 95,  "duration": 0.1},
+                {"pitch": 42, "time": 2.25, "velocity": 52,  "duration": 0.1},
+                {"pitch": 42, "time": 2.5,  "velocity": 75,  "duration": 0.1},
+                {"pitch": 42, "time": 2.75, "velocity": 48,  "duration": 0.1},
+                {"pitch": 46, "time": 1.25, "velocity": 85,  "duration": 0.25},
+                # Triplet snare run (6 hits as 8th triplets)
+                {"pitch": 38, "time": 3.0,  "velocity": 88,  "duration": 0.1},
+                {"pitch": 38, "time": 3.17, "velocity": 72,  "duration": 0.1},
+                {"pitch": 38, "time": 3.33, "velocity": 95,  "duration": 0.1},
+                {"pitch": 38, "time": 3.5,  "velocity": 78,  "duration": 0.1},
+                {"pitch": 38, "time": 3.67, "velocity": 98,  "duration": 0.1},
+                {"pitch": 38, "time": 3.83, "velocity": 108, "duration": 0.1},
+            ],
+            # Variant 3: breakdown — drop hats entirely, just kick+snare (tension before crash)
+            [
+                {"pitch": 36, "time": 0.0,  "velocity": 115, "duration": 0.5},
+                {"pitch": 36, "time": 0.5,  "velocity": 88,  "duration": 0.5},
+                {"pitch": 36, "time": 1.25, "velocity": 75,  "duration": 0.5},
+                {"pitch": 36, "time": 2.0,  "velocity": 108, "duration": 0.5},
+                {"pitch": 36, "time": 3.0,  "velocity": 98,  "duration": 0.5},
+                {"pitch": 38, "time": 1.0,  "velocity": 118, "duration": 0.1},
+                {"pitch": 38, "time": 3.0,  "velocity": 118, "duration": 0.1},
+                # no hats — the silence IS the fill
+            ],
         ],
     },
 
@@ -330,18 +431,54 @@ _PATTERNS: Dict[str, dict] = {
             {"pitch": 42, "time": 3.0,  "velocity": 88,  "duration": 0.1},
             {"pitch": 42, "time": 3.5,  "velocity": 70,  "duration": 0.1},
         ],
-        "fill": [
-            # Descending tom run — crash fires on next bar via crash_on_phrase_start
-            {"pitch": 36, "time": 0.0,  "velocity": 112, "duration": 0.5},
-            {"pitch": 36, "time": 2.0,  "velocity": 108, "duration": 0.5},
-            {"pitch": 50, "time": 0.0,  "velocity": 95,  "duration": 0.1},
-            {"pitch": 50, "time": 0.5,  "velocity": 90,  "duration": 0.1},
-            {"pitch": 38, "time": 1.0,  "velocity": 100, "duration": 0.1},
-            {"pitch": 38, "time": 1.5,  "velocity": 95,  "duration": 0.1},
-            {"pitch": 48, "time": 2.0,  "velocity": 92,  "duration": 0.1},
-            {"pitch": 48, "time": 2.5,  "velocity": 88,  "duration": 0.1},
-            {"pitch": 45, "time": 3.0,  "velocity": 90,  "duration": 0.1},
-            {"pitch": 41, "time": 3.5,  "velocity": 88,  "duration": 0.1},
+        "fills": [
+            # Variant 1: 8th-note descending tom run (Bonham style)
+            [
+                {"pitch": 36, "time": 0.0,  "velocity": 112, "duration": 0.5},
+                {"pitch": 36, "time": 2.0,  "velocity": 108, "duration": 0.5},
+                {"pitch": 50, "time": 0.0,  "velocity": 95,  "duration": 0.1},
+                {"pitch": 50, "time": 0.5,  "velocity": 90,  "duration": 0.1},
+                {"pitch": 38, "time": 1.0,  "velocity": 100, "duration": 0.1},
+                {"pitch": 38, "time": 1.5,  "velocity": 95,  "duration": 0.1},
+                {"pitch": 48, "time": 2.0,  "velocity": 92,  "duration": 0.1},
+                {"pitch": 48, "time": 2.5,  "velocity": 88,  "duration": 0.1},
+                {"pitch": 45, "time": 3.0,  "velocity": 90,  "duration": 0.1},
+                {"pitch": 41, "time": 3.5,  "velocity": 88,  "duration": 0.1},
+            ],
+            # Variant 2: 16th snare roll + floor tom landing
+            [
+                {"pitch": 36, "time": 0.0,  "velocity": 112, "duration": 0.5},
+                {"pitch": 36, "time": 2.0,  "velocity": 108, "duration": 0.5},
+                {"pitch": 42, "time": 0.0,  "velocity": 90,  "duration": 0.1},
+                {"pitch": 42, "time": 0.5,  "velocity": 72,  "duration": 0.1},
+                {"pitch": 42, "time": 1.0,  "velocity": 88,  "duration": 0.1},
+                {"pitch": 42, "time": 1.5,  "velocity": 70,  "duration": 0.1},
+                {"pitch": 38, "time": 2.0,  "velocity": 85,  "duration": 0.1},
+                {"pitch": 38, "time": 2.25, "velocity": 78,  "duration": 0.1},
+                {"pitch": 38, "time": 2.5,  "velocity": 88,  "duration": 0.1},
+                {"pitch": 38, "time": 2.75, "velocity": 82,  "duration": 0.1},
+                {"pitch": 38, "time": 3.0,  "velocity": 92,  "duration": 0.1},
+                {"pitch": 38, "time": 3.25, "velocity": 88,  "duration": 0.1},
+                {"pitch": 38, "time": 3.5,  "velocity": 100, "duration": 0.1},
+                {"pitch": 41, "time": 3.75, "velocity": 108, "duration": 0.1},
+            ],
+            # Variant 3: mini fill — just beat 4 (4× 16th toms)
+            [
+                {"pitch": 36, "time": 0.0,  "velocity": 112, "duration": 0.5},
+                {"pitch": 36, "time": 2.0,  "velocity": 108, "duration": 0.5},
+                {"pitch": 38, "time": 1.0,  "velocity": 115, "duration": 0.1},
+                {"pitch": 42, "time": 0.0,  "velocity": 90,  "duration": 0.1},
+                {"pitch": 42, "time": 0.5,  "velocity": 72,  "duration": 0.1},
+                {"pitch": 42, "time": 1.0,  "velocity": 88,  "duration": 0.1},
+                {"pitch": 42, "time": 1.5,  "velocity": 70,  "duration": 0.1},
+                {"pitch": 42, "time": 2.0,  "velocity": 92,  "duration": 0.1},
+                {"pitch": 42, "time": 2.5,  "velocity": 72,  "duration": 0.1},
+                {"pitch": 42, "time": 3.0,  "velocity": 88,  "duration": 0.1},
+                {"pitch": 50, "time": 3.0,  "velocity": 95,  "duration": 0.1},
+                {"pitch": 38, "time": 3.25, "velocity": 90,  "duration": 0.1},
+                {"pitch": 48, "time": 3.5,  "velocity": 92,  "duration": 0.1},
+                {"pitch": 41, "time": 3.75, "velocity": 95,  "duration": 0.1},
+            ],
         ],
     },
 
@@ -551,25 +688,46 @@ _PATTERNS: Dict[str, dict] = {
             {"pitch": 42, "time": 3.67, "velocity": 68,  "duration": 0.1},
             {"pitch": 46, "time": 2.0,  "velocity": 88,  "duration": 0.5},
         ],
-        "fill": [
-            {"pitch": 36, "time": 0.0,  "velocity": 108, "duration": 0.5},
-            {"pitch": 38, "time": 2.0,  "velocity": 118, "duration": 0.1},
-            # Triplet hats beats 1-2
-            {"pitch": 42, "time": 0.0,  "velocity": 88,  "duration": 0.1},
-            {"pitch": 42, "time": 0.33, "velocity": 52,  "duration": 0.1},
-            {"pitch": 42, "time": 0.67, "velocity": 70,  "duration": 0.1},
-            {"pitch": 42, "time": 1.0,  "velocity": 85,  "duration": 0.1},
-            {"pitch": 42, "time": 1.33, "velocity": 50,  "duration": 0.1},
-            {"pitch": 42, "time": 1.67, "velocity": 68,  "duration": 0.1},
-            {"pitch": 46, "time": 2.0,  "velocity": 88,  "duration": 0.5},
-            # Ghost-heavy tom tumble beats 3-4
-            {"pitch": 38, "time": 2.25, "velocity": 38,  "duration": 0.1},
-            {"pitch": 50, "time": 2.5,  "velocity": 85,  "duration": 0.1},
-            {"pitch": 38, "time": 2.75, "velocity": 35,  "duration": 0.1},
-            {"pitch": 48, "time": 3.0,  "velocity": 90,  "duration": 0.1},
-            {"pitch": 38, "time": 3.25, "velocity": 40,  "duration": 0.1},
-            {"pitch": 45, "time": 3.5,  "velocity": 88,  "duration": 0.1},
-            {"pitch": 38, "time": 3.75, "velocity": 98,  "duration": 0.1},
+        "fills": [
+            # Variant 1: ghost-heavy tom tumble (Anderson .Paak style)
+            [
+                {"pitch": 36, "time": 0.0,  "velocity": 108, "duration": 0.5},
+                {"pitch": 38, "time": 2.0,  "velocity": 118, "duration": 0.1},
+                {"pitch": 42, "time": 0.0,  "velocity": 88,  "duration": 0.1},
+                {"pitch": 42, "time": 0.33, "velocity": 52,  "duration": 0.1},
+                {"pitch": 42, "time": 0.67, "velocity": 70,  "duration": 0.1},
+                {"pitch": 42, "time": 1.0,  "velocity": 85,  "duration": 0.1},
+                {"pitch": 42, "time": 1.33, "velocity": 50,  "duration": 0.1},
+                {"pitch": 42, "time": 1.67, "velocity": 68,  "duration": 0.1},
+                {"pitch": 46, "time": 2.0,  "velocity": 88,  "duration": 0.5},
+                {"pitch": 38, "time": 2.25, "velocity": 38,  "duration": 0.1},
+                {"pitch": 50, "time": 2.5,  "velocity": 85,  "duration": 0.1},
+                {"pitch": 38, "time": 2.75, "velocity": 35,  "duration": 0.1},
+                {"pitch": 48, "time": 3.0,  "velocity": 90,  "duration": 0.1},
+                {"pitch": 38, "time": 3.25, "velocity": 40,  "duration": 0.1},
+                {"pitch": 45, "time": 3.5,  "velocity": 88,  "duration": 0.1},
+                {"pitch": 38, "time": 3.75, "velocity": 98,  "duration": 0.1},
+            ],
+            # Variant 2: snare roll swell into crash
+            [
+                {"pitch": 36, "time": 0.0,  "velocity": 108, "duration": 0.5},
+                {"pitch": 38, "time": 2.0,  "velocity": 118, "duration": 0.1},
+                {"pitch": 42, "time": 0.0,  "velocity": 88,  "duration": 0.1},
+                {"pitch": 42, "time": 0.33, "velocity": 52,  "duration": 0.1},
+                {"pitch": 42, "time": 0.67, "velocity": 70,  "duration": 0.1},
+                {"pitch": 42, "time": 1.0,  "velocity": 85,  "duration": 0.1},
+                {"pitch": 42, "time": 1.33, "velocity": 50,  "duration": 0.1},
+                {"pitch": 42, "time": 1.67, "velocity": 68,  "duration": 0.1},
+                {"pitch": 46, "time": 2.0,  "velocity": 88,  "duration": 0.5},
+                # Snare roll swell beats 3-4
+                {"pitch": 38, "time": 2.25, "velocity": 48,  "duration": 0.1},
+                {"pitch": 38, "time": 2.5,  "velocity": 55,  "duration": 0.1},
+                {"pitch": 38, "time": 2.75, "velocity": 62,  "duration": 0.1},
+                {"pitch": 38, "time": 3.0,  "velocity": 72,  "duration": 0.1},
+                {"pitch": 38, "time": 3.25, "velocity": 82,  "duration": 0.1},
+                {"pitch": 38, "time": 3.5,  "velocity": 95,  "duration": 0.1},
+                {"pitch": 38, "time": 3.75, "velocity": 110, "duration": 0.1},
+            ],
         ],
     },
 
@@ -1033,9 +1191,35 @@ def _humanize(velocity: int, spread: int = 8) -> int:
     return max(1, min(127, velocity + random.randint(-spread, spread)))
 
 
+# Per-instrument timing tendencies: (bias_beats, spread_beats)
+# Positive bias = behind the beat (laid back), negative = ahead of the beat
+_TIMING: Dict[int, tuple] = {
+    36: (0.000, 0.012),   # kick: centered, small jitter
+    35: (0.000, 0.012),
+    38: (0.006, 0.010),   # snare: laid back
+    40: (0.006, 0.010),
+    39: (0.000, 0.010),   # clap: neutral
+    37: (0.004, 0.008),   # rimshot: slightly behind
+    42: (-0.004, 0.007),  # CHH: slightly ahead (rushes)
+    44: (0.000, 0.007),   # pedal HH: steady
+    46: (0.000, 0.010),   # OHH: variable
+    49: (0.000, 0.003),   # crash: barely moves
+    51: (-0.003, 0.007),  # ride: slightly ahead
+}
+
+
+def _microtiming(pitch: int, base_time: float) -> float:
+    """Nudge a note slightly off the grid based on instrument type."""
+    bias, spread = _TIMING.get(pitch, (0.002, 0.012))  # toms default: slightly behind
+    offset = bias + random.uniform(-spread, spread)
+    return max(0.0, round(base_time + offset, 4))
+
+
 def _build_skeleton(pattern: dict, bars: int) -> List[Dict]:
     groove = pattern["skeleton"]
-    fill = pattern.get("fill")
+    # "fills" (list of alternatives) takes priority over "fill" (single)
+    fill_options = pattern.get("fills") or ([pattern["fill"]] if pattern.get("fill") else None)
+    chosen_fill = random.choice(fill_options) if fill_options else None
     crash_on_phrase = pattern.get("crash_on_phrase_start", False)
     crash_vel = pattern.get("crash_velocity", 95)
     bar_length = pattern.get("bar_length", 1)
@@ -1044,7 +1228,7 @@ def _build_skeleton(pattern: dict, bars: int) -> List[Dict]:
 
     for bar in range(bars):
         bar_start = bar * 4.0
-        is_fill_bar = fill is not None and (bar + 1) % 4 == 0
+        is_fill_bar = chosen_fill is not None and (bar + 1) % 4 == 0
         is_phrase_start = bar % 4 == 0
 
         if crash_on_phrase and is_phrase_start:
@@ -1053,29 +1237,24 @@ def _build_skeleton(pattern: dict, bars: int) -> List[Dict]:
                 "velocity": crash_vel, "duration": 1.0,
             })
 
-        source = fill if is_fill_bar else None
-        if source is not None:
-            for n in source:
-                vel = _humanize(n["velocity"], spread=7) if n["pitch"] != 49 else n["velocity"]
-                notes.append({
-                    "pitch": n["pitch"],
-                    "time": round(bar_start + n["time"], 4),
-                    "velocity": vel,
-                    "duration": n.get("duration", 0.1),
-                })
+        if is_fill_bar:
+            for n in chosen_fill:
+                pitch = n["pitch"]
+                vel = _humanize(n["velocity"], spread=7) if pitch != 49 else n["velocity"]
+                t = _microtiming(pitch, bar_start + n["time"])
+                notes.append({"pitch": pitch, "time": t, "velocity": vel,
+                               "duration": n.get("duration", 0.1)})
         else:
             bar_in_cycle = bar % bar_length
             cycle_offset = bar_in_cycle * 4.0
             for n in groove:
-                t = n["time"]
-                if cycle_offset <= t < cycle_offset + 4.0:
-                    vel = _humanize(n["velocity"], spread=8) if n["pitch"] != 49 else n["velocity"]
-                    notes.append({
-                        "pitch": n["pitch"],
-                        "time": round(bar_start + (t - cycle_offset), 4),
-                        "velocity": vel,
-                        "duration": n.get("duration", 0.1),
-                    })
+                t_raw = n["time"]
+                if cycle_offset <= t_raw < cycle_offset + 4.0:
+                    pitch = n["pitch"]
+                    vel = _humanize(n["velocity"], spread=8) if pitch != 49 else n["velocity"]
+                    t = _microtiming(pitch, bar_start + (t_raw - cycle_offset))
+                    notes.append({"pitch": pitch, "time": t, "velocity": vel,
+                                  "duration": n.get("duration", 0.1)})
 
     return notes
 
