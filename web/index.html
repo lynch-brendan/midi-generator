@@ -704,18 +704,19 @@
     .feature-tooltip {
       position: fixed;
       z-index: 600;
-      background: var(--text);
-      color: var(--bg);
-      font-size: 0.76rem;
+      background: var(--bg-input);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+      font-size: 0.75rem;
       font-family: inherit;
-      padding: 8px 12px;
-      border-radius: 8px;
-      max-width: 200px;
-      line-height: 1.4;
+      padding: 10px 13px 8px;
+      border-radius: 10px;
+      max-width: 220px;
+      line-height: 1.45;
       pointer-events: none;
       opacity: 0;
       transition: opacity 0.2s;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.08);
     }
     .feature-tooltip.visible { opacity: 1; pointer-events: auto; }
     .feature-tooltip::after {
@@ -724,19 +725,15 @@
       border: 6px solid transparent;
     }
     .feature-tooltip.arrow-down::after {
-      border-top-color: var(--text);
+      border-top-color: var(--border);
       top: 100%; left: 50%; transform: translateX(-50%);
     }
     .feature-tooltip.arrow-up::after {
-      border-bottom-color: var(--text);
+      border-bottom-color: var(--border);
       bottom: 100%; left: 50%; transform: translateX(-50%);
       top: auto;
     }
-    .feature-tooltip.arrow-left::after {
-      border-right-color: var(--text);
-      right: 100%; top: 50%; transform: translateY(-50%);
-    }
-    .tooltip-skip { font-size: 0.68rem; opacity: 0.6; margin-top: 5px; display: block; cursor: pointer; text-align: right; pointer-events: auto; }
+    .tooltip-skip { font-size: 0.67rem; opacity: 0.5; margin-top: 6px; display: block; cursor: pointer; text-align: right; pointer-events: auto; }
     .tooltip-skip:hover { opacity: 1; }
 
     .modal-btn-primary, .modal-btn-secondary {
@@ -3823,12 +3820,7 @@
       const step = _ALL_STEPS[_tourIdx];
       if (!step) { dismissTooltips(); return; }
 
-      let targetEl;
-      if (step.getEl) {
-        targetEl = step.getEl();
-      } else {
-        targetEl = document.querySelector('.thought-cloud[data-idx="0"] ' + step.selector);
-      }
+      const targetEl = step.getEl ? step.getEl() : document.querySelector(step.selector);
       if (!targetEl) { _tourIdx++; _showTourStep(); return; }
 
       const rect = targetEl.getBoundingClientRect();
@@ -3837,12 +3829,12 @@
 
       document.getElementById('featureTooltipText').textContent = step.text;
 
-      // Progress dots (only show during post-gen steps)
+      // Progress dots during post-gen steps
       const dotsEl = document.getElementById('featureTooltipDots');
       if (_tourIdx >= _PRE_GEN_STEPS.length) {
         const postIdx = _tourIdx - _PRE_GEN_STEPS.length;
         dotsEl.innerHTML = _POST_GEN_STEPS.map((_, i) =>
-          `<span style="width:5px;height:5px;border-radius:50%;background:${i === postIdx ? 'var(--bg)' : 'rgba(255,255,255,0.35)'}"></span>`
+          `<span style="width:5px;height:5px;border-radius:50%;background:${i === postIdx ? 'var(--text-muted)' : 'var(--border)'}"></span>`
         ).join('');
       } else {
         dotsEl.innerHTML = '';
@@ -3850,25 +3842,22 @@
 
       el.className = 'feature-tooltip ' + step.arrow;
       el.style.width = W + 'px';
+      el.style.transform = '';
 
       let top, left;
       if (step.arrow === 'arrow-down') {
-        // Tooltip above element, arrow points down
-        top = rect.top - 10;
+        top = rect.top - 12;
         left = rect.left + rect.width / 2 - W / 2;
         el.style.transform = 'translateY(-100%)';
       } else {
-        // Tooltip below element, arrow points up
-        top = rect.bottom + 10;
+        top = rect.bottom + 12;
         left = rect.left + rect.width / 2 - W / 2;
-        el.style.transform = '';
       }
       el.style.top = Math.max(8, top) + 'px';
       el.style.left = Math.max(8, Math.min(window.innerWidth - W - 8, left)) + 'px';
       el.classList.add('visible');
 
       if (_tourTimer) clearTimeout(_tourTimer);
-      // Pre-gen step stays until they generate; post-gen steps auto-advance
       if (_tourIdx >= _PRE_GEN_STEPS.length) {
         _tourTimer = setTimeout(() => {
           _tourIdx++;
