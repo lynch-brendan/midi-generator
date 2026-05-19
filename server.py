@@ -40,6 +40,29 @@ app = FastAPI()
 OUTPUT_DIR = Path(__file__).parent / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
+def _cleanup_output_dir():
+    """Delete output folders older than 2 hours to prevent disk fill."""
+    import shutil, time
+    cutoff = time.time() - 2 * 3600
+    try:
+        for folder in OUTPUT_DIR.iterdir():
+            if folder.is_dir() and folder.stat().st_mtime < cutoff:
+                shutil.rmtree(folder, ignore_errors=True)
+    except Exception as e:
+        print(f"[cleanup] error: {e}")
+
+def _start_cleanup_thread():
+    import threading, time
+    def loop():
+        while True:
+            time.sleep(1800)  # every 30 minutes
+            _cleanup_output_dir()
+    t = threading.Thread(target=loop, daemon=True)
+    t.start()
+
+_cleanup_output_dir()  # clean on startup too
+_start_cleanup_thread()
+
 # Log audio setup at startup
 try:
     import shutil
