@@ -639,7 +639,7 @@
 
     .modal-overlay.hidden { display: none; }
 
-    /* Welcome modal */
+    /* Welcome modal (unused — kept for reference) */
     .welcome-modal-box {
       background: var(--bg-input);
       border: 1px solid var(--border);
@@ -700,41 +700,6 @@
     }
     .btn-welcome-start:hover { opacity: 0.85; }
 
-    /* First-use tooltips */
-    .feature-tooltip {
-      position: fixed;
-      z-index: 600;
-      background: var(--bg-input);
-      color: var(--text-muted);
-      border: 1px solid var(--border);
-      font-size: 0.75rem;
-      font-family: inherit;
-      padding: 10px 13px 8px;
-      border-radius: 10px;
-      max-width: 220px;
-      line-height: 1.45;
-      pointer-events: none;
-      opacity: 0;
-      transition: opacity 0.2s;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.08);
-    }
-    .feature-tooltip.visible { opacity: 1; pointer-events: auto; }
-    .feature-tooltip::after {
-      content: '';
-      position: absolute;
-      border: 6px solid transparent;
-    }
-    .feature-tooltip.arrow-down::after {
-      border-top-color: var(--border);
-      top: 100%; left: 50%; transform: translateX(-50%);
-    }
-    .feature-tooltip.arrow-up::after {
-      border-bottom-color: var(--border);
-      bottom: 100%; left: 50%; transform: translateX(-50%);
-      top: auto;
-    }
-    .tooltip-skip { font-size: 0.67rem; opacity: 0.5; margin-top: 6px; display: block; cursor: pointer; text-align: right; pointer-events: auto; }
-    .tooltip-skip:hover { opacity: 1; }
 
     .modal-btn-primary, .modal-btn-secondary {
       border-radius: 8px;
@@ -1979,14 +1944,6 @@
   </div>
 
   <!-- Lock suggestion modal -->
-  <!-- First-use guided tooltip -->
-  <div id="featureTooltip" class="feature-tooltip">
-    <div id="featureTooltipText"></div>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:7px;">
-      <span id="featureTooltipDots" style="display:flex;gap:4px;"></span>
-      <span class="tooltip-skip" onclick="dismissTooltips()">skip ×</span>
-    </div>
-  </div>
 
   <div id="lockSuggestModal" class="modal-overlay hidden" onclick="if(event.target===this)_lockSuggestSkip()">
     <div class="modal-box" style="max-width:320px;">
@@ -2994,7 +2951,6 @@
               setGenStatus("");
               clearSeed();
               if (currentVariations.length > 0) saveSessionToStorage();
-              setTimeout(showTooltipTour, 800);
             } else if (event.type === "error") {
               throw new Error(event.message);
             }
@@ -3759,130 +3715,6 @@
     initAuth();
     restoreSessionFromStorage();
 
-    // ==========================================================================
-    // First-use guided tooltip tour
-    // ==========================================================================
-
-    // Steps before generation — target static elements
-    const _PRE_GEN_STEPS = [
-      {
-        getEl: () => document.getElementById('prompt'),
-        text: 'Type any musical idea — "sad piano", "boom bap beat at 90 BPM", anything. I\'ll play 5 versions instantly.',
-        arrow: 'arrow-down',
-      },
-    ];
-
-    // Steps after generation — target buttons on cloud 0
-    const _POST_GEN_STEPS = [
-      {
-        selector: '.cloud-keep-btn',
-        text: '♥ Save anything you like — it goes to your session.',
-        arrow: 'arrow-up',
-      },
-      {
-        selector: '.cloud-more-btn',
-        text: '✦ Build on this — get a bassline, a B section, or push it in a new direction.',
-        arrow: 'arrow-up',
-      },
-      {
-        selector: '.cloud-lock-btn',
-        text: '🔗 Lock the key & BPM so everything you make fits the same track.',
-        arrow: 'arrow-up',
-      },
-      {
-        selector: '.cloud-dl-btn',
-        text: '↓ Download MIDI or WAV — drag it straight into your DAW. It\'s yours.',
-        arrow: 'arrow-up',
-      },
-    ];
-
-    const _ALL_STEPS = [..._PRE_GEN_STEPS, ..._POST_GEN_STEPS];
-    let _tourIdx = 0;
-    let _tourTimer = null;
-    let _tourStarted = false;
-
-    function startTourIfNew() {
-      if (localStorage.getItem('muse_tour_done')) return;
-      if (_tourStarted) return;
-      _tourStarted = true;
-      _tourIdx = 0;
-      _showTourStep();
-    }
-
-    function showTooltipTour() {
-      // Called after generation — jump to post-gen steps
-      if (localStorage.getItem('muse_tour_done')) return;
-      _tourIdx = _PRE_GEN_STEPS.length;
-      _showTourStep();
-    }
-
-    function _showTourStep() {
-      const step = _ALL_STEPS[_tourIdx];
-      if (!step) { dismissTooltips(); return; }
-
-      const targetEl = step.getEl ? step.getEl() : document.querySelector(step.selector);
-      if (!targetEl) { _tourIdx++; _showTourStep(); return; }
-
-      const rect = targetEl.getBoundingClientRect();
-      const el = document.getElementById('featureTooltip');
-      const W = 220;
-
-      document.getElementById('featureTooltipText').textContent = step.text;
-
-      // Progress dots during post-gen steps
-      const dotsEl = document.getElementById('featureTooltipDots');
-      if (_tourIdx >= _PRE_GEN_STEPS.length) {
-        const postIdx = _tourIdx - _PRE_GEN_STEPS.length;
-        dotsEl.innerHTML = _POST_GEN_STEPS.map((_, i) =>
-          `<span style="width:5px;height:5px;border-radius:50%;background:${i === postIdx ? 'var(--text-muted)' : 'var(--border)'}"></span>`
-        ).join('');
-      } else {
-        dotsEl.innerHTML = '';
-      }
-
-      el.className = 'feature-tooltip ' + step.arrow;
-      el.style.width = W + 'px';
-      el.style.transform = '';
-
-      let top, left;
-      if (step.arrow === 'arrow-down') {
-        top = rect.top - 12;
-        left = rect.left + rect.width / 2 - W / 2;
-        el.style.transform = 'translateY(-100%)';
-      } else {
-        top = rect.bottom + 12;
-        left = rect.left + rect.width / 2 - W / 2;
-      }
-      el.style.top = Math.max(8, top) + 'px';
-      el.style.left = Math.max(8, Math.min(window.innerWidth - W - 8, left)) + 'px';
-      el.classList.add('visible');
-
-      if (_tourTimer) clearTimeout(_tourTimer);
-      if (_tourIdx >= _PRE_GEN_STEPS.length) {
-        _tourTimer = setTimeout(() => {
-          _tourIdx++;
-          if (_tourIdx < _ALL_STEPS.length) _showTourStep();
-          else dismissTooltips();
-        }, 4000);
-      }
-    }
-
-    function dismissTooltips() {
-      if (_tourTimer) clearTimeout(_tourTimer);
-      document.getElementById('featureTooltip').classList.remove('visible');
-      localStorage.setItem('muse_tour_done', '1');
-    }
-
-    // Kick off pre-gen step immediately on first visit
-    setTimeout(startTourIfNew, 600);
-
-    // First-time speech bubble
-    (function() {
-      if (!localStorage.getItem('muse_tour_done')) {
-        const bubble = document.getElementById('speechBubble');
-        if (bubble) bubble.textContent = "I'm your studio musician — tell me what you want to hear.";
-      }
-    })();
   </script>
 
 </body>
