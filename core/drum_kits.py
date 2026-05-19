@@ -234,10 +234,10 @@ def auto_map_kit(kit_dir: Path) -> Dict[int, str]:
 
     crash = _first_match("crash", "cy", "cymbal")
     ride  = _first_match("ride")
-    htom  = _first_match("high tom", "hi tom", "hitom", "hi_tom", "hi-tom", "ht", "tom_h", "tom-h", "tom1")
-    mtom  = _first_match("mid tom", "mid_tom", "mid-tom", "mt", "mc", "tom_m", "tom-m", "tom2")
+    htom  = _first_match("high tom", "hi tom", "hitom", "hi_tom", "hi-tom", "ht", "tom_h", "tom-h", "tom1", "tom 1")
+    mtom  = _first_match("mid tom", "mid_tom", "mid-tom", "mt", "mc", "tom_m", "tom-m", "tom2", "tom 2")
     ltom  = _first_match("low tom", "lo tom", "lotom", "lo_tom", "lo-tom", "lt", "lc",
-                          "floor", "tom_l", "tom-l", "tom3")
+                          "floor", "tom_l", "tom-l", "tom3", "tom 3", "tom 4")
 
     mapping: Dict[int, str] = {}
 

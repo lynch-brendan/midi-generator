@@ -629,8 +629,12 @@ RULE: For 4 of the 5 variations, pick kits from the genre-appropriate list below
 
 Genre-appropriate kits by style:
 
-REAL / ACOUSTIC drums (live room sound):
-  "Acoustic Studio Kit"
+REAL / ACOUSTIC drums — use these for anything needing a live drummer sound:
+  Rock / indie / pop / classic rock:  "HQ Rock Kit"
+  Jazz / swing / bossa nova:          "HQ Jazz Kit"
+  Funk / soul / R&B / gospel:         "HQ Funk Kit"
+  Metal / hard rock / heavy:          "HQ Metal Kit"
+  General acoustic fallback:          "Acoustic Studio Kit"
 
 808 / TRAP / modern hip-hop / Atlanta / drill:
   "Roland Tr-808"
