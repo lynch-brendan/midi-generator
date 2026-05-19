@@ -207,8 +207,8 @@ def render_drum_pattern(
         # Normalize both channels together so the stereo image is preserved
         peak = max((max(abs(s) for s in buf_l) if buf_l else 0.0),
                    (max(abs(s) for s in buf_r) if buf_r else 0.0))
-        if peak > 0.9:
-            scale = 0.9 / peak
+        if peak > 0.0:
+            scale = 0.97 / peak
             buf_l = [s * scale for s in buf_l]
             buf_r = [s * scale for s in buf_r]
 
