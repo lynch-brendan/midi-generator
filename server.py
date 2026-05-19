@@ -97,6 +97,22 @@ def _start_cleanup_thread():
 _cleanup_output_dir()  # clean on startup too
 _start_cleanup_thread()
 
+def _warm_drum_kit_cache():
+    """Pre-download all drum kits from R2 into /tmp so the first generation is fast."""
+    import threading
+    def _warm():
+        try:
+            from core.drum_kits import get_kit_names, get_kit_dir
+            names = get_kit_names()
+            for name in names:
+                get_kit_dir(name)
+                print(f"[startup] drum kit cached: {name}")
+        except Exception as e:
+            print(f"[startup] drum kit pre-cache error: {e}")
+    threading.Thread(target=_warm, daemon=True).start()
+
+_warm_drum_kit_cache()
+
 # Log audio setup at startup
 try:
     import shutil
