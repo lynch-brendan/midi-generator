@@ -639,6 +639,105 @@
 
     .modal-overlay.hidden { display: none; }
 
+    /* Welcome modal */
+    .welcome-modal-box {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 36px 32px;
+      max-width: 400px;
+      width: 100%;
+      position: relative;
+    }
+    .welcome-modal-title {
+      font-family: Georgia, serif;
+      font-size: 1.3rem;
+      font-weight: 400;
+      color: var(--text);
+      margin: 0 0 4px;
+      letter-spacing: 0.03em;
+    }
+    .welcome-modal-sub {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      margin: 0 0 20px;
+    }
+    .welcome-modal-features {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .welcome-modal-features li {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
+    .welcome-modal-features li span:first-child {
+      font-size: 1rem;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .welcome-modal-features li strong { color: var(--text); font-weight: 600; }
+    .btn-welcome-start {
+      width: 100%;
+      background: var(--text);
+      color: var(--bg);
+      border: none;
+      border-radius: 9px;
+      padding: 11px 0;
+      font-size: 0.88rem;
+      font-family: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      letter-spacing: 0.02em;
+      transition: opacity 0.15s;
+    }
+    .btn-welcome-start:hover { opacity: 0.85; }
+
+    /* First-use tooltips */
+    .feature-tooltip {
+      position: fixed;
+      z-index: 600;
+      background: var(--text);
+      color: var(--bg);
+      font-size: 0.76rem;
+      font-family: inherit;
+      padding: 8px 12px;
+      border-radius: 8px;
+      max-width: 200px;
+      line-height: 1.4;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+    }
+    .feature-tooltip.visible { opacity: 1; pointer-events: auto; }
+    .feature-tooltip::after {
+      content: '';
+      position: absolute;
+      border: 6px solid transparent;
+    }
+    .feature-tooltip.arrow-down::after {
+      border-top-color: var(--text);
+      top: 100%; left: 50%; transform: translateX(-50%);
+    }
+    .feature-tooltip.arrow-up::after {
+      border-bottom-color: var(--text);
+      bottom: 100%; left: 50%; transform: translateX(-50%);
+    }
+    .feature-tooltip.arrow-left::after {
+      border-right-color: var(--text);
+      right: 100%; top: 50%; transform: translateY(-50%);
+    }
+    .tooltip-skip { font-size: 0.68rem; opacity: 0.6; margin-top: 5px; display: block; cursor: pointer; text-align: right; pointer-events: auto; }
+    .tooltip-skip:hover { opacity: 1; }
+
     .modal-btn-primary, .modal-btn-secondary {
       border-radius: 8px;
       padding: 7px 14px;
@@ -1882,6 +1981,27 @@
   </div>
 
   <!-- Lock suggestion modal -->
+  <!-- Welcome modal (first visit) -->
+  <div id="welcomeModal" class="modal-overlay hidden">
+    <div class="welcome-modal-box">
+      <p class="welcome-modal-title">Meet Muse</p>
+      <p class="welcome-modal-sub">Describe any musical idea. Get 5 playable variations instantly. Download MIDI and drag straight into your DAW.</p>
+      <ul class="welcome-modal-features">
+        <li><span>🎹</span><span>Be <strong>specific or vague</strong> — "boom bap drums at 90 BPM" or just "something melancholy". It figures it out.</span></li>
+        <li><span>✦</span><span><strong>Build on this</strong> — hit it on any variation to iterate. Evolve the sound or add a new layer.</span></li>
+        <li><span>🔗</span><span><strong>Lock key & BPM</strong> — keep every idea in your session cohesive.</span></li>
+        <li><span>♥</span><span><strong>Heart anything good</strong> — save it to your session and export as MIDI when you're ready.</span></li>
+      </ul>
+      <button class="btn-welcome-start" onclick="dismissWelcomeModal()">Start creating →</button>
+    </div>
+  </div>
+
+  <!-- Feature tooltip (first-use walkthrough) -->
+  <div id="featureTooltip" class="feature-tooltip">
+    <span id="featureTooltipText"></span>
+    <span class="tooltip-skip" onclick="dismissTooltips()">skip tour ×</span>
+  </div>
+
   <div id="lockSuggestModal" class="modal-overlay hidden" onclick="if(event.target===this)_lockSuggestSkip()">
     <div class="modal-box" style="max-width:320px;">
       <p style="font-size:1rem;font-weight:600;margin:0 0 6px;" id="lockSuggestTitle"></p>
@@ -2888,6 +3008,7 @@
               setGenStatus("");
               clearSeed();
               if (currentVariations.length > 0) saveSessionToStorage();
+              setTimeout(showTooltipTour, 800);
             } else if (event.type === "error") {
               throw new Error(event.message);
             }
@@ -3651,6 +3772,76 @@
 
     initAuth();
     restoreSessionFromStorage();
+
+    // ==========================================================================
+    // Welcome modal + first-use tooltip tour
+    // ==========================================================================
+
+    function dismissWelcomeModal() {
+      document.getElementById('welcomeModal').classList.add('hidden');
+      localStorage.setItem('muse_welcomed', '1');
+    }
+
+    (function() {
+      if (!localStorage.getItem('muse_welcomed')) {
+        document.getElementById('welcomeModal').classList.remove('hidden');
+      }
+    })();
+
+    // Tooltip tour — fires after the first generation completes
+    const _TOOLTIPS = [
+      { text: '♥ Heart a variation to save it to your session', target: () => document.querySelector('.cloud-keep-btn'), arrow: 'arrow-down', offsetY: -12 },
+      { text: '✦ Build on this — evolve any idea or add a new layer', target: () => document.querySelector('.cloud-more-btn'), arrow: 'arrow-down', offsetY: -12 },
+      { text: '🔗 Lock key & BPM to keep your whole session cohesive', target: () => document.getElementById('lockKey'), arrow: 'arrow-up', offsetY: 12 },
+    ];
+    let _tooltipIdx = 0;
+    let _tooltipTimer = null;
+
+    function showTooltipTour() {
+      if (localStorage.getItem('muse_tour_done')) return;
+      _tooltipIdx = 0;
+      _showTooltip();
+    }
+
+    function _showTooltip() {
+      const tip = _TOOLTIPS[_tooltipIdx];
+      if (!tip) { dismissTooltips(); return; }
+      const targetEl = tip.target();
+      if (!targetEl) { _tooltipIdx++; _showTooltip(); return; }
+      const rect = targetEl.getBoundingClientRect();
+      const el = document.getElementById('featureTooltip');
+      document.getElementById('featureTooltipText').textContent = tip.text;
+      el.className = 'feature-tooltip ' + tip.arrow;
+      // Position
+      const tw = 200, th = 60;
+      let top, left;
+      if (tip.arrow === 'arrow-down') {
+        top = rect.top + tip.offsetY - th;
+        left = rect.left + rect.width / 2 - tw / 2;
+      } else if (tip.arrow === 'arrow-up') {
+        top = rect.bottom + tip.offsetY;
+        left = rect.left + rect.width / 2 - tw / 2;
+      } else {
+        top = rect.top + rect.height / 2 - th / 2;
+        left = rect.right + tip.offsetY;
+      }
+      el.style.top = Math.max(8, top) + 'px';
+      el.style.left = Math.max(8, Math.min(window.innerWidth - tw - 8, left)) + 'px';
+      el.classList.add('visible');
+      if (_tooltipTimer) clearTimeout(_tooltipTimer);
+      _tooltipTimer = setTimeout(() => {
+        _tooltipIdx++;
+        if (_tooltipIdx < _TOOLTIPS.length) _showTooltip();
+        else dismissTooltips();
+      }, 3500);
+    }
+
+    function dismissTooltips() {
+      if (_tooltipTimer) clearTimeout(_tooltipTimer);
+      const el = document.getElementById('featureTooltip');
+      el.classList.remove('visible');
+      localStorage.setItem('muse_tour_done', '1');
+    }
   </script>
 
 </body>
