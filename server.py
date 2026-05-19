@@ -381,9 +381,6 @@ def _process_variation(var: dict, gm_patch: int, slug: str, is_drums: bool = Fal
                 wav_url = r2_wav
             else:
                 print(f"[warn] R2 WAV upload failed, using local fallback: {wav_path.name}")
-    else:
-        print(f"[warn] R2 not configured — files are local only (will break on container restart)")
-        # Upload drum stems to R2 too
         if drum_stem_urls:
             r2_stems = {}
             for group, local_url in drum_stem_urls.items():
@@ -391,6 +388,8 @@ def _process_variation(var: dict, gm_patch: int, slug: str, is_drums: bool = Fal
                 r2_stem = upload_to_r2(stem_path, f"{r2_prefix}_{group}.mid")
                 r2_stems[group] = r2_stem if r2_stem else local_url
             drum_stem_urls = r2_stems
+    else:
+        print(f"[warn] R2 not configured — files are local only (will break on container restart)")
 
     return {
         "id": info.id,
