@@ -730,6 +730,7 @@
     .feature-tooltip.arrow-up::after {
       border-bottom-color: var(--text);
       bottom: 100%; left: 50%; transform: translateX(-50%);
+      top: auto;
     }
     .feature-tooltip.arrow-left::after {
       border-right-color: var(--text);
@@ -1981,19 +1982,13 @@
   </div>
 
   <!-- Lock suggestion modal -->
-  <!-- Welcome modal (first visit) -->
-  <div id="welcomeModal" class="modal-overlay hidden">
-    <div class="welcome-modal-box" style="text-align:center;">
-      <p class="welcome-modal-title">your ai musician</p>
-      <p class="welcome-modal-sub" style="margin-bottom:28px;font-size:0.9rem;line-height:1.6;">Tell me what you want to hear.<br>I'll play 5 ideas. Keep what you like.</p>
-      <button class="btn-welcome-start" onclick="dismissWelcomeModal()">let's go →</button>
-    </div>
-  </div>
-
-  <!-- Feature tooltip (first-use walkthrough) -->
+  <!-- First-use guided tooltip -->
   <div id="featureTooltip" class="feature-tooltip">
-    <span id="featureTooltipText"></span>
-    <span class="tooltip-skip" onclick="dismissTooltips()">skip tour ×</span>
+    <div id="featureTooltipText"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:7px;">
+      <span id="featureTooltipDots" style="display:flex;gap:4px;"></span>
+      <span class="tooltip-skip" onclick="dismissTooltips()">skip ×</span>
+    </div>
   </div>
 
   <div id="lockSuggestModal" class="modal-overlay hidden" onclick="if(event.target===this)_lockSuggestSkip()">
@@ -3768,74 +3763,92 @@
     restoreSessionFromStorage();
 
     // ==========================================================================
-    // Welcome modal + first-use tooltip tour
+    // First-use guided tooltip tour
     // ==========================================================================
 
-    function dismissWelcomeModal() {
-      document.getElementById('welcomeModal').classList.add('hidden');
-      localStorage.setItem('muse_welcomed', '1');
-    }
-
-    (function() {
-      if (!localStorage.getItem('muse_welcomed')) {
-        document.getElementById('welcomeModal').classList.remove('hidden');
-      }
-    })();
-
-    // Tooltip tour — fires after the first generation completes
-    const _TOOLTIPS = [
-      { text: '♥ Heart a variation to save it to your session', target: () => document.querySelector('.cloud-keep-btn'), arrow: 'arrow-down', offsetY: -12 },
-      { text: '✦ Build on this — evolve any idea or add a new layer', target: () => document.querySelector('.cloud-more-btn'), arrow: 'arrow-down', offsetY: -12 },
-      { text: '🔗 Lock key & BPM to keep your whole session cohesive', target: () => document.getElementById('lockKey'), arrow: 'arrow-up', offsetY: 12 },
+    const _TOUR_STEPS = [
+      {
+        selector: '.cloud-keep-btn',
+        text: 'Save anything you like — it goes to your session on the left.',
+        arrow: 'arrow-up',
+      },
+      {
+        selector: '.cloud-more-btn',
+        text: 'Build a bassline for it, a B section, a counter-melody — anything. Just describe what you want next.',
+        arrow: 'arrow-up',
+      },
+      {
+        selector: '.cloud-lock-btn',
+        text: 'Lock the key and BPM so every idea fits the same track.',
+        arrow: 'arrow-up',
+      },
+      {
+        selector: '.cloud-dl-btn',
+        text: 'Download MIDI or WAV and drag it straight into your DAW. It\'s yours.',
+        arrow: 'arrow-up',
+      },
     ];
-    let _tooltipIdx = 0;
-    let _tooltipTimer = null;
+
+    let _tourIdx = 0;
+    let _tourTimer = null;
 
     function showTooltipTour() {
       if (localStorage.getItem('muse_tour_done')) return;
-      _tooltipIdx = 0;
-      _showTooltip();
+      _tourIdx = 0;
+      _showTourStep();
     }
 
-    function _showTooltip() {
-      const tip = _TOOLTIPS[_tooltipIdx];
-      if (!tip) { dismissTooltips(); return; }
-      const targetEl = tip.target();
-      if (!targetEl) { _tooltipIdx++; _showTooltip(); return; }
+    function _showTourStep() {
+      const step = _TOUR_STEPS[_tourIdx];
+      if (!step) { dismissTooltips(); return; }
+
+      // Always target the button on the first cloud
+      const targetEl = document.querySelector('.thought-cloud[data-idx="0"] ' + step.selector);
+      if (!targetEl) { _tourIdx++; _showTourStep(); return; }
+
       const rect = targetEl.getBoundingClientRect();
       const el = document.getElementById('featureTooltip');
-      document.getElementById('featureTooltipText').textContent = tip.text;
-      el.className = 'feature-tooltip ' + tip.arrow;
-      // Position
-      const tw = 200, th = 60;
-      let top, left;
-      if (tip.arrow === 'arrow-down') {
-        top = rect.top + tip.offsetY - th;
-        left = rect.left + rect.width / 2 - tw / 2;
-      } else if (tip.arrow === 'arrow-up') {
-        top = rect.bottom + tip.offsetY;
-        left = rect.left + rect.width / 2 - tw / 2;
-      } else {
-        top = rect.top + rect.height / 2 - th / 2;
-        left = rect.right + tip.offsetY;
-      }
+      const W = 210;
+
+      document.getElementById('featureTooltipText').textContent = step.text;
+
+      // Progress dots
+      const dotsEl = document.getElementById('featureTooltipDots');
+      dotsEl.innerHTML = _TOUR_STEPS.map((_, i) =>
+        `<span style="width:5px;height:5px;border-radius:50%;background:${i === _tourIdx ? 'var(--bg)' : 'rgba(255,255,255,0.35)'}"></span>`
+      ).join('');
+
+      el.className = 'feature-tooltip ' + step.arrow;
+
+      // Position tooltip below the button (arrow points up to it)
+      const top = rect.bottom + 10;
+      const left = rect.left + rect.width / 2 - W / 2;
+      el.style.width = W + 'px';
       el.style.top = Math.max(8, top) + 'px';
-      el.style.left = Math.max(8, Math.min(window.innerWidth - tw - 8, left)) + 'px';
+      el.style.left = Math.max(8, Math.min(window.innerWidth - W - 8, left)) + 'px';
       el.classList.add('visible');
-      if (_tooltipTimer) clearTimeout(_tooltipTimer);
-      _tooltipTimer = setTimeout(() => {
-        _tooltipIdx++;
-        if (_tooltipIdx < _TOOLTIPS.length) _showTooltip();
+
+      if (_tourTimer) clearTimeout(_tourTimer);
+      _tourTimer = setTimeout(() => {
+        _tourIdx++;
+        if (_tourIdx < _TOUR_STEPS.length) _showTourStep();
         else dismissTooltips();
-      }, 3500);
+      }, 4000);
     }
 
     function dismissTooltips() {
-      if (_tooltipTimer) clearTimeout(_tooltipTimer);
-      const el = document.getElementById('featureTooltip');
-      el.classList.remove('visible');
+      if (_tourTimer) clearTimeout(_tourTimer);
+      document.getElementById('featureTooltip').classList.remove('visible');
       localStorage.setItem('muse_tour_done', '1');
     }
+
+    // First-time speech bubble
+    (function() {
+      if (!localStorage.getItem('muse_tour_done')) {
+        const bubble = document.getElementById('speechBubble');
+        if (bubble) bubble.textContent = "I'm your studio musician — tell me what you want to hear.";
+      }
+    })();
   </script>
 
 </body>
