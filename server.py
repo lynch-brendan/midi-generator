@@ -357,10 +357,16 @@ def _process_variation(var: dict, gm_patch: int, slug: str, is_drums: bool = Fal
         r2_midi = upload_to_r2(midi_path, f"{r2_prefix}.mid")
         if r2_midi:
             midi_url = r2_midi
+        else:
+            print(f"[warn] R2 MIDI upload failed, using local fallback: {midi_path.name}")
         if wav_path.exists():
             r2_wav = upload_to_r2(wav_path, f"{r2_prefix}.wav")
             if r2_wav:
                 wav_url = r2_wav
+            else:
+                print(f"[warn] R2 WAV upload failed, using local fallback: {wav_path.name}")
+    else:
+        print(f"[warn] R2 not configured — files are local only (will break on container restart)")
         # Upload drum stems to R2 too
         if drum_stem_urls:
             r2_stems = {}

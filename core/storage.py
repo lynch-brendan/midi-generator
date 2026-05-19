@@ -69,5 +69,6 @@ def upload_to_r2(local_path: str | Path, key: str) -> Optional[str]:
 
         return f"{public_url}/{key}"
 
-    except Exception:
+    except Exception as e:
+        print(f"[r2] upload failed for {key}: {e}")
         return None
