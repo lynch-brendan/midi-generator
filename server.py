@@ -1010,6 +1010,35 @@ async def admin_users(request: Request, db=Depends(get_db)):
 # avoid Cloudflare blocking outbound requests to us.i.posthog.com
 # ---------------------------------------------------------------------------
 
+@app.get("/api/download")
+async def proxy_download(url: str):
+    """Proxy a file from R2 through the server to avoid browser CORS restrictions."""
+    import httpx
+    from fastapi.responses import StreamingResponse as SR
+    public_base = os.environ.get("R2_PUBLIC_URL", "").rstrip("/")
+    if not url.startswith(public_base + "/") and not url.startswith("/output/"):
+        raise HTTPException(status_code=400, detail="Invalid download URL")
+    if url.startswith("/output/"):
+        # Local file — serve directly
+        local_path = OUTPUT_DIR / url[len("/output/"):]
+        if not local_path.exists():
+            raise HTTPException(status_code=404, detail="File not found")
+        suffix = local_path.suffix.lower()
+        mime = "audio/midi" if suffix in (".mid", ".midi") else "audio/wav"
+        return SR(open(local_path, "rb"), media_type=mime,
+                  headers={"Content-Disposition": f'attachment; filename="{local_path.name}"'})
+    async def stream():
+        async with httpx.AsyncClient() as client:
+            async with client.stream("GET", url, timeout=30) as resp:
+                async for chunk in resp.aiter_bytes(65536):
+                    yield chunk
+    filename = url.split("/")[-1]
+    suffix = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    mime = "audio/midi" if suffix in ("mid", "midi") else "audio/wav"
+    return SR(stream(), media_type=mime,
+              headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
 @app.api_route("/ingest/{path:path}", methods=["GET", "POST", "OPTIONS"])
 async def posthog_proxy(path: str, request: Request):
     import httpx

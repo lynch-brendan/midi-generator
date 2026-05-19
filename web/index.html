@@ -3568,7 +3568,8 @@
       const v = currentVariations[idx];
       if (!v) return;
       const download = async (url) => {
-        const resp = await fetch(url);
+        const proxyUrl = `/api/download?url=${encodeURIComponent(url)}`;
+        const resp = await fetch(proxyUrl);
         const blob = await resp.blob();
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
@@ -3690,25 +3691,23 @@
     document.addEventListener('click', async (e) => {
       const a = e.target.closest('a[download]');
       if (!a) return;
-      const isWav = a.href.includes('.wav');
       const type = a.href.includes('.mid') ? 'midi' : 'wav';
       posthog.capture('file_downloaded', { file_type: type });
-      if (isWav) {
-        e.preventDefault();
-        try {
-          const resp = await fetch(a.href);
-          const blob = await resp.blob();
-          const url = URL.createObjectURL(blob);
-          const tmp = document.createElement('a');
-          tmp.href = url;
-          tmp.download = a.href.split('/').pop() || 'variation.wav';
-          document.body.appendChild(tmp);
-          tmp.click();
-          tmp.remove();
-          URL.revokeObjectURL(url);
-        } catch (_) {
-          window.open(a.href);
-        }
+      e.preventDefault();
+      try {
+        const proxyUrl = `/api/download?url=${encodeURIComponent(a.href)}`;
+        const resp = await fetch(proxyUrl);
+        const blob = await resp.blob();
+        const url = URL.createObjectURL(blob);
+        const tmp = document.createElement('a');
+        tmp.href = url;
+        tmp.download = a.href.split('/').pop() || 'variation.mid';
+        document.body.appendChild(tmp);
+        tmp.click();
+        tmp.remove();
+        URL.revokeObjectURL(url);
+      } catch (_) {
+        window.open(a.href);
       }
     });
 
