@@ -152,7 +152,7 @@ _PATTERNS: Dict[str, dict] = {
     "boom_bap": {
         "bar_length": 1,
         "controlled_pitches": {35, 36, 38, 39, 40, 41, 43, 45, 47, 48, 50, 42, 44, 46, 49},
-        "crash_on_phrase_start": True,
+        "crash_on_phrase_start": False,
         "crash_velocity": 72,
         "skeleton": [
             {"pitch": 36, "time": 0.0,  "velocity": 105, "duration": 0.5},
@@ -245,7 +245,7 @@ _PATTERNS: Dict[str, dict] = {
     "funk": {
         "bar_length": 1,
         "controlled_pitches": {35, 36, 38, 39, 40, 41, 43, 45, 47, 48, 50, 42, 44, 46, 49},
-        "crash_on_phrase_start": True,
+        "crash_on_phrase_start": False,
         "crash_velocity": 88,
         "skeleton": [
             {"pitch": 36, "time": 0.0,  "velocity": 110, "duration": 0.5},
@@ -734,7 +734,7 @@ _PATTERNS: Dict[str, dict] = {
     "default": {
         "bar_length": 1,
         "controlled_pitches": {35, 36, 38, 39, 40, 41, 43, 45, 47, 48, 50, 42, 44, 46, 49},
-        "crash_on_phrase_start": True,
+        "crash_on_phrase_start": False,
         "crash_velocity": 88,
         "skeleton": [
             {"pitch": 36, "time": 0.0,  "velocity": 105, "duration": 0.5},
@@ -853,7 +853,7 @@ _PATTERNS: Dict[str, dict] = {
     "boom_bap_heavy": {
         "bar_length": 1,
         "controlled_pitches": {35, 36, 38, 39, 40, 41, 43, 45, 47, 48, 50, 42, 44, 46, 49},
-        "crash_on_phrase_start": True,
+        "crash_on_phrase_start": False,
         "crash_velocity": 78,
         "skeleton": [
             {"pitch": 36, "time": 0.0,  "velocity": 108, "duration": 0.5},
@@ -895,7 +895,7 @@ _PATTERNS: Dict[str, dict] = {
     "boom_bap_chill": {
         "bar_length": 1,
         "controlled_pitches": {35, 36, 38, 39, 40, 41, 43, 45, 47, 48, 50, 42, 44, 46, 49},
-        "crash_on_phrase_start": True,
+        "crash_on_phrase_start": False,
         "crash_velocity": 65,
         "skeleton": [
             {"pitch": 36, "time": 0.0,  "velocity": 100, "duration": 0.5},
@@ -1037,7 +1037,7 @@ _PATTERNS: Dict[str, dict] = {
     "funk_heavy": {
         "bar_length": 1,
         "controlled_pitches": {35, 36, 38, 39, 40, 41, 43, 45, 47, 48, 50, 42, 44, 46, 49},
-        "crash_on_phrase_start": True,
+        "crash_on_phrase_start": False,
         "crash_velocity": 90,
         "skeleton": [
             {"pitch": 36, "time": 0.0,  "velocity": 112, "duration": 0.5},
