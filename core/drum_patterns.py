@@ -1215,7 +1215,86 @@ def _microtiming(pitch: int, base_time: float) -> float:
     return max(0.0, round(base_time + offset, 4))
 
 
-def _build_skeleton(pattern: dict, bars: int) -> List[Dict]:
+# Hi-hat / cymbal pitches that are NEVER in the groove skeleton — they come from LAYER_LIBRARY only
+_HAT_PITCHES: Set[int] = {42, 44, 46, 51}
+
+# Named percussion layers Claude can request via drum_layers: [...]
+LAYER_LIBRARY: Dict[str, List[Dict]] = {
+    # Steady 8th-note closed hi-hats — rock, pop, house baseline
+    "hihat_8th": [
+        {"pitch": 42, "time": t * 0.5, "velocity": 80 if t % 2 == 0 else 65, "duration": 0.1}
+        for t in range(8)
+    ],
+    # Driving 16th-note closed hi-hats — energetic, dance
+    "hihat_16th": [
+        {"pitch": 42, "time": t * 0.25,
+         "velocity": 80 if t % 4 == 0 else (70 if t % 2 == 0 else 58), "duration": 0.1}
+        for t in range(16)
+    ],
+    # Minimal quarter-note hi-hats — chill, sparse
+    "hihat_quarter": [
+        {"pitch": 42, "time": float(t), "velocity": 80 if t % 2 == 0 else 68, "duration": 0.1}
+        for t in range(4)
+    ],
+    # Swung 8th hi-hats — boom bap, hip hop, jazz-adjacent
+    "hihat_swing": [
+        {"pitch": 42, "time": 0.0,  "velocity": 85, "duration": 0.1},
+        {"pitch": 42, "time": 0.55, "velocity": 60, "duration": 0.1},
+        {"pitch": 42, "time": 1.0,  "velocity": 82, "duration": 0.1},
+        {"pitch": 42, "time": 1.55, "velocity": 57, "duration": 0.1},
+        {"pitch": 42, "time": 2.0,  "velocity": 84, "duration": 0.1},
+        {"pitch": 42, "time": 2.55, "velocity": 60, "duration": 0.1},
+        {"pitch": 42, "time": 3.0,  "velocity": 80, "duration": 0.1},
+        {"pitch": 42, "time": 3.55, "velocity": 57, "duration": 0.1},
+    ],
+    # Sparse trap hi-hats with open hat accents
+    "hihat_trap": [
+        {"pitch": 42, "time": 0.0,  "velocity": 82, "duration": 0.1},
+        {"pitch": 42, "time": 0.25, "velocity": 55, "duration": 0.1},
+        {"pitch": 42, "time": 0.5,  "velocity": 70, "duration": 0.1},
+        {"pitch": 46, "time": 1.0,  "velocity": 78, "duration": 0.3},
+        {"pitch": 42, "time": 1.5,  "velocity": 72, "duration": 0.1},
+        {"pitch": 42, "time": 1.75, "velocity": 52, "duration": 0.1},
+        {"pitch": 42, "time": 2.0,  "velocity": 82, "duration": 0.1},
+        {"pitch": 42, "time": 2.5,  "velocity": 65, "duration": 0.1},
+        {"pitch": 46, "time": 3.0,  "velocity": 75, "duration": 0.3},
+        {"pitch": 42, "time": 3.5,  "velocity": 70, "duration": 0.1},
+        {"pitch": 42, "time": 3.75, "velocity": 50, "duration": 0.1},
+    ],
+    # Open hi-hat on every offbeat — reggae, ska, dub
+    "hihat_open_offbeat": [
+        {"pitch": 46, "time": 0.5,  "velocity": 82, "duration": 0.4},
+        {"pitch": 46, "time": 1.5,  "velocity": 78, "duration": 0.4},
+        {"pitch": 46, "time": 2.5,  "velocity": 82, "duration": 0.4},
+        {"pitch": 46, "time": 3.5,  "velocity": 78, "duration": 0.4},
+    ],
+    # Jazz ride "ding-dinga-ding" + pedal hi-hat on beats 2 and 4
+    "hihat_jazz_ride": [
+        {"pitch": 51, "time": 0.0,   "velocity": 82, "duration": 0.1},
+        {"pitch": 51, "time": 0.667, "velocity": 62, "duration": 0.1},
+        {"pitch": 51, "time": 1.0,   "velocity": 78, "duration": 0.1},
+        {"pitch": 44, "time": 1.0,   "velocity": 65, "duration": 0.1},
+        {"pitch": 51, "time": 2.0,   "velocity": 82, "duration": 0.1},
+        {"pitch": 51, "time": 2.667, "velocity": 62, "duration": 0.1},
+        {"pitch": 51, "time": 3.0,   "velocity": 78, "duration": 0.1},
+        {"pitch": 44, "time": 3.0,   "velocity": 65, "duration": 0.1},
+    ],
+    # Open hi-hat every quarter note — house, disco, euphoric
+    "hihat_open_4th": [
+        {"pitch": 46, "time": 0.0, "velocity": 85, "duration": 0.85},
+        {"pitch": 46, "time": 1.0, "velocity": 80, "duration": 0.85},
+        {"pitch": 46, "time": 2.0, "velocity": 85, "duration": 0.85},
+        {"pitch": 46, "time": 3.0, "velocity": 80, "duration": 0.85},
+    ],
+    # Pedal hi-hat on beats 2 and 4 only — jazz, latin, subtle pulse
+    "hihat_pedal_2_4": [
+        {"pitch": 44, "time": 1.0, "velocity": 72, "duration": 0.1},
+        {"pitch": 44, "time": 3.0, "velocity": 70, "duration": 0.1},
+    ],
+}
+
+
+def _build_skeleton(pattern: dict, bars: int, layers: List[str] = None) -> List[Dict]:
     groove = pattern["skeleton"]
     # "fills" (list of alternatives) takes priority over "fill" (single)
     fill_options = pattern.get("fills") or ([pattern["fill"]] if pattern.get("fill") else None)
@@ -1223,6 +1302,7 @@ def _build_skeleton(pattern: dict, bars: int) -> List[Dict]:
     crash_on_phrase = pattern.get("crash_on_phrase_start", False)
     crash_vel = pattern.get("crash_velocity", 95)
     bar_length = pattern.get("bar_length", 1)
+    active_layers = [LAYER_LIBRARY[l] for l in (layers or []) if l in LAYER_LIBRARY]
 
     notes = []
 
@@ -1240,6 +1320,8 @@ def _build_skeleton(pattern: dict, bars: int) -> List[Dict]:
         if is_fill_bar:
             for n in chosen_fill:
                 pitch = n["pitch"]
+                if pitch in _HAT_PITCHES:
+                    continue  # fills are snare/tom moments — no hi-hats
                 vel = _humanize(n["velocity"], spread=7) if pitch != 49 else n["velocity"]
                 t = _microtiming(pitch, bar_start + n["time"])
                 notes.append({"pitch": pitch, "time": t, "velocity": vel,
@@ -1248,6 +1330,8 @@ def _build_skeleton(pattern: dict, bars: int) -> List[Dict]:
             bar_in_cycle = bar % bar_length
             cycle_offset = bar_in_cycle * 4.0
             for n in groove:
+                if n["pitch"] in _HAT_PITCHES:
+                    continue  # hi-hats/cymbals come from layers only
                 t_raw = n["time"]
                 if cycle_offset <= t_raw < cycle_offset + 4.0:
                     pitch = n["pitch"]
@@ -1256,27 +1340,36 @@ def _build_skeleton(pattern: dict, bars: int) -> List[Dict]:
                     notes.append({"pitch": pitch, "time": t, "velocity": vel,
                                   "duration": n.get("duration", 0.1)})
 
+        # Layer notes repeat every bar
+        for layer_notes in active_layers:
+            for n in layer_notes:
+                pitch = n["pitch"]
+                vel = _humanize(n["velocity"], spread=6)
+                t = _microtiming(pitch, bar_start + n["time"])
+                notes.append({"pitch": pitch, "time": t, "velocity": vel,
+                              "duration": n.get("duration", 0.1)})
+
     return notes
 
 
-def get_skeleton(genre: str, bars: int) -> List[Dict]:
+def get_skeleton(genre: str, bars: int, layers: List[str] = None) -> List[Dict]:
     """Return full skeleton note list for `bars` bars of the given genre."""
     key = _normalize(genre)
     pattern = _PATTERNS.get(key, _PATTERNS["default"])
-    return _build_skeleton(pattern, bars)
+    return _build_skeleton(pattern, bars, layers)
 
 
-def apply_skeleton(claude_notes: List[Dict], genre: str, bars: int) -> List[Dict]:
+def apply_skeleton(claude_notes: List[Dict], genre: str, bars: int,
+                   layers: List[str] = None) -> List[Dict]:
     """
     Enforce the genre skeleton on Claude's drum notes.
     - Strips ALL notes on controlled pitches from Claude except ghost notes (vel < 55).
-    - Claude retains toms, any non-controlled percussion, and ghost notes.
-    - Python skeleton provides kick, snare, hi-hats, crash, and fills.
+    - Python skeleton provides kick, snare, fills. Hi-hats come from layers.
     """
     key = _normalize(genre)
     pattern = _PATTERNS.get(key, _PATTERNS["default"])
     controlled: Set[int] = pattern["controlled_pitches"]
-    skeleton = _build_skeleton(pattern, bars)
+    skeleton = _build_skeleton(pattern, bars, layers)
 
     filtered = []
     for note in claude_notes:

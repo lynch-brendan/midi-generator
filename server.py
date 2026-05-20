@@ -347,7 +347,8 @@ def _process_variation(var: dict, gm_patch: int, slug: str, is_drums: bool = Fal
 
     if effective_drums:
         drum_genre = var.get("drum_genre", "default")
-        notes = apply_skeleton(notes, drum_genre, bars)
+        drum_layers = var.get("drum_layers", [])
+        notes = apply_skeleton(notes, drum_genre, bars, layers=drum_layers)
 
     notes_with_expression = apply_expression(notes, effective_patch, expression_level, effective_drums)
     write_midi(midi_path, notes_with_expression, info.tempo, effective_patch, channel, bars=bars)

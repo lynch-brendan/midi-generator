@@ -561,12 +561,13 @@ DURATIONS PER INSTRUMENT:
   Crash (49): 2.0    Ride (51): 0.1    Toms: 0.3    Ghost snare: 0.1
 
 HOW DRUM GENERATION WORKS:
-Python automatically generates the full structural skeleton from the "drum_genre" field — kick, snare/clap, hi-hats, crash cymbal on phrase starts, and bar-4 fills. You do NOT output any of these. Python will strip and replace them.
+Python generates the structural foundation from "drum_genre" — kick, snare/clap, and bar-4 fills. That's it. Hi-hats, cymbals, and ride are NOT in the skeleton — they come from "drum_layers" (see below). You pick which layers to add based on what the prompt asks for.
 
-Your ONLY job is to add ghost notes that make the groove feel human:
+Think like a session drummer: give the bones first, add hi-hats and cymbals only when the track calls for them. A "breakbeat" or "minimal beat" prompt gets no layers. A "driving rock beat" gets "hihat_8th". A "jazz tune" gets "hihat_jazz_ride". If the prompt doesn't mention hi-hats or cymbals, default to no layers.
+
+Your ONLY job with notes is to add ghost notes that make the groove feel human:
   • Ghost snares (38 at velocity 20–50) — at off-beat 16th-note gaps between skeleton hits
   • Ghost kicks (36 at velocity 25–45) — pickup hits just before main kick positions
-  • Additional percussion color for specific genres (see below)
 
 DO NOT output any of these — Python controls them and will strip yours:
   • Kick (35/36), snare (38), clap (39), rimshot (37)
@@ -574,39 +575,74 @@ DO NOT output any of these — Python controls them and will strip yours:
   • Crash (49), ride (51)
   • Toms (41/43/45/47/48/50) — fills are handled by Python on bar 4 of every phrase
 
-Basically: output ghost notes only (vel < 50). Keep your note list short — 8 to 20 notes per bar max.
+Output ghost notes only (vel < 50). Keep your note list short — 8 to 20 notes per bar max.
 
-DRUM_GENRE FIELD — include this in every drum variation:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DRUM_LAYERS FIELD
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Include this in every drum variation:
+  "drum_layers": ["hihat_8th"]   ← one or more layer names, OR [] for bare bones
+
+Available layers — pick based on what the prompt asks for:
+  "hihat_8th"          — steady 8th-note closed hi-hats. Rock, pop, house baseline.
+  "hihat_16th"         — driving 16th-note closed hi-hats. Energetic, dance, intense.
+  "hihat_quarter"      — sparse quarter-note hi-hats. Minimal, chill, wide open feel.
+  "hihat_swing"        — swung 8th hi-hats. Boom bap, hip hop, jazz-adjacent.
+  "hihat_trap"         — sparse trap hats with open hat accents. Trap, drill, dark.
+  "hihat_open_offbeat" — open hi-hat on every offbeat. Reggae, ska, dub.
+  "hihat_jazz_ride"    — ride cymbal "ding-dinga-ding" + pedal HH 2+4. Jazz, swing.
+  "hihat_open_4th"     — open hi-hat every quarter note. House, disco, euphoric.
+  "hihat_pedal_2_4"    — subtle pedal hi-hat on 2+4 only. Jazz comping, latin pulse.
+
+Layer selection guide:
+  Breakbeat / bare bones / minimal / bones of the beat → []
+  Boom bap / hip hop / lo-fi → ["hihat_swing"]
+  Trap / drill / dark → ["hihat_trap"]
+  Rock / pop / general → ["hihat_8th"]
+  Hard rock / punk / driving → ["hihat_16th"]
+  Jazz / swing → ["hihat_jazz_ride"]
+  Reggae / dub / ska → ["hihat_open_offbeat"]
+  House / dance → ["hihat_open_4th"] or ["hihat_8th"]
+  Deep house / hypnotic → ["hihat_quarter"]
+  Latin / afrobeats / subtle pulse → ["hihat_pedal_2_4"]
+  Explicitly asked for hi-hats ON TOP of something → stack two: ["hihat_swing", "hihat_pedal_2_4"]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DRUM_GENRE FIELD
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Include this in every drum variation:
   "drum_genre": "<genre>"
 
-Valid genre values and what Python generates for each:
+Valid genre values (Python generates kick + snare/clap + fills for each):
 
 Base genres:
-  "dembow"        — 4-on-floor kick + syncopated clap + straight 8th hats. BPM 88–95.
-  "trap"          — sparse kick + half-time snare + 8th hats + OHH on snare + 32nd rolls. BPM 130–145.
-  "boom_bap"      — syncopated kick + swung 8th hats + OHH "and of 4" + crash bar 1. BPM 85–98.
-  "house"         — 4-on-floor + clap 2+4 + CHH on beats + OHH on ALL offbeats (jacking). BPM 120–130.
-  "funk"          — Funky Drummer kick + dense 16th hats + OHH on "e of 2+4" + crash. BPM 95–115.
-  "jazz_swing"    — feathered kick + pedal HH 2+4 + ride spang-a-lang. BPM 120–200.
-  "reggae"        — one-drop beat 3 only + upbeat-only hats + OHH "and of 4". BPM 65–90.
-  "rock"          — kick 1+3 + snare 2+4 + 8th hats + crash every phrase + tom fill. BPM 110–145.
-  "afrobeats"     — kick 1+3 + snare 2+4 + cross-stick 0.5/2.5 + dense 16th hats. BPM 95–112.
-  "uk_drill"      — half-time snare + tresillo hats + 32nd rolls. BPM 138–142.
-  "lofi"          — kick syncopated + Dilla-swung 8th hats + OHH "and of 2+4". BPM 65–85.
-  "bossa_nova"    — 2-bar clave kick+rimshot + featherlight 8th hats (vel 45–55). BPM 120–160.
-  "halftime"      — kick beat 1 + snare beat 3 + 8th-triplet hats + OHH on snare. BPM 70–95.
-  "default"       — kick 1+3 + snare 2+4 + 8th hats. Use when no genre fits.
+  "dembow"        — 4-on-floor kick + syncopated clap. BPM 88–95.
+  "trap"          — sparse kick + half-time snare. BPM 130–145.
+  "boom_bap"      — syncopated kick + swung backbeat. BPM 85–98.
+  "house"         — 4-on-floor + clap 2+4. BPM 120–130.
+  "funk"          — Funky Drummer kick + heavy backbeat. BPM 95–115.
+  "jazz_swing"    — feathered kick + brushed snare comping. BPM 120–200.
+  "reggae"        — one-drop (kick beat 3 only). BPM 65–90.
+  "rock"          — kick 1+3 + snare 2+4 + crash every phrase + tom fill. BPM 110–145.
+  "afrobeats"     — kick 1+3 + snare 2+4 + cross-stick 0.5/2.5. BPM 95–112.
+  "uk_drill"      — half-time snare + 32nd rolls. BPM 138–142.
+  "lofi"          — syncopated kick + Dilla-feel backbeat. BPM 65–85.
+  "bossa_nova"    — 2-bar clave kick + rimshot. BPM 120–160.
+  "halftime"      — kick beat 1 + snare beat 3. BPM 70–95.
+  "default"       — kick 1+3 + snare 2+4. Use when no genre fits.
 
-Variants (use these when you want a different feel within the genre family):
-  "trap_minimal"    — ultra-sparse trap: kick beat 1 only, max space. Moody/cinematic.
-  "trap_busy"       — busier trap: more kick syncopation + 16th-note hat grid. Energetic.
-  "boom_bap_heavy"  — extra syncopated kick, heavier NYC feel. Classic Pete Rock territory.
-  "boom_bap_chill"  — sparser kick, more relaxed west-coast swing. Chill/instrumental.
+Variants:
+  "trap_minimal"    — ultra-sparse trap: kick beat 1 only. Moody/cinematic.
+  "trap_busy"       — more kick syncopation. Energetic.
+  "boom_bap_heavy"  — extra syncopated kick, heavier NYC feel.
+  "boom_bap_chill"  — sparser kick, relaxed west-coast swing.
   "rock_driving"    — kick on all 4 beats (AC/DC style). Maximum drive.
   "rock_halftime"   — snare only on beat 3, heavy half-time rock feel.
-  "house_deep"      — deep house: less open-hat frenzy, more hypnotic CHH groove.
-  "funk_heavy"      — cleaner kick, maximum backbeat weight. James Brown at peak power.
-  "lofi_lazy"       — maximum Dilla swing (+0.15 offbeats), ultra-relaxed. Nujabes vibes.
+  "house_deep"      — deep house hypnotic groove.
+  "funk_heavy"      — cleaner kick, maximum backbeat weight.
+  "lofi_lazy"       — maximum Dilla swing, ultra-relaxed. Nujabes vibes.
 
 WHAT YOU SHOULD ADD (ghost notes and color only):
 
@@ -616,7 +652,7 @@ funk: Heavy ghost snares (vel 18–32) at every 16th-note gap. The ghost notes A
 
 jazz_swing: Ghost snares (vel 20–40) scattered at swung positions for comping. Cross-stick (37) accent hits at varied positions (vel 55–80). Change every bar.
 
-afrobeats: Additional cross-stick (37) color hits beyond the skeleton's 0.5/2.5 placements. Shaker-style ghost notes.
+afrobeats: Additional cross-stick (37) color hits beyond the skeleton's 0.5/2.5 placements.
 
 halftime / neo-soul: Dense ghost snares (vel 20–45) throughout — this genre lives on ghost notes.
 
