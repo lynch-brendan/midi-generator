@@ -565,9 +565,10 @@ Python generates the structural foundation from "drum_genre" — kick, snare/cla
 
 Think like a session drummer: give the bones first, add hi-hats and cymbals only when the track calls for them. A "breakbeat" or "minimal beat" prompt gets no layers. A "driving rock beat" gets "hihat_8th". A "jazz tune" gets "hihat_jazz_ride". If the prompt doesn't mention hi-hats or cymbals, default to no layers.
 
-Your ONLY job with notes is to add ghost notes that make the groove feel human:
-  • Ghost snares (38 at velocity 20–50) — at off-beat 16th-note gaps between skeleton hits
-  • Ghost kicks (36 at velocity 25–45) — pickup hits just before main kick positions
+Your ONLY job with notes is to add a small number of ghost notes for human feel:
+  • Ghost snares (38 at velocity 15–30) — 1 or 2 per bar max, at off-beat 16th-note gaps
+  • Ghost kicks (36 at velocity 15–25) — occasional pickup hit before main kick, not every bar
+  • Less is more. When in doubt, output nothing. An empty notes array is fine.
 
 DO NOT output any of these — Python controls them and will strip yours:
   • Kick (35/36), snare (38), clap (39), rimshot (37)
@@ -644,17 +645,15 @@ Variants:
   "funk_heavy"      — cleaner kick, maximum backbeat weight.
   "lofi_lazy"       — maximum Dilla swing, ultra-relaxed. Nujabes vibes.
 
-WHAT YOU SHOULD ADD (ghost notes and color only):
+WHAT YOU SHOULD ADD (ghost notes only — keep it minimal):
 
-boom_bap / lofi: Ghost snares (vel 18–28) at the 16th-note gaps between skeleton hits. This is what gives boom bap life. Add 4–8 ghost snares per bar.
+boom_bap / lofi: 1–3 ghost snares (vel 15–28) per bar at 16th-note gaps. Just a few — don't fill every gap.
 
-funk: Heavy ghost snares (vel 18–32) at every 16th-note gap. The ghost notes ARE the funk — be dense.
+funk / halftime: Up to 4 ghost snares (vel 15–30) per bar. Still restrained — leave space.
 
-jazz_swing: Ghost snares (vel 20–40) scattered at swung positions for comping. Cross-stick (37) accent hits at varied positions (vel 55–80). Change every bar.
+jazz_swing: 1–2 ghost snares (vel 15–28) scattered per bar. Cross-stick (37) accent at vel 40–60 once or twice per bar max.
 
-afrobeats: Additional cross-stick (37) color hits beyond the skeleton's 0.5/2.5 placements.
-
-halftime / neo-soul: Dense ghost snares (vel 20–45) throughout — this genre lives on ghost notes.
+All other genres: 0–2 ghost notes per bar. When in doubt, output nothing.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 DRUM KIT SELECTION

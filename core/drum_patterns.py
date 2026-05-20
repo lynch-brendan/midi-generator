@@ -1252,21 +1252,21 @@ LAYER_LIBRARY: Dict[str, List[Dict]] = {
         {"pitch": 42, "time": 0.0,  "velocity": 82, "duration": 0.1},
         {"pitch": 42, "time": 0.25, "velocity": 55, "duration": 0.1},
         {"pitch": 42, "time": 0.5,  "velocity": 70, "duration": 0.1},
-        {"pitch": 46, "time": 1.0,  "velocity": 78, "duration": 0.3},
+        {"pitch": 46, "time": 1.0,  "velocity": 58, "duration": 0.15},
         {"pitch": 42, "time": 1.5,  "velocity": 72, "duration": 0.1},
         {"pitch": 42, "time": 1.75, "velocity": 52, "duration": 0.1},
         {"pitch": 42, "time": 2.0,  "velocity": 82, "duration": 0.1},
         {"pitch": 42, "time": 2.5,  "velocity": 65, "duration": 0.1},
-        {"pitch": 46, "time": 3.0,  "velocity": 75, "duration": 0.3},
+        {"pitch": 46, "time": 3.0,  "velocity": 55, "duration": 0.15},
         {"pitch": 42, "time": 3.5,  "velocity": 70, "duration": 0.1},
         {"pitch": 42, "time": 3.75, "velocity": 50, "duration": 0.1},
     ],
     # Open hi-hat on every offbeat — reggae, ska, dub
     "hihat_open_offbeat": [
-        {"pitch": 46, "time": 0.5,  "velocity": 82, "duration": 0.4},
-        {"pitch": 46, "time": 1.5,  "velocity": 78, "duration": 0.4},
-        {"pitch": 46, "time": 2.5,  "velocity": 82, "duration": 0.4},
-        {"pitch": 46, "time": 3.5,  "velocity": 78, "duration": 0.4},
+        {"pitch": 46, "time": 0.5,  "velocity": 62, "duration": 0.2},
+        {"pitch": 46, "time": 1.5,  "velocity": 58, "duration": 0.2},
+        {"pitch": 46, "time": 2.5,  "velocity": 62, "duration": 0.2},
+        {"pitch": 46, "time": 3.5,  "velocity": 58, "duration": 0.2},
     ],
     # Jazz ride "ding-dinga-ding" + pedal hi-hat on beats 2 and 4
     "hihat_jazz_ride": [
@@ -1281,10 +1281,10 @@ LAYER_LIBRARY: Dict[str, List[Dict]] = {
     ],
     # Open hi-hat every quarter note — house, disco, euphoric
     "hihat_open_4th": [
-        {"pitch": 46, "time": 0.0, "velocity": 85, "duration": 0.85},
-        {"pitch": 46, "time": 1.0, "velocity": 80, "duration": 0.85},
-        {"pitch": 46, "time": 2.0, "velocity": 85, "duration": 0.85},
-        {"pitch": 46, "time": 3.0, "velocity": 80, "duration": 0.85},
+        {"pitch": 46, "time": 0.0, "velocity": 62, "duration": 0.2},
+        {"pitch": 46, "time": 1.0, "velocity": 58, "duration": 0.2},
+        {"pitch": 46, "time": 2.0, "velocity": 62, "duration": 0.2},
+        {"pitch": 46, "time": 3.0, "velocity": 58, "duration": 0.2},
     ],
     # Pedal hi-hat on beats 2 and 4 only — jazz, latin, subtle pulse
     "hihat_pedal_2_4": [
@@ -1311,7 +1311,7 @@ def _build_skeleton(pattern: dict, bars: int, layers: List[str] = None) -> List[
         is_fill_bar = chosen_fill is not None and (bar + 1) % 4 == 0
         is_phrase_start = bar % 4 == 0
 
-        if crash_on_phrase and is_phrase_start:
+        if crash_on_phrase and is_phrase_start and bar > 0:
             notes.append({
                 "pitch": 49, "time": round(bar_start, 4),
                 "velocity": crash_vel, "duration": 1.0,
@@ -1377,7 +1377,7 @@ def apply_skeleton(claude_notes: List[Dict], genre: str, bars: int,
         vel = int(note.get("velocity", 100))
         if pitch not in controlled:
             filtered.append(note)
-        elif vel < 55:
+        elif vel < 35:
             filtered.append(note)  # ghost notes pass through
 
     return filtered + skeleton
