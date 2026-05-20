@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import StreamingResponse, RedirectResponse, JSONResponse
+from fastapi.responses import StreamingResponse, RedirectResponse, JSONResponse, Response
 from pydantic import BaseModel
 from datetime import datetime, timedelta, timezone
 import os
@@ -1057,8 +1057,10 @@ async def posthog_proxy(path: str, request: Request):
             headers=headers,
             timeout=10,
         )
+    if resp.status_code == 204 or not resp.content:
+        return Response(status_code=resp.status_code)
     try:
-        content = resp.json() if resp.content else {}
+        content = resp.json()
     except Exception:
         content = {}
     return JSONResponse(content=content, status_code=resp.status_code)
