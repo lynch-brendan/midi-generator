@@ -2958,9 +2958,10 @@
         }
       } catch (err) {
         if (err.name !== "AbortError") {
+          console.error("[generate error]", err.message, err);
           clearClouds();
           setSpeechBubble("what's next?");
-          setGenStatus("Something went wrong — try again?");
+          setGenStatus(`Something went wrong — try again? (${err.message})`);
         }
       } finally {
         abortController = null;
