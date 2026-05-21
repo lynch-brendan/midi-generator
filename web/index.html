@@ -3564,26 +3564,21 @@
       showToast(`Locked to ${v.key || ''} · ${v.tempo} BPM`);
     }
 
-    async function cloudDownloadBoth(e, idx) {
+    function cloudDownloadBoth(e, idx) {
       e.stopPropagation();
       const v = currentVariations[idx];
       if (!v) return;
-      const download = async (url) => {
+      const download = (url) => {
         if (!url) return;
-        const proxyUrl = `/api/download?url=${encodeURIComponent(url)}`;
-        const resp = await fetch(proxyUrl);
-        if (!resp.ok) { console.error('[download] failed', resp.status, url); return; }
-        const blob = await resp.blob();
         const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
+        a.href = `/api/download?url=${encodeURIComponent(url)}`;
         a.download = url.split('/').pop();
         document.body.appendChild(a); a.click(); a.remove();
-        URL.revokeObjectURL(a.href);
       };
-      if (v.midi_url) await download(v.midi_url);
-      if (v.wav_url) await download(v.wav_url);
+      if (v.midi_url) download(v.midi_url);
+      if (v.wav_url) download(v.wav_url);
       if (v.drum_stems) {
-        for (const url of Object.values(v.drum_stems)) await download(url);
+        for (const url of Object.values(v.drum_stems)) download(url);
       }
       posthog.capture('file_downloaded', { file_type: v.is_drums ? 'drums+stems' : 'both', source: 'cloud' });
     }
@@ -3698,18 +3693,12 @@
       posthog.capture('file_downloaded', { file_type: type });
       e.preventDefault();
       try {
-        const proxyUrl = `/api/download?url=${encodeURIComponent(a.href)}`;
-        const resp = await fetch(proxyUrl);
-        if (!resp.ok) { window.open(a.href); return; }
-        const blob = await resp.blob();
-        const url = URL.createObjectURL(blob);
         const tmp = document.createElement('a');
-        tmp.href = url;
+        tmp.href = `/api/download?url=${encodeURIComponent(a.href)}`;
         tmp.download = a.href.split('/').pop() || 'variation.mid';
         document.body.appendChild(tmp);
         tmp.click();
         tmp.remove();
-        URL.revokeObjectURL(url);
       } catch (_) {
         window.open(a.href);
       }
