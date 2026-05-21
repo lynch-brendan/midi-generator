@@ -1025,8 +1025,11 @@ async def proxy_download(url: str):
     import httpx
     from fastapi.responses import StreamingResponse as SR
     public_base = os.environ.get("R2_PUBLIC_URL", "").rstrip("/")
-    if not url.startswith(public_base + "/") and not url.startswith("/output/"):
+    is_r2 = public_base and url.startswith(public_base + "/")
+    is_local = url.startswith("/output/")
+    if not is_r2 and not is_local:
         raise HTTPException(status_code=400, detail="Invalid download URL")
+    print(f"[download] {'r2' if is_r2 else 'local'}: {url.split('/')[-1]}")
     if url.startswith("/output/"):
         # Local file — serve directly
         local_path = OUTPUT_DIR / url[len("/output/"):]
