@@ -2239,178 +2239,13 @@
       // Play a silent audio element during the user gesture so iOS marks this page
       // as having user-initiated audio, allowing subsequent play() calls to succeed.
       try { new Audio().play().catch(() => {}); } catch(_) {}
-      museSynth.init().catch(() => {});
     }
 
     // ==========================================================================
     // Audio playback (HTML5 Audio via server-rendered WAV files)
     // ==========================================================================
 
-    // ─── Web Audio Synth Engine ───────────────────────────────────────────────
-
-    const SYNTH_PATCHES = {
-      bright_lead: {
-        oscillators: [{type:'sawtooth',detune:-10},{type:'sawtooth',detune:0},{type:'sawtooth',detune:10}],
-        gain: 0.28, attack: 0.012, decay: 0.15, sustain: 0.68, release: 0.32,
-        filter: {type:'lowpass', freq:3800, Q:1.4},
-        chorus: true, reverbAmount: 0.32,
-      },
-      warm_pad: {
-        oscillators: [{type:'sawtooth',detune:-7},{type:'sine',detune:0},{type:'sawtooth',detune:7}],
-        gain: 0.26, attack: 0.42, decay: 0.35, sustain: 0.78, release: 0.9,
-        filter: {type:'lowpass', freq:2200, Q:0.8},
-        chorus: true, reverbAmount: 0.52,
-      },
-      synth_bass: {
-        oscillators: [{type:'sawtooth',detune:0},{type:'square',detune:0}],
-        gain: 0.32, attack: 0.006, decay: 0.12, sustain: 0.58, release: 0.16,
-        filter: {type:'lowpass', freq:900, Q:2.2},
-        chorus: false, reverbAmount: 0.08,
-      },
-      pluck: {
-        oscillators: [{type:'sawtooth',detune:-5},{type:'sawtooth',detune:5}],
-        gain: 0.32, attack: 0.006, decay: 0.28, sustain: 0.18, release: 0.22,
-        filter: {type:'lowpass', freq:4200, Q:1.1},
-        chorus: false, reverbAmount: 0.28,
-      },
-    };
-
-    function getSynthPatch(gmPatch, isDrums) {
-      if (isDrums) return null;
-      if (gmPatch >= 80 && gmPatch <= 87) return 'bright_lead';
-      if (gmPatch >= 88 && gmPatch <= 95) return 'warm_pad';
-      if (gmPatch >= 32 && gmPatch <= 39) return 'synth_bass';
-      return null;
-    }
-
-    class MuseSynth {
-      constructor() { this._initPromise = null; this._ctx = null; this._master = null; this._reverb = null; this._lfo = null; }
-
-      init() {
-        if (!this._initPromise) this._initPromise = this._setup();
-        return this._initPromise;
-      }
-
-      async _setup() {
-        this._ctx = new (window.AudioContext || window.webkitAudioContext)();
-        if (this._ctx.state === 'suspended') await this._ctx.resume();
-        this._master = this._ctx.createGain();
-        this._master.gain.value = 0.82;
-        this._master.connect(this._ctx.destination);
-        // Reverb — synthetic decaying noise impulse
-        const sr = this._ctx.sampleRate, len = Math.floor(sr * 2.2);
-        const ir = this._ctx.createBuffer(2, len, sr);
-        for (let c = 0; c < 2; c++) {
-          const d = ir.getChannelData(c);
-          for (let i = 0; i < len; i++) d[i] = (Math.random()*2-1) * Math.pow(1 - i/len, 2.2);
-        }
-        this._reverb = this._ctx.createConvolver();
-        this._reverb.buffer = ir;
-        const reverbOut = this._ctx.createGain();
-        reverbOut.gain.value = 0.9;
-        this._reverb.connect(reverbOut);
-        reverbOut.connect(this._master);
-        // Shared LFO for chorus
-        this._lfo = this._ctx.createOscillator();
-        this._lfo.type = 'sine';
-        this._lfo.frequency.value = 0.38;
-        this._lfo.start();
-      }
-
-      setVolume(v) { if (this._master) this._master.gain.value = v * 0.82; }
-
-      play(notes, tempo, patchName, onEnd) {
-        const patch = SYNTH_PATCHES[patchName];
-        if (!patch || !notes || !notes.length) { setTimeout(onEnd, 100); return {stop:()=>{}}; }
-        const handle = { _timer: null, _nodes: [], _stopped: false,
-          stop() {
-            this._stopped = true;
-            clearTimeout(this._timer);
-            const t = museSynth._ctx ? museSynth._ctx.currentTime : 0;
-            this._nodes.forEach(n => { try { if (n.gain) n.gain.cancelScheduledValues(t), n.gain.setTargetAtTime(0.0001,t,0.015); if (n.stop) n.stop(t+0.06); else n.disconnect(); } catch(_){} });
-            this._nodes = [];
-          }
-        };
-        this.init().then(() => {
-          if (handle._stopped) return;
-          const ctx = this._ctx;
-          const bps = tempo / 60;
-          const t0 = ctx.currentTime + 0.08;
-          const nodes = [];
-          let maxEnd = t0;
-
-          for (const note of notes) {
-            const start = t0 + note.time / bps;
-            const dur   = Math.max(0.04, note.duration / bps);
-            const vel   = Math.min(1, (note.velocity || 80) / 100);
-            const freq  = 440 * Math.pow(2, (note.pitch - 69) / 12);
-            const end   = start + dur + patch.release + 0.12;
-            if (end > maxEnd) maxEnd = end;
-
-            const env = ctx.createGain();
-            env.gain.setValueAtTime(0.0001, start);
-            env.gain.linearRampToValueAtTime(vel * patch.gain, start + patch.attack);
-            env.gain.setTargetAtTime(vel * patch.gain * patch.sustain, start + patch.attack + patch.decay, patch.decay / 3);
-            env.gain.setTargetAtTime(0.0001, start + dur, patch.release / 4);
-            nodes.push(env);
-
-            for (const od of patch.oscillators) {
-              const osc = ctx.createOscillator();
-              osc.type = od.type;
-              osc.frequency.value = freq;
-              osc.detune.value = od.detune;
-              osc.connect(env);
-              osc.start(start);
-              osc.stop(start + dur + patch.release + 0.15);
-              nodes.push(osc);
-            }
-
-            const filt = ctx.createBiquadFilter();
-            filt.type = patch.filter.type;
-            filt.frequency.value = patch.filter.freq;
-            filt.Q.value = patch.filter.Q;
-            env.connect(filt);
-            nodes.push(filt);
-
-            if (patch.chorus) {
-              const delay = ctx.createDelay(0.05);
-              delay.delayTime.value = 0.019;
-              const lfoG = ctx.createGain();
-              lfoG.gain.value = 0.007;
-              this._lfo.connect(lfoG);
-              lfoG.connect(delay.delayTime);
-              const wetG = ctx.createGain();
-              wetG.gain.value = 0.38;
-              filt.connect(delay);
-              delay.connect(wetG);
-              wetG.connect(this._master);
-              nodes.push(delay, lfoG, wetG);
-            }
-
-            filt.connect(this._master);
-
-            if (patch.reverbAmount > 0) {
-              const send = ctx.createGain();
-              send.gain.value = patch.reverbAmount;
-              filt.connect(send);
-              send.connect(this._reverb);
-              nodes.push(send);
-            }
-          }
-
-          handle._nodes = nodes;
-          handle._timer = setTimeout(onEnd, (maxEnd - ctx.currentTime) * 1000 + 250);
-        });
-        return handle;
-      }
-    }
-
-    const museSynth = new MuseSynth();
-
-    // ─── Playback state ───────────────────────────────────────────────────────
-
     let _activeAudio = null;
-    let _activeSynth = null;
     let _playingCloudIdx = -1;
     let _audioGen = 0; // incremented on every stopPlayback to invalidate pending onEnd callbacks
     let _globalVolume = 1;
@@ -2419,7 +2254,6 @@
       _globalVolume = parseFloat(val);
       if (_activeAudio) _activeAudio.volume = _globalVolume;
       if (sessionAudio) sessionAudio.volume = _globalVolume;
-      museSynth.setVolume(_globalVolume);
     }
 
     function updateCloudPlayBtn(idx, icon) {
@@ -2434,40 +2268,28 @@
         try { _activeAudio.pause(); _activeAudio.src = ''; } catch(_) {}
         _activeAudio = null;
       }
-      if (_activeSynth) { _activeSynth.stop(); _activeSynth = null; }
       if (_playingCloudIdx >= 0) { updateCloudPlayBtn(_playingCloudIdx, '▶'); _playingCloudIdx = -1; }
       const btn = document.querySelector('.play-btn');
       if (btn) btn.textContent = '▶ Play';
     }
 
     function playVariation(v, onEnd, cloudIdx = -1) {
-      if (!v) { if (onEnd) onEnd(); return; }
+      if (!v || !v.wav_url) { if (onEnd) onEnd(); return; }
       stopPlayback();
       const gen = _audioGen;
-      const setBtn = t => { const b = document.querySelector('.play-btn'); if (b) b.textContent = t; };
-      const finish = () => {
-        if (_audioGen !== gen) return;
-        _activeAudio = null; _activeSynth = null;
-        if (_playingCloudIdx === cloudIdx) { _playingCloudIdx = -1; if (cloudIdx >= 0) updateCloudPlayBtn(cloudIdx, '▶'); }
-        setBtn('▶ Play');
-        if (onEnd) onEnd();
-      };
-
-      const synthPatch = getSynthPatch(v.gm_patch, v.is_drums);
-      if (synthPatch && v.notes && v.notes.length) {
-        _playingCloudIdx = cloudIdx;
-        if (cloudIdx >= 0) updateCloudPlayBtn(cloudIdx, '⏸');
-        setBtn('⏸ Pause');
-        _activeSynth = museSynth.play(v.notes, v.tempo, synthPatch, finish);
-        return;
-      }
-
-      if (!v.wav_url) { if (onEnd) onEnd(); return; }
       const audio = new Audio(v.wav_url);
       audio.volume = _globalVolume;
       _activeAudio = audio;
       _playingCloudIdx = cloudIdx;
       if (cloudIdx >= 0) updateCloudPlayBtn(cloudIdx, '⏸');
+      const setBtn = t => { const b = document.querySelector('.play-btn'); if (b) b.textContent = t; };
+      const finish = () => {
+        if (_audioGen !== gen) return; // interrupted by a newer play — don't chain
+        _activeAudio = null;
+        if (_playingCloudIdx === cloudIdx) { _playingCloudIdx = -1; if (cloudIdx >= 0) updateCloudPlayBtn(cloudIdx, '▶'); }
+        setBtn('▶ Play');
+        if (onEnd) onEnd();
+      };
       audio.addEventListener('ended', finish);
       audio.addEventListener('error', finish);
       setBtn('⏸ Pause');
