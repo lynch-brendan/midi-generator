@@ -12,7 +12,7 @@ from typing import Optional
 from concurrent.futures import ThreadPoolExecutor
 from sqlalchemy import text
 
-_wav_executor = ThreadPoolExecutor(max_workers=4)
+_wav_executor = ThreadPoolExecutor(max_workers=2)
 
 # Configurable generation limits (env-overridable)
 ANON_LIFETIME_LIMIT = int(os.environ.get("ANON_LIFETIME_LIMIT", "5"))
