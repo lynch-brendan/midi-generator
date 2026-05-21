@@ -10,9 +10,11 @@ import os
 import re
 from typing import Optional
 from concurrent.futures import ThreadPoolExecutor
+import threading
 from sqlalchemy import text
 
 _wav_executor = ThreadPoolExecutor(max_workers=2)
+_generation_semaphore = threading.Semaphore(6)  # max concurrent generations
 
 # Configurable generation limits (env-overridable)
 ANON_LIFETIME_LIMIT = int(os.environ.get("ANON_LIFETIME_LIMIT", "5"))
@@ -41,9 +43,9 @@ OUTPUT_DIR = Path(__file__).parent / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 def _cleanup_output_dir():
-    """Delete output folders older than 2 hours to prevent disk fill."""
+    """Delete output folders older than 30 minutes (files are on R2, local copies are temp)."""
     import shutil, time
-    cutoff = time.time() - 2 * 3600
+    cutoff = time.time() - 30 * 60
     try:
         for folder in OUTPUT_DIR.iterdir():
             if folder.is_dir() and folder.stat().st_mtime < cutoff:
@@ -88,7 +90,7 @@ def _start_cleanup_thread():
     import threading, time
     def loop():
         while True:
-            time.sleep(1800)  # every 30 minutes
+            time.sleep(600)  # every 10 minutes
             _cleanup_output_dir()
             _cleanup_r2_generated()
     t = threading.Thread(target=loop, daemon=True)
@@ -443,6 +445,10 @@ async def generate(req: GenerateRequest, request: Request, db=Depends(get_db)):
 
     def event_stream():
         nonlocal gm_patch, is_drums
+        acquired = _generation_semaphore.acquire(timeout=10)
+        if not acquired:
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Server busy, try again in a moment'})}\n\n"
+            return
         try:
             for event in stream_thinking(req.prompt):
                 yield f"data: {json.dumps(event)}\n\n"
@@ -463,6 +469,8 @@ async def generate(req: GenerateRequest, request: Request, db=Depends(get_db)):
             import traceback
             print(f"[generate error] {e}\n{traceback.format_exc()}")
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+        finally:
+            _generation_semaphore.release()
 
     response = StreamingResponse(event_stream(), media_type="text/event-stream")
     if user is None and not is_admin_ip:
