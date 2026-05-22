@@ -3112,7 +3112,7 @@
       const item = sessionItems[i];
       if (!item) return;
       const dl = async (url) => {
-        const resp = await fetch(url);
+        const resp = await fetch(`/api/download?url=${encodeURIComponent(url)}`);
         const blob = await resp.blob();
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
@@ -3568,12 +3568,15 @@
       e.stopPropagation();
       const v = currentVariations[idx];
       if (!v) return;
-      const download = (url) => {
+      const download = async (url) => {
         if (!url) return;
+        const resp = await fetch(`/api/download?url=${encodeURIComponent(url)}`);
+        const blob = await resp.blob();
         const a = document.createElement('a');
-        a.href = `/api/download?url=${encodeURIComponent(url)}`;
+        a.href = URL.createObjectURL(blob);
         a.download = url.split('/').pop();
         document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(a.href);
       };
       if (v.midi_url) download(v.midi_url);
       if (v.wav_url) download(v.wav_url);
@@ -3689,16 +3692,20 @@
     document.addEventListener('click', async (e) => {
       const a = e.target.closest('a[download]');
       if (!a) return;
+      if (a.href.startsWith('blob:')) return;
       const type = a.href.includes('.mid') ? 'midi' : 'wav';
       posthog.capture('file_downloaded', { file_type: type });
       e.preventDefault();
       try {
+        const resp = await fetch(`/api/download?url=${encodeURIComponent(a.href)}`);
+        const blob = await resp.blob();
         const tmp = document.createElement('a');
-        tmp.href = `/api/download?url=${encodeURIComponent(a.href)}`;
+        tmp.href = URL.createObjectURL(blob);
         tmp.download = a.href.split('/').pop() || 'variation.mid';
         document.body.appendChild(tmp);
         tmp.click();
         tmp.remove();
+        URL.revokeObjectURL(tmp.href);
       } catch (_) {
         window.open(a.href);
       }
