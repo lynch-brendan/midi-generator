@@ -2966,7 +2966,7 @@
       } finally {
         abortController = null;
         btn.textContent = "Generate";
-        btn.onclick = generate;
+        btn.onclick = () => generate();
         btn.classList.remove("generating");
         clearSeed();
         if (currentUser) refreshUsage();
