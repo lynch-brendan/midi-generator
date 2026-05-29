@@ -1852,6 +1852,233 @@
 
     .btn-confirm-save-project:hover { opacity: 0.85; }
     .btn-confirm-save-project:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* -----------------------------------------------------------------------
+       Loop builder (mini DAW)
+    ----------------------------------------------------------------------- */
+
+    .daw-section {
+      width: 100%;
+      max-width: 980px;
+      margin: 80px auto 0;
+      padding: 18px 20px 22px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      position: relative;
+    }
+    .daw-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .daw-title {
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 1.05rem;
+      color: var(--text);
+    }
+    .daw-sub {
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin-left: 10px;
+      font-weight: 400;
+    }
+    .daw-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .daw-bpm-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 4px 10px;
+    }
+    .daw-control-label {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .daw-bpm {
+      width: 44px;
+      border: none;
+      background: transparent;
+      font-size: 0.85rem;
+      color: var(--text);
+      text-align: center;
+      outline: none;
+      -moz-appearance: textfield;
+    }
+    .daw-bpm::-webkit-outer-spin-button,
+    .daw-bpm::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+    .daw-btn {
+      border: 1px solid var(--border);
+      background: var(--bg-input);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 6px 14px;
+      font-size: 0.82rem;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s, opacity 0.15s;
+    }
+    .daw-btn:hover { background: var(--bg); }
+    .daw-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .daw-play.playing { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+    .daw-clear { color: var(--text-muted); }
+
+    .daw-grid-wrap {
+      background: var(--bg);
+      border: 1px solid var(--border-soft);
+      border-radius: 10px;
+      padding: 8px;
+    }
+    .daw-ruler {
+      display: grid;
+      grid-template-columns: 70px repeat(16, 1fr);
+      height: 16px;
+      margin-bottom: 4px;
+    }
+    .daw-ruler-cell {
+      font-size: 0.6rem;
+      color: var(--text-dim);
+      text-align: left;
+      padding-left: 4px;
+    }
+    .daw-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .daw-track {
+      display: grid;
+      grid-template-columns: 70px 1fr;
+      align-items: stretch;
+      height: 44px;
+    }
+    .daw-track-label {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      padding-left: 4px;
+      letter-spacing: 0.04em;
+    }
+    .daw-track-cells {
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(16, 1fr);
+      background: var(--bg-card);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .daw-cell {
+      border-right: 1px solid var(--border-soft);
+      transition: background 0.1s;
+    }
+    .daw-cell:last-child { border-right: none; }
+    .daw-cell.beat-4 { border-right-color: var(--border); }
+    .daw-track-cells.drag-active .daw-cell.drop-target { background: rgba(44, 36, 32, 0.12); }
+    .daw-track-cells.drag-invalid .daw-cell.drop-target { background: rgba(184, 64, 64, 0.18); }
+
+    .daw-clip {
+      position: absolute;
+      top: 3px;
+      bottom: 3px;
+      background: var(--accent);
+      color: var(--accent-fg);
+      border-radius: 5px;
+      padding: 4px 22px 4px 8px;
+      font-size: 0.7rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      overflow: hidden;
+      user-select: none;
+      box-sizing: border-box;
+    }
+    .daw-clip-name {
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.2;
+    }
+    .daw-clip-meta {
+      font-size: 0.6rem;
+      opacity: 0.7;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.2;
+    }
+    .daw-clip-remove {
+      position: absolute;
+      top: 2px;
+      right: 4px;
+      font-size: 0.8rem;
+      line-height: 1;
+      opacity: 0.65;
+      background: none;
+      border: none;
+      color: inherit;
+      cursor: pointer;
+      padding: 2px 4px;
+    }
+    .daw-clip-remove:hover { opacity: 1; }
+
+    .daw-playhead {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: var(--red);
+      left: 0%;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.15s;
+    }
+    .daw-playhead.visible { opacity: 0.9; }
+
+    .daw-empty-hint {
+      margin-top: 10px;
+      font-size: 0.74rem;
+      color: var(--text-muted);
+      text-align: center;
+    }
+    .daw-toast {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: -16px;
+      background: var(--accent);
+      color: var(--accent-fg);
+      padding: 7px 14px;
+      border-radius: 7px;
+      font-size: 0.78rem;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s, bottom 0.2s;
+      white-space: nowrap;
+      box-shadow: 0 6px 16px rgba(0,0,0,0.15);
+    }
+    .daw-toast.visible {
+      opacity: 1;
+      bottom: -22px;
+    }
+
+    /* Disable entirely on narrow screens */
+    @media (max-width: 720px) {
+      .daw-section { display: none !important; }
+    }
   </style>
 </head>
 <body>
@@ -2063,6 +2290,27 @@
 
       <p class="status" id="status"></p>
 
+      <!-- Loop builder (mini DAW) — desktop only -->
+      <div class="daw-section" id="dawSection">
+        <div class="daw-header">
+          <div class="daw-title">Loop builder<span class="daw-sub">drag variations in to layer · 4 tracks · 16 bars</span></div>
+          <div class="daw-controls">
+            <div class="daw-bpm-group">
+              <span class="daw-control-label">BPM</span>
+              <input type="number" class="daw-bpm" id="dawBpm" min="40" max="240" placeholder="—" oninput="dawSetBpmFromInput()" />
+            </div>
+            <button class="daw-btn daw-play" id="dawPlayBtn" onclick="dawTogglePlay()">▶ Play</button>
+            <button class="daw-btn daw-clear" id="dawClearBtn" onclick="dawClear()">Clear</button>
+          </div>
+        </div>
+        <div class="daw-grid-wrap">
+          <div class="daw-ruler" id="dawRuler"></div>
+          <div class="daw-grid" id="dawGrid"></div>
+        </div>
+        <div class="daw-empty-hint" id="dawHint">Drag any variation cloud or session item into a track. The first clip sets the BPM.</div>
+        <div class="daw-toast" id="dawToast"></div>
+      </div>
+
     </div>
   </div>
 
@@ -2271,6 +2519,8 @@
       if (_playingCloudIdx >= 0) { updateCloudPlayBtn(_playingCloudIdx, '▶'); _playingCloudIdx = -1; }
       const btn = document.querySelector('.play-btn');
       if (btn) btn.textContent = '▶ Play';
+      // Two-way mute: stop the loop builder if it's running
+      if (typeof dawIsPlaying === 'function' && dawIsPlaying()) dawStop();
     }
 
     function playVariation(v, onEnd, cloudIdx = -1) {
@@ -2605,6 +2855,9 @@
       cloud.className = "thought-cloud visible";
       const metaParts = [variation.key, variation.tempo ? variation.tempo + ' BPM' : null].filter(Boolean);
       cloud.innerHTML = `<div class="cloud-top"><span class="cloud-name">${escHtml(variation.name)}</span><button class="cloud-play" title="Play">▶</button></div>${metaParts.length ? `<span class="cloud-meta">${escHtml(metaParts.join(' · '))}</span>` : ''}<div class="cloud-action-strip"><div class="cloud-action-btn cloud-keep-btn" onclick="heartCloud(event,${idx})"><span>♥</span><span class="btn-label">keep this</span></div><div class="cloud-action-btn cloud-more-btn" onclick="cloudMoreLikeThis(event,${idx})"><span>✦</span><span class="btn-label">build on this</span></div><div class="cloud-action-btn cloud-lock-btn" onclick="cloudLockKeyTempo(event,${idx})"><span>🔗</span><span class="btn-label">lock key & bpm</span></div><div class="cloud-action-btn cloud-dl-btn" onclick="cloudDownloadBoth(event,${idx})"><span>↓</span><span class="btn-label">download</span></div></div>`;
+      cloud.draggable = true;
+      cloud.addEventListener("dragstart", (e) => dawHandleDragStart(e, "cloud", idx));
+      cloud.addEventListener("dragend", dawHandleDragEnd);
       cloud.addEventListener("click", () => selectCloud(idx));
       cloud.querySelector(".cloud-play").addEventListener("click", (e) => {
         e.stopPropagation();
@@ -3091,6 +3344,9 @@
         const el = document.createElement('div');
         const isSeeded = activeSeeds.some(s => s.midi_url === item.midi_url);
         el.className = 'session-item' + (isSeeded ? ' seed-active' : '');
+        el.draggable = true;
+        el.addEventListener('dragstart', (e) => dawHandleDragStart(e, 'session', i));
+        el.addEventListener('dragend', dawHandleDragEnd);
         el.innerHTML = `
           <span class="session-item-emoji" onclick="openSessionItemDetail(${i})" style="cursor:pointer">${emoji || '🎵'}</span>
           <div class="session-item-info" onclick="openSessionItemDetail(${i})" style="cursor:pointer">
@@ -3710,6 +3966,426 @@
         window.open(a.href);
       }
     });
+
+    // ==========================================================================
+    // Loop builder (mini DAW) — Web Audio API
+    // ==========================================================================
+    // 4 tracks × 16 bars. Drag variation clouds or session items into tracks.
+    // Section has its own BPM (independent from the project lock). First clip
+    // sets BPM; subsequent drops must match. Overlaps and overflows are blocked.
+    // Audio plays via Web Audio API, fetched through /api/download to avoid CORS.
+
+    const DAW_BARS = 16;
+    const DAW_TRACKS = 4;
+
+    let _dawClips = [];          // [{trackIdx, startBar, bars, variation}]
+    let _dawBpm = null;
+    let _dawCtx = null;
+    let _dawBuffers = new Map(); // wav_url -> AudioBuffer
+    let _dawPlaying = false;
+    let _dawSources = [];        // currently-scheduled AudioBufferSourceNodes
+    let _dawLoopStart = 0;       // ctx.currentTime when loop iteration 0 starts
+    let _dawNextSchedule = 0;    // next ctx time at which a fresh iteration should be scheduled
+    let _dawSchedulerInterval = null;
+    let _dawPlayheadRaf = null;
+    let _dawDragVariation = null;
+    let _dawClipIdSeq = 0;
+
+    function dawIsPlaying() { return _dawPlaying; }
+
+    function _dawIsDesktop() { return window.matchMedia('(min-width: 721px)').matches; }
+
+    function _dawBarSeconds() {
+      if (!_dawBpm) return null;
+      return (4 * 60) / _dawBpm;
+    }
+
+    function _dawProxyUrl(url) {
+      if (!url) return null;
+      return '/api/download?url=' + encodeURIComponent(url);
+    }
+
+    function dawInit() {
+      if (!_dawIsDesktop()) {
+        const sec = document.getElementById('dawSection');
+        if (sec) sec.style.display = 'none';
+        return;
+      }
+      const ruler = document.getElementById('dawRuler');
+      if (!ruler) return;
+      // Build ruler: empty label cell + 16 bar numbers
+      ruler.innerHTML = '<div class="daw-ruler-cell"></div>' +
+        Array.from({length: DAW_BARS}, (_, i) => `<div class="daw-ruler-cell">${i+1}</div>`).join('');
+
+      const grid = document.getElementById('dawGrid');
+      grid.innerHTML = '';
+      for (let t = 0; t < DAW_TRACKS; t++) {
+        const track = document.createElement('div');
+        track.className = 'daw-track';
+        const label = document.createElement('div');
+        label.className = 'daw-track-label';
+        label.textContent = `Track ${t+1}`;
+        const cells = document.createElement('div');
+        cells.className = 'daw-track-cells';
+        cells.dataset.track = String(t);
+        for (let b = 0; b < DAW_BARS; b++) {
+          const cell = document.createElement('div');
+          cell.className = 'daw-cell' + ((b+1) % 4 === 0 ? ' beat-4' : '');
+          cell.dataset.bar = String(b);
+          cells.appendChild(cell);
+        }
+        // Playhead per track
+        const ph = document.createElement('div');
+        ph.className = 'daw-playhead';
+        cells.appendChild(ph);
+        cells.addEventListener('dragover', (e) => _dawDragOver(e, t));
+        cells.addEventListener('dragleave', (e) => _dawDragLeave(e));
+        cells.addEventListener('drop', (e) => _dawDrop(e, t));
+        track.appendChild(label);
+        track.appendChild(cells);
+        grid.appendChild(track);
+      }
+      _dawRender();
+    }
+
+    function dawHandleDragStart(e, source, idx) {
+      if (!_dawIsDesktop()) return;
+      const v = source === 'cloud' ? currentVariations[idx] : sessionItems[idx];
+      if (!v) return;
+      _dawDragVariation = v;
+      try {
+        e.dataTransfer.effectAllowed = 'copy';
+        e.dataTransfer.setData('text/plain', 'muse-variation');
+      } catch(_) {}
+      document.querySelectorAll('.daw-track-cells').forEach(c => c.classList.add('drag-active'));
+    }
+
+    function dawHandleDragEnd() {
+      _dawDragVariation = null;
+      document.querySelectorAll('.daw-track-cells').forEach(c => {
+        c.classList.remove('drag-active');
+        c.classList.remove('drag-invalid');
+      });
+      document.querySelectorAll('.daw-cell.drop-target').forEach(c => c.classList.remove('drop-target'));
+    }
+
+    function _dawHoverBar(cellsEl, clientX) {
+      const rect = cellsEl.getBoundingClientRect();
+      const x = clientX - rect.left;
+      return Math.max(0, Math.min(DAW_BARS - 1, Math.floor((x / rect.width) * DAW_BARS)));
+    }
+
+    function _dawDragOver(e, trackIdx) {
+      if (!_dawDragVariation) return;
+      e.preventDefault();
+      try { e.dataTransfer.dropEffect = 'copy'; } catch(_) {}
+      const cells = e.currentTarget;
+      const startBar = _dawHoverBar(cells, e.clientX);
+      const v = _dawDragVariation;
+      const bars = v && v.bars ? v.bars : null;
+      const span = bars || 1;
+      // Highlight the prospective span
+      cells.querySelectorAll('.daw-cell.drop-target').forEach(c => c.classList.remove('drop-target'));
+      const cellEls = cells.querySelectorAll('.daw-cell');
+      for (let i = startBar; i < Math.min(DAW_BARS, startBar + span); i++) {
+        if (cellEls[i]) cellEls[i].classList.add('drop-target');
+      }
+      cells.dataset.hoverBar = String(startBar);
+      // Mark invalid if it would overflow or overlap (visual hint)
+      const wouldOverflow = bars && (startBar + bars > DAW_BARS);
+      const wouldOverlap = bars && _dawClips.some(c => c.trackIdx === trackIdx &&
+        !(startBar + bars <= c.startBar || startBar >= c.startBar + c.bars));
+      const wouldMismatchBpm = _dawBpm !== null && v.tempo && v.tempo !== _dawBpm;
+      const invalid = wouldOverflow || wouldOverlap || wouldMismatchBpm;
+      cells.classList.toggle('drag-invalid', !!invalid);
+    }
+
+    function _dawDragLeave(e) {
+      const cells = e.currentTarget;
+      cells.querySelectorAll('.daw-cell.drop-target').forEach(c => c.classList.remove('drop-target'));
+      cells.classList.remove('drag-invalid');
+    }
+
+    function _dawDrop(e, trackIdx) {
+      e.preventDefault();
+      const cells = e.currentTarget;
+      const startBar = parseInt(cells.dataset.hoverBar || '0', 10);
+      const v = _dawDragVariation;
+      dawHandleDragEnd();
+      if (!v) return;
+      _dawValidateAndPlace(trackIdx, startBar, v);
+    }
+
+    function _dawValidateAndPlace(trackIdx, startBar, v) {
+      const bars = v.bars;
+      if (!bars) {
+        dawToast("sorry — can't tell how long that clip is");
+        return;
+      }
+      if (!v.tempo) {
+        dawToast("sorry — that clip has no tempo");
+        return;
+      }
+      if (!v.wav_url) {
+        dawToast("sorry — that clip has no audio yet");
+        return;
+      }
+      if (_dawBpm === null) {
+        _dawSetBpm(v.tempo);
+      } else if (_dawBpm !== v.tempo) {
+        dawToast(`sorry — section is ${_dawBpm} BPM, this clip is ${v.tempo}`);
+        return;
+      }
+      if (startBar + bars > DAW_BARS) {
+        dawToast(`sorry — this is ${bars} bars and won't fit at bar ${startBar+1}`);
+        return;
+      }
+      const overlap = _dawClips.some(c => c.trackIdx === trackIdx &&
+        !(startBar + bars <= c.startBar || startBar >= c.startBar + c.bars));
+      if (overlap) {
+        dawToast("sorry — overlaps another clip on this track");
+        return;
+      }
+      _dawClips.push({
+        id: ++_dawClipIdSeq,
+        trackIdx,
+        startBar,
+        bars,
+        variation: {
+          wav_url: v.wav_url,
+          name: v.name,
+          instrument: v.instrument || null,
+          tempo: v.tempo,
+          key: v.key || null,
+          bars: bars,
+        },
+      });
+      _dawRender();
+      if (_dawPlaying) _dawRescheduleAll();
+    }
+
+    function _dawRender() {
+      const grid = document.getElementById('dawGrid');
+      if (!grid) return;
+      // Remove existing clips
+      grid.querySelectorAll('.daw-clip').forEach(el => el.remove());
+      // Add clips
+      _dawClips.forEach((clip) => {
+        const cells = grid.querySelector(`.daw-track-cells[data-track="${clip.trackIdx}"]`);
+        if (!cells) return;
+        const el = document.createElement('div');
+        el.className = 'daw-clip';
+        const leftPct = (clip.startBar / DAW_BARS) * 100;
+        const widthPct = (clip.bars / DAW_BARS) * 100;
+        el.style.left = leftPct + '%';
+        el.style.width = `calc(${widthPct}% - 2px)`;
+        const meta = [clip.variation.instrument, clip.bars + ' bar' + (clip.bars === 1 ? '' : 's')].filter(Boolean).join(' · ');
+        el.innerHTML = `<div class="daw-clip-name">${escHtml(clip.variation.name || 'clip')}</div><div class="daw-clip-meta">${escHtml(meta)}</div><button class="daw-clip-remove" title="Remove" onclick="dawRemoveClip(${clip.id})">×</button>`;
+        cells.appendChild(el);
+      });
+      // Hint visibility
+      const hint = document.getElementById('dawHint');
+      if (hint) hint.style.display = _dawClips.length ? 'none' : 'block';
+    }
+
+    function dawRemoveClip(id) {
+      _dawClips = _dawClips.filter(c => c.id !== id);
+      _dawRender();
+      if (_dawPlaying) _dawRescheduleAll();
+      // If empty, clear BPM lock so a new first drop can set it
+      if (_dawClips.length === 0) {
+        _dawBpm = null;
+        const inp = document.getElementById('dawBpm');
+        if (inp) inp.value = '';
+      }
+    }
+
+    function dawClear() {
+      _dawClips = [];
+      _dawBpm = null;
+      const inp = document.getElementById('dawBpm');
+      if (inp) inp.value = '';
+      _dawRender();
+      if (_dawPlaying) dawStop();
+    }
+
+    function _dawSetBpm(bpm) {
+      _dawBpm = bpm;
+      const inp = document.getElementById('dawBpm');
+      if (inp) inp.value = String(bpm);
+    }
+
+    function dawSetBpmFromInput() {
+      const inp = document.getElementById('dawBpm');
+      const v = parseInt(inp.value, 10);
+      if (!v || v < 40 || v > 240) {
+        _dawBpm = null;
+        return;
+      }
+      // Reject manual change if existing clips would no longer match
+      if (_dawClips.length && _dawClips.some(c => c.variation.tempo !== v)) {
+        dawToast("can't change BPM while clips don't match — clear first");
+        inp.value = _dawBpm ? String(_dawBpm) : '';
+        return;
+      }
+      _dawBpm = v;
+      if (_dawPlaying) _dawRescheduleAll();
+    }
+
+    async function _dawDecodeBuffers() {
+      const urls = [...new Set(_dawClips.map(c => c.variation.wav_url))].filter(Boolean);
+      await Promise.all(urls.map(async (url) => {
+        if (_dawBuffers.has(url)) return;
+        try {
+          const resp = await fetch(_dawProxyUrl(url));
+          if (!resp.ok) throw new Error('fetch failed');
+          const arr = await resp.arrayBuffer();
+          const buf = await _dawCtx.decodeAudioData(arr);
+          _dawBuffers.set(url, buf);
+        } catch (err) {
+          console.warn('[daw] decode failed for', url, err);
+        }
+      }));
+    }
+
+    function _dawScheduleIteration(iterStart) {
+      const barSec = _dawBarSeconds();
+      _dawClips.forEach((clip) => {
+        const buf = _dawBuffers.get(clip.variation.wav_url);
+        if (!buf) return;
+        const startAt = iterStart + clip.startBar * barSec;
+        const slotSec = clip.bars * barSec;
+        const playDur = Math.min(buf.duration, slotSec);
+        const src = _dawCtx.createBufferSource();
+        src.buffer = buf;
+        src.connect(_dawCtx.destination);
+        try { src.start(startAt, 0, playDur); } catch(_) { try { src.start(startAt); } catch(_) {} }
+        _dawSources.push(src);
+      });
+    }
+
+    function _dawSchedulerTick() {
+      if (!_dawPlaying) return;
+      const sectionSec = DAW_BARS * _dawBarSeconds();
+      const lookahead = 0.5;
+      while (_dawNextSchedule < _dawCtx.currentTime + lookahead + sectionSec) {
+        _dawScheduleIteration(_dawNextSchedule);
+        _dawNextSchedule += sectionSec;
+      }
+    }
+
+    function _dawStartPlayheadAnim() {
+      const heads = document.querySelectorAll('.daw-playhead');
+      heads.forEach(h => h.classList.add('visible'));
+      const sectionSec = () => DAW_BARS * _dawBarSeconds();
+      const tick = () => {
+        if (!_dawPlaying) return;
+        const elapsed = Math.max(0, _dawCtx.currentTime - _dawLoopStart);
+        const sec = sectionSec();
+        const pos = (elapsed % sec) / sec;
+        heads.forEach(h => { h.style.left = (pos * 100) + '%'; });
+        _dawPlayheadRaf = requestAnimationFrame(tick);
+      };
+      tick();
+    }
+
+    function _dawStopPlayheadAnim() {
+      if (_dawPlayheadRaf) cancelAnimationFrame(_dawPlayheadRaf);
+      _dawPlayheadRaf = null;
+      document.querySelectorAll('.daw-playhead').forEach(h => {
+        h.classList.remove('visible');
+        h.style.left = '0%';
+      });
+    }
+
+    function _dawTeardownSources() {
+      _dawSources.forEach(s => { try { s.stop(); } catch(_) {} try { s.disconnect(); } catch(_) {} });
+      _dawSources = [];
+    }
+
+    async function dawPlay() {
+      if (_dawClips.length === 0) {
+        dawToast("nothing to play — drag a clip in first");
+        return;
+      }
+      if (!_dawBpm) {
+        dawToast("set a BPM first");
+        return;
+      }
+      // Stop regular audio inline (avoid calling stopPlayback to skip its DAW hook)
+      _audioGen++;
+      if (_activeAudio) {
+        try { _activeAudio.pause(); _activeAudio.src = ''; } catch(_) {}
+        _activeAudio = null;
+      }
+      if (_playingCloudIdx >= 0) { updateCloudPlayBtn(_playingCloudIdx, '▶'); _playingCloudIdx = -1; }
+      const rb = document.querySelector('.play-btn'); if (rb) rb.textContent = '▶ Play';
+
+      if (!_dawCtx) {
+        _dawCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (_dawCtx.state === 'suspended') {
+        try { await _dawCtx.resume(); } catch(_) {}
+      }
+
+      await _dawDecodeBuffers();
+
+      _dawPlaying = true;
+      _dawLoopStart = _dawCtx.currentTime + 0.1;
+      _dawNextSchedule = _dawLoopStart;
+      _dawSchedulerTick();
+      _dawSchedulerInterval = setInterval(_dawSchedulerTick, 250);
+      _dawStartPlayheadAnim();
+
+      const btn = document.getElementById('dawPlayBtn');
+      if (btn) { btn.textContent = '■ Stop'; btn.classList.add('playing'); }
+    }
+
+    function dawStop() {
+      _dawPlaying = false;
+      if (_dawSchedulerInterval) { clearInterval(_dawSchedulerInterval); _dawSchedulerInterval = null; }
+      _dawTeardownSources();
+      _dawStopPlayheadAnim();
+      const btn = document.getElementById('dawPlayBtn');
+      if (btn) { btn.textContent = '▶ Play'; btn.classList.remove('playing'); }
+    }
+
+    function dawTogglePlay() {
+      if (_dawPlaying) dawStop(); else dawPlay();
+    }
+
+    function _dawRescheduleAll() {
+      _dawTeardownSources();
+      _dawNextSchedule = _dawCtx.currentTime + 0.1;
+      _dawLoopStart = _dawNextSchedule;
+      _dawDecodeBuffers().then(() => {
+        if (_dawPlaying) _dawSchedulerTick();
+      });
+    }
+
+    let _dawToastTimer = null;
+    function dawToast(msg) {
+      const t = document.getElementById('dawToast');
+      if (!t) return;
+      t.textContent = msg;
+      t.classList.add('visible');
+      if (_dawToastTimer) clearTimeout(_dawToastTimer);
+      _dawToastTimer = setTimeout(() => t.classList.remove('visible'), 2400);
+    }
+
+    window.addEventListener('resize', () => {
+      // Hide section if window goes mobile-narrow
+      const sec = document.getElementById('dawSection');
+      if (!sec) return;
+      if (!_dawIsDesktop()) {
+        sec.style.display = 'none';
+        if (_dawPlaying) dawStop();
+      } else {
+        sec.style.display = '';
+      }
+    });
+
+    dawInit();
 
     initAuth();
     restoreSessionFromStorage();

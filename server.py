@@ -401,6 +401,7 @@ def _process_variation(var: dict, gm_patch: int, slug: str, is_drums: bool = Fal
         "instrument": var.get("instrument"),
         "tempo": info.tempo,
         "key": var.get("key"),
+        "bars": bars,
         "note_count": info.note_count,
         "notes": notes,
         "gm_patch": effective_patch,
