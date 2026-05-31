@@ -1996,7 +1996,7 @@
       background: var(--accent);
       color: var(--accent-fg);
       border-radius: 5px;
-      padding: 4px 22px 4px 8px;
+      padding: 4px 42px 4px 8px;
       font-size: 0.7rem;
       display: flex;
       flex-direction: column;
@@ -2023,17 +2023,18 @@
     .daw-clip-remove, .daw-clip-dup {
       position: absolute;
       top: 2px;
-      font-size: 0.8rem;
+      font-size: 0.85rem;
       line-height: 1;
-      opacity: 0.65;
+      opacity: 0.7;
       background: none;
       border: none;
       color: inherit;
       cursor: pointer;
       padding: 2px 4px;
+      font-weight: 600;
     }
     .daw-clip-remove { right: 4px; }
-    .daw-clip-dup { right: 22px; font-size: 0.75rem; }
+    .daw-clip-dup { right: 22px; }
     .daw-clip-remove:hover, .daw-clip-dup:hover { opacity: 1; }
 
     .daw-playhead {
@@ -4245,7 +4246,7 @@
         el.style.left = leftPct + '%';
         el.style.width = `calc(${widthPct}% - 2px)`;
         const meta = [clip.variation.instrument, clip.bars + ' bar' + (clip.bars === 1 ? '' : 's')].filter(Boolean).join(' · ');
-        el.innerHTML = `<div class="daw-clip-name">${escHtml(clip.variation.name || 'clip')}</div><div class="daw-clip-meta">${escHtml(meta)}</div><button class="daw-clip-dup" title="Duplicate to the right" onclick="dawDuplicateClip(${clip.id})">⎘</button><button class="daw-clip-remove" title="Remove" onclick="dawRemoveClip(${clip.id})">×</button>`;
+        el.innerHTML = `<div class="daw-clip-name">${escHtml(clip.variation.name || 'clip')}</div><div class="daw-clip-meta">${escHtml(meta)}</div><button class="daw-clip-dup" title="Duplicate to the right" onclick="dawDuplicateClip(${clip.id})">+</button><button class="daw-clip-remove" title="Remove" onclick="dawRemoveClip(${clip.id})">×</button>`;
         cells.appendChild(el);
       });
       // Hint visibility
