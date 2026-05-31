@@ -2020,10 +2020,9 @@
       text-overflow: ellipsis;
       line-height: 1.2;
     }
-    .daw-clip-remove {
+    .daw-clip-remove, .daw-clip-dup {
       position: absolute;
       top: 2px;
-      right: 4px;
       font-size: 0.8rem;
       line-height: 1;
       opacity: 0.65;
@@ -2033,7 +2032,9 @@
       cursor: pointer;
       padding: 2px 4px;
     }
-    .daw-clip-remove:hover { opacity: 1; }
+    .daw-clip-remove { right: 4px; }
+    .daw-clip-dup { right: 22px; font-size: 0.75rem; }
+    .daw-clip-remove:hover, .daw-clip-dup:hover { opacity: 1; }
 
     .daw-playhead {
       position: absolute;
@@ -4233,12 +4234,37 @@
         el.style.left = leftPct + '%';
         el.style.width = `calc(${widthPct}% - 2px)`;
         const meta = [clip.variation.instrument, clip.bars + ' bar' + (clip.bars === 1 ? '' : 's')].filter(Boolean).join(' · ');
-        el.innerHTML = `<div class="daw-clip-name">${escHtml(clip.variation.name || 'clip')}</div><div class="daw-clip-meta">${escHtml(meta)}</div><button class="daw-clip-remove" title="Remove" onclick="dawRemoveClip(${clip.id})">×</button>`;
+        el.innerHTML = `<div class="daw-clip-name">${escHtml(clip.variation.name || 'clip')}</div><div class="daw-clip-meta">${escHtml(meta)}</div><button class="daw-clip-dup" title="Duplicate to the right" onclick="dawDuplicateClip(${clip.id})">⎘</button><button class="daw-clip-remove" title="Remove" onclick="dawRemoveClip(${clip.id})">×</button>`;
         cells.appendChild(el);
       });
       // Hint visibility
       const hint = document.getElementById('dawHint');
       if (hint) hint.style.display = _dawClips.length ? 'none' : 'block';
+    }
+
+    function dawDuplicateClip(id) {
+      const src = _dawClips.find(c => c.id === id);
+      if (!src) return;
+      const bars = src.bars;
+      const trackIdx = src.trackIdx;
+      let start = src.startBar + bars;
+      while (start + bars <= DAW_BARS) {
+        const overlap = _dawClips.some(c => c.trackIdx === trackIdx &&
+          !(start + bars <= c.startBar || start >= c.startBar + c.bars));
+        if (!overlap) break;
+        start += 1;
+      }
+      if (start + bars > DAW_BARS) { dawToast("no room to the right on this track"); return; }
+      _dawClips.push({
+        id: ++_dawClipIdSeq,
+        trackIdx,
+        startBar: start,
+        bars,
+        variation: { ...src.variation },
+      });
+      _dawRender();
+      _dawPersist();
+      if (_dawPlaying) _dawRescheduleAll();
     }
 
     function dawRemoveClip(id) {
