@@ -72,3 +72,47 @@ def upload_to_r2(local_path: str | Path, key: str) -> Optional[str]:
     except Exception as e:
         print(f"[r2] upload failed for {key}: {e}")
         return None
+
+
+def copy_within_r2(src_url: str, dest_key: str) -> Optional[str]:
+    """Server-side copy a public R2 URL to a new key. Returns the new public URL.
+
+    src_url must be a URL under R2_PUBLIC_URL. Returns None on failure or if R2
+    not configured.
+    """
+    if not r2_enabled():
+        return None
+
+    try:
+        import boto3
+        from botocore.config import Config
+
+        account_id = os.environ["R2_ACCOUNT_ID"]
+        access_key = os.environ["R2_ACCESS_KEY_ID"]
+        secret_key = os.environ["R2_SECRET_ACCESS_KEY"]
+        bucket = os.environ["R2_BUCKET_NAME"]
+        public_url = os.environ["R2_PUBLIC_URL"].rstrip("/")
+
+        if not src_url.startswith(public_url + "/"):
+            return None
+        src_key = src_url[len(public_url) + 1:]
+        if src_key == dest_key:
+            return src_url
+
+        s3 = boto3.client(
+            "s3",
+            endpoint_url=f"https://{account_id}.r2.cloudflarestorage.com",
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+            config=Config(signature_version="s3v4"),
+            region_name="auto",
+        )
+        s3.copy_object(
+            Bucket=bucket,
+            Key=dest_key,
+            CopySource={"Bucket": bucket, "Key": src_key},
+        )
+        return f"{public_url}/{dest_key}"
+    except Exception as e:
+        print(f"[r2] copy failed {src_url} → {dest_key}: {e}")
+        return None

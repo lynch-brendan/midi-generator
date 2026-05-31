@@ -2666,13 +2666,14 @@
     // ==========================================================================
 
     const STORAGE_KEY = 'muse_session_v1';
-    const SESSION_TTL = 24 * 60 * 60 * 1000; // 24 hours
+    const SESSION_TTL = null; // no expiry — files in R2 hearted/ are permanent, the local list should be too
 
     function saveSessionToStorage() {
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify({
           sessionItems,
           lastUserPrompt,
+          dawState: (typeof dawGetState === 'function') ? dawGetState() : null,
           savedAt: Date.now(),
         }));
       } catch (e) {}
@@ -2689,7 +2690,7 @@
         const raw = localStorage.getItem(STORAGE_KEY);
         if (!raw) return;
         const data = JSON.parse(raw);
-        if (!data.savedAt || Date.now() - data.savedAt > SESSION_TTL) {
+        if (SESSION_TTL && (!data.savedAt || Date.now() - data.savedAt > SESSION_TTL)) {
           clearSessionStorage();
           return;
         }
@@ -2698,6 +2699,9 @@
           renderSessionPanel();
         }
         if (data.lastUserPrompt) lastUserPrompt = data.lastUserPrompt;
+        if (data.dawState && typeof dawSetState === 'function') {
+          dawSetState(data.dawState);
+        }
       } catch (e) {}
     }
 
@@ -3548,6 +3552,7 @@
       setSessionName('');
       renderSessionPanel();
       closeSessionPanel();
+      if (typeof dawClear === 'function') dawClear();
     }
 
     function clearSession() {
@@ -3633,12 +3638,18 @@
                 midi_url: v.midi_url,
                 wav_url: v.wav_url || null,
               })),
+            daw_state: (typeof dawGetState === 'function') ? dawGetState() : null,
           }),
         });
         if (!res.ok) {
           const err = await res.json();
           showToast('Save failed: ' + (err.detail || 'Unknown error'));
           return;
+        }
+        const saveResp = await res.json().catch(() => null);
+        // Apply promoted DAW state back — server may have copied generated/ URLs to projects/
+        if (saveResp && saveResp.daw_state && typeof dawSetState === 'function') {
+          dawSetState(saveResp.daw_state);
         }
         posthog.capture('project_saved', { name, variation_count: sessionItems.length });
         sessionSaved = true;
@@ -3736,6 +3747,14 @@
         renderSessionPanel();
         closeLibraryDrawer();
         openSessionPanel();
+        // Restore DAW arrangement from project metadata (in the loaded projects list)
+        const proj = projects.find(p => p.id === projectId);
+        if (typeof dawSetState === 'function') {
+          dawSetState(proj && proj.daw_state ? proj.daw_state : null);
+        }
+        openProjectId = projectId;
+        sessionSaved = true;
+        saveSessionToStorage();
       } catch (_) {
         showToast('Failed to load project.');
       }
@@ -4166,7 +4185,12 @@
         },
       });
       _dawRender();
+      _dawPersist();
       if (_dawPlaying) _dawRescheduleAll();
+    }
+
+    function _dawPersist() {
+      try { if (typeof saveSessionToStorage === 'function') saveSessionToStorage(); } catch (_) {}
     }
 
     function _dawRender() {
@@ -4203,6 +4227,7 @@
         const inp = document.getElementById('dawBpm');
         if (inp) inp.value = '';
       }
+      _dawPersist();
     }
 
     function dawClear() {
@@ -4212,6 +4237,50 @@
       if (inp) inp.value = '';
       _dawRender();
       if (_dawPlaying) dawStop();
+      _dawPersist();
+    }
+
+    function dawGetState() {
+      // Serializable snapshot — used by project save + localStorage persistence
+      return {
+        bpm: _dawBpm,
+        clips: _dawClips.map(c => ({
+          trackIdx: c.trackIdx,
+          startBar: c.startBar,
+          bars: c.bars,
+          variation: { ...c.variation },
+        })),
+      };
+    }
+
+    function dawSetState(state) {
+      // Replace current arrangement. Used by project load + localStorage restore.
+      if (_dawPlaying) dawStop();
+      _dawBuffers = new Map();  // URLs may have changed (promoted on save) — drop cache
+      _dawClips = [];
+      _dawBpm = null;
+      const inp = document.getElementById('dawBpm');
+      if (inp) inp.value = '';
+      if (state && typeof state === 'object') {
+        if (state.bpm && state.bpm >= 40 && state.bpm <= 240) {
+          _dawBpm = state.bpm;
+          if (inp) inp.value = String(state.bpm);
+        }
+        if (Array.isArray(state.clips)) {
+          state.clips.forEach(c => {
+            if (typeof c.trackIdx !== 'number' || typeof c.startBar !== 'number' || typeof c.bars !== 'number') return;
+            if (!c.variation || !c.variation.wav_url) return;
+            _dawClips.push({
+              id: ++_dawClipIdSeq,
+              trackIdx: c.trackIdx,
+              startBar: c.startBar,
+              bars: c.bars,
+              variation: { ...c.variation },
+            });
+          });
+        }
+      }
+      _dawRender();
     }
 
     function _dawSetBpm(bpm) {
@@ -4235,6 +4304,7 @@
       }
       _dawBpm = v;
       if (_dawPlaying) _dawRescheduleAll();
+      _dawPersist();
     }
 
     async function _dawDecodeBuffers() {

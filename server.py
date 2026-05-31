@@ -131,7 +131,7 @@ from core.drum_patterns import apply_skeleton
 from core.guitar_synth import render_guitar_pattern
 from core.variations import extract_variation_info, validate_variation, sanitize_variation
 from core.auth import create_jwt, get_current_user, google_auth_url, exchange_google_code
-from core.storage import upload_to_r2, r2_enabled
+from core.storage import upload_to_r2, copy_within_r2, r2_enabled
 
 app = FastAPI()
 
@@ -238,6 +238,9 @@ try:
                 _conn.execute(text(
                     "ALTER TABLE saved_files ADD COLUMN IF NOT EXISTS project_id VARCHAR "
                     "REFERENCES projects(id) ON DELETE SET NULL"
+                ))
+                _conn.execute(text(
+                    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS daw_state TEXT"
                 ))
                 _conn.commit()
         except Exception:
@@ -373,6 +376,7 @@ class PromoteFilesRequest(BaseModel):
 class SaveProjectRequest(BaseModel):
     name: str
     files: list[SaveProjectFileRequest] = []
+    daw_state: Optional[dict] = None  # {bpm: int|None, clips: [{trackIdx, startBar, bars, variation:{wav_url,...}}]}
 
 
 # ---------------------------------------------------------------------------
@@ -912,11 +916,18 @@ async def list_projects(request: Request, db=Depends(get_db)):
     result = []
     for proj in projects:
         file_count = db.query(SavedFile).filter(SavedFile.project_id == proj.id).count()
+        daw_state = None
+        if proj.daw_state:
+            try:
+                daw_state = json.loads(proj.daw_state)
+            except Exception:
+                daw_state = None
         result.append({
             "id": proj.id,
             "name": proj.name,
             "created_at": proj.created_at.isoformat(),
             "file_count": file_count,
+            "daw_state": daw_state,
         })
     return JSONResponse(result)
 
@@ -992,6 +1003,44 @@ async def create_project(body: SaveProjectRequest, request: Request, db=Depends(
         db.add(saved)
         saved_ids.append(saved.id)
 
+    # Persist DAW state — promote any non-permanent clip WAVs into projects/.../daw/
+    promoted_daw_state = None
+    if body.daw_state and isinstance(body.daw_state, dict):
+        daw = dict(body.daw_state)
+        clips = list(daw.get("clips") or [])
+        if r2_enabled():
+            public_base = os.environ.get("R2_PUBLIC_URL", "").rstrip("/")
+            generated_prefix = f"{public_base}/generated/" if public_base else None
+            permanent_prefixes = (
+                f"{public_base}/projects/" if public_base else "",
+                f"{public_base}/hearted/" if public_base else "",
+            )
+            new_clips = []
+            for clip in clips:
+                v = dict(clip.get("variation") or {})
+                wav_url = v.get("wav_url")
+                if wav_url:
+                    is_permanent = any(p and wav_url.startswith(p) for p in permanent_prefixes)
+                    if not is_permanent:
+                        filename = wav_url.split("/")[-1].split("?")[0]
+                        dest_key = f"projects/{user.id}/{proj.id}/daw/{filename}"
+                        # Local /output/... → upload from disk; R2 generated/... → server-side copy
+                        new_url = None
+                        if wav_url.startswith("/output/"):
+                            wav_local = _url_to_local_path(wav_url)
+                            if wav_local and wav_local.exists():
+                                new_url = upload_to_r2(wav_local, dest_key)
+                        elif generated_prefix and wav_url.startswith(generated_prefix):
+                            new_url = copy_within_r2(wav_url, dest_key)
+                        if new_url:
+                            v["wav_url"] = new_url
+                clip = dict(clip)
+                clip["variation"] = v
+                new_clips.append(clip)
+            daw["clips"] = new_clips
+        promoted_daw_state = daw
+        proj.daw_state = json.dumps(daw)
+
     db.commit()
     db.refresh(proj)
 
@@ -1000,6 +1049,7 @@ async def create_project(body: SaveProjectRequest, request: Request, db=Depends(
         "name": proj.name,
         "created_at": proj.created_at.isoformat(),
         "file_count": len(body.files),
+        "daw_state": promoted_daw_state,
     })
 
 
