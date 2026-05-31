@@ -115,8 +115,8 @@ def _check_ip_rate_limit(ip: str) -> None:
 # Configurable generation limits (env-overridable)
 ANON_LIFETIME_LIMIT = int(os.environ.get("ANON_LIFETIME_LIMIT", "5"))
 FREE_LIFETIME_LIMIT = int(os.environ.get("FREE_LIFETIME_LIMIT", "15"))
-CREATOR_MONTHLY_LIMIT = int(os.environ.get("CREATOR_MONTHLY_LIMIT", "300"))
-PRO_MONTHLY_LIMIT = int(os.environ.get("PRO_MONTHLY_LIMIT", "1000"))
+CREATOR_MONTHLY_LIMIT = int(os.environ.get("CREATOR_MONTHLY_LIMIT", "100"))
+PRO_MONTHLY_LIMIT = int(os.environ.get("PRO_MONTHLY_LIMIT", "200"))
 
 APP_URL = os.environ.get("APP_URL", "http://localhost:8000")
 

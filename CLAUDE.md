@@ -93,8 +93,8 @@ web/privacy.html           — Privacy policy
 
 ## Tiers
 - **Free:** 5 lifetime (anonymous, tracked via browser cookie), 15 lifetime (signed in)
-- **Creator:** $12/mo, 300 generations/month
-- **Pro:** $20/mo, 1000 generations/month
+- **Creator:** $12/mo, 100 generations/month
+- **Pro:** $20/mo, 200 generations/month
 - **Admin:** unlimited (set via `ADMIN_EMAILS` or `ADMIN_IPS` env vars)
 
 ## Environment variables needed
