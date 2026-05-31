@@ -7,7 +7,13 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "")
 Base = declarative_base()
 
 if DATABASE_URL:
-    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+    engine = create_engine(
+        DATABASE_URL,
+        pool_pre_ping=True,
+        pool_size=30,
+        max_overflow=20,
+        pool_recycle=1800,
+    )
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 else:
     engine = None

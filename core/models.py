@@ -79,3 +79,11 @@ class Project(Base):
 
     user = relationship("User", back_populates="projects")
     saved_files = relationship("SavedFile", back_populates="project", cascade="all, delete-orphan")
+
+
+class WebhookEvent(Base):
+    __tablename__ = "webhook_events"
+
+    stripe_event_id = Column(String, primary_key=True)
+    event_type = Column(String, nullable=False)
+    received_at = Column(DateTime(timezone=True), default=_now, nullable=False)

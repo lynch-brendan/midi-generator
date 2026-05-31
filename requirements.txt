@@ -8,3 +8,4 @@ boto3
 python-jose[cryptography]
 httpx
 stripe>=5.0.0
+sentry-sdk[fastapi]>=2.0.0

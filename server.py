@@ -1,12 +1,23 @@
 import sys
 import json
+import os
 from pathlib import Path
+
+_SENTRY_DSN = os.environ.get("SENTRY_DSN", "")
+if _SENTRY_DSN:
+    import sentry_sdk
+    sentry_sdk.init(
+        dsn=_SENTRY_DSN,
+        traces_sample_rate=0.05,
+        profiles_sample_rate=0.0,
+        environment=os.environ.get("RAILWAY_ENVIRONMENT", "production"),
+    )
+
 from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse, RedirectResponse, JSONResponse, Response
 from pydantic import BaseModel
 from datetime import datetime, timedelta, timezone
-import os
 import re
 from typing import Optional
 from concurrent.futures import ThreadPoolExecutor
@@ -15,6 +26,39 @@ from sqlalchemy import text
 
 _wav_executor = ThreadPoolExecutor(max_workers=2)
 _generation_semaphore = threading.Semaphore(6)  # max concurrent generations
+
+# Per-IP rate limiting (in-memory sliding window).
+# Defaults: 8 generations per IP per minute, 60 per IP per hour.
+# Configurable via env so we can tune without redeploying code paths.
+RATE_LIMIT_PER_MINUTE = int(os.environ.get("RATE_LIMIT_PER_MINUTE", "8"))
+RATE_LIMIT_PER_HOUR = int(os.environ.get("RATE_LIMIT_PER_HOUR", "60"))
+_ip_hits: dict[str, list[float]] = {}
+_ip_hits_lock = threading.Lock()
+
+
+def _check_ip_rate_limit(ip: str) -> None:
+    """Raise HTTPException 429 if this IP has exceeded the sliding-window limit."""
+    import time
+    now = time.time()
+    minute_cutoff = now - 60
+    hour_cutoff = now - 3600
+    with _ip_hits_lock:
+        hits = _ip_hits.get(ip, [])
+        hits = [t for t in hits if t > hour_cutoff]
+        minute_count = sum(1 for t in hits if t > minute_cutoff)
+        if minute_count >= RATE_LIMIT_PER_MINUTE or len(hits) >= RATE_LIMIT_PER_HOUR:
+            _ip_hits[ip] = hits
+            raise HTTPException(
+                status_code=429,
+                detail="You're going a bit fast — give it a minute and try again.",
+            )
+        hits.append(now)
+        _ip_hits[ip] = hits
+        # Opportunistic cleanup to bound memory.
+        if len(_ip_hits) > 10000:
+            for k in list(_ip_hits.keys()):
+                if not _ip_hits[k] or _ip_hits[k][-1] < hour_cutoff:
+                    _ip_hits.pop(k, None)
 
 # Configurable generation limits (env-overridable)
 ANON_LIFETIME_LIMIT = int(os.environ.get("ANON_LIFETIME_LIMIT", "5"))
@@ -133,7 +177,7 @@ WEB_DIR = Path(__file__).parent / "web"
 # ---------------------------------------------------------------------------
 try:
     from core.db import Base, engine, SessionLocal, get_db
-    from core.models import User, Folder, SavedFile, Project
+    from core.models import User, Folder, SavedFile, Project, WebhookEvent
 
     if engine is not None:
         Base.metadata.create_all(bind=engine)
@@ -424,6 +468,9 @@ async def generate(req: GenerateRequest, request: Request, db=Depends(get_db)):
     admin_ips = {x.strip() for x in os.environ.get("ADMIN_IPS", "").split(",") if x.strip()}
     is_admin_ip = ip in admin_ips
 
+    if not is_admin_ip:
+        _check_ip_rate_limit(ip)
+
     # Anonymous cookie-based lifetime check
     anon_count = 0
     if user is None and not is_admin_ip:
@@ -612,8 +659,21 @@ async def stripe_webhook(request: Request, db=Depends(get_db)):
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Webhook error: {exc}")
 
+    event_id = event.get("id")
     event_type = event["type"]
     data_obj = event["data"]["object"]
+
+    # Idempotency: skip if we've already processed this event.
+    if db is not None and event_id:
+        try:
+            existing = db.query(WebhookEvent).filter(WebhookEvent.stripe_event_id == event_id).first()
+            if existing:
+                return JSONResponse({"received": True, "duplicate": True})
+            db.add(WebhookEvent(stripe_event_id=event_id, event_type=event_type))
+            db.commit()
+        except Exception as exc:
+            db.rollback()
+            print(f"[stripe webhook] idempotency check failed for {event_id}: {exc}")
 
     creator_price_id = os.environ.get("STRIPE_CREATOR_PRICE_ID", "")
     pro_price_id = os.environ.get("STRIPE_PRO_PRICE_ID", "")
