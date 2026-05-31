@@ -25,7 +25,59 @@ import threading
 from sqlalchemy import text
 
 _wav_executor = ThreadPoolExecutor(max_workers=2)
-_generation_semaphore = threading.Semaphore(6)  # max concurrent generations
+
+# Generation concurrency: queue with bounded wait instead of a hard fail.
+# 12 concurrent fits comfortably on Hobby's 8GB RAM ceiling.
+MAX_CONCURRENT_GENERATIONS = int(os.environ.get("MAX_CONCURRENT_GENERATIONS", "12"))
+MAX_QUEUE_LENGTH = int(os.environ.get("MAX_QUEUE_LENGTH", "30"))
+QUEUE_TIMEOUT_SECONDS = int(os.environ.get("QUEUE_TIMEOUT_SECONDS", "300"))
+
+_gen_lock = threading.Lock()
+_gen_active = 0
+_gen_waiting: list[str] = []
+
+
+def _enqueue_generation() -> str:
+    """Add caller to the queue. Returns waiter_id. Raises 503 if queue full."""
+    import uuid
+    waiter_id = str(uuid.uuid4())
+    with _gen_lock:
+        if len(_gen_waiting) >= MAX_QUEUE_LENGTH:
+            raise HTTPException(
+                status_code=503,
+                detail="Lots of people are generating right now — try again in a minute.",
+            )
+        _gen_waiting.append(waiter_id)
+    return waiter_id
+
+
+def _try_acquire_slot(waiter_id: str) -> Optional[int]:
+    """Claim a slot if available; otherwise return 1-indexed queue position."""
+    global _gen_active
+    with _gen_lock:
+        try:
+            idx = _gen_waiting.index(waiter_id)
+        except ValueError:
+            return None
+        if idx == 0 and _gen_active < MAX_CONCURRENT_GENERATIONS:
+            _gen_waiting.pop(0)
+            _gen_active += 1
+            return None
+        return idx + 1
+
+
+def _release_slot() -> None:
+    global _gen_active
+    with _gen_lock:
+        _gen_active = max(0, _gen_active - 1)
+
+
+def _abandon_queue(waiter_id: str) -> None:
+    with _gen_lock:
+        try:
+            _gen_waiting.remove(waiter_id)
+        except ValueError:
+            pass
 
 # Per-IP rate limiting (in-memory sliding window).
 # Defaults: 8 generations per IP per minute, 60 per IP per hour.
@@ -487,17 +539,40 @@ async def generate(req: GenerateRequest, request: Request, db=Depends(get_db)):
     if not is_admin_ip:
         _check_and_increment_generation(user, db, ip)
 
+    # Reserve a queue spot before starting the SSE stream so a full queue
+    # returns a clean 503 instead of a half-opened stream.
+    waiter_id = _enqueue_generation()
+
     slug = slugify(req.prompt)
     gm_patch = 0
     is_drums = False
 
     def event_stream():
         nonlocal gm_patch, is_drums
-        acquired = _generation_semaphore.acquire(timeout=10)
-        if not acquired:
-            yield f"data: {json.dumps({'type': 'error', 'message': 'Server busy, try again in a moment'})}\n\n"
-            return
+        import time as _time
+        acquired = False
         try:
+            start = _time.time()
+            last_position = None
+            last_yield = start
+            while True:
+                pos = _try_acquire_slot(waiter_id)
+                if pos is None:
+                    acquired = True
+                    break
+                now = _time.time()
+                if now - start > QUEUE_TIMEOUT_SECONDS:
+                    yield f"data: {json.dumps({'type': 'error', 'message': 'Took too long to find a slot — please try again.'})}\n\n"
+                    return
+                if pos != last_position:
+                    yield f"data: {json.dumps({'type': 'queued', 'position': pos})}\n\n"
+                    last_position = pos
+                    last_yield = now
+                elif now - last_yield > 15:
+                    yield ": keepalive\n\n"
+                    last_yield = now
+                _time.sleep(0.5)
+
             for event in stream_thinking(req.prompt):
                 yield f"data: {json.dumps(event)}\n\n"
             for event in stream_variations(req.prompt, seed_variation=req.seed_variation, lock_key=req.lock_key, lock_tempo=req.lock_tempo, seed_variations=req.seed_variations):
@@ -518,7 +593,10 @@ async def generate(req: GenerateRequest, request: Request, db=Depends(get_db)):
             print(f"[generate error] {e}\n{traceback.format_exc()}")
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
         finally:
-            _generation_semaphore.release()
+            if acquired:
+                _release_slot()
+            else:
+                _abandon_queue(waiter_id)
 
     response = StreamingResponse(event_stream(), media_type="text/event-stream")
     if user is None and not is_admin_ip:

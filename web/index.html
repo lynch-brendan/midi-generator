@@ -3188,7 +3188,12 @@
           for (const line of lines) {
             if (!line.startsWith("data: ")) continue;
             const event = JSON.parse(line.slice(6));
-            if (event.type === "thought") {
+            if (event.type === "queued") {
+              const msg = event.position === 1
+                ? "almost your turn..."
+                : `you're #${event.position} in line — hang tight`;
+              setSpeechBubble(msg);
+            } else if (event.type === "thought") {
               queueTypewriter(event.token);
             } else if (event.type === "meta") {
               setCharacterInstrument(event.instrument);
