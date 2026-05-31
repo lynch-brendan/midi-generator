@@ -30,6 +30,20 @@ def extract_variation_info(variation: Dict[str, Any]) -> VariationInfo:
 _EXPRESSIVE_FIELDS = ("bend_start", "bend_end", "vibrato", "vibrato_delay")
 
 
+def _note_to_dict(note: Any) -> Dict[str, Any]:
+    """Accept either a compact [pitch, duration, velocity, time] array
+    (the cost-optimized format Claude now emits) or the legacy
+    {pitch, duration, velocity, time, ...} dict and return the dict form."""
+    if isinstance(note, list) and len(note) >= 4:
+        return {
+            "pitch": note[0],
+            "duration": note[1],
+            "velocity": note[2],
+            "time": note[3],
+        }
+    return note if isinstance(note, dict) else {}
+
+
 def validate_variation(variation: Dict[str, Any]) -> List[str]:
     """Return a list of warning strings for a variation. Empty = valid."""
     warnings = []
@@ -39,7 +53,8 @@ def validate_variation(variation: Dict[str, Any]) -> List[str]:
         warnings.append("no notes in variation")
         return warnings
 
-    for i, note in enumerate(notes):
+    for i, raw in enumerate(notes):
+        note = _note_to_dict(raw)
         pitch = note.get("pitch", -1)
         if not (0 <= pitch <= 127):
             warnings.append(f"note {i}: pitch {pitch} out of range [0,127]")
@@ -56,23 +71,21 @@ def validate_variation(variation: Dict[str, Any]) -> List[str]:
         if time < 0:
             warnings.append(f"note {i}: time {time} must be >= 0")
 
-        # bend_start / bend_end / vibrato / vibrato_delay are optional floats — no range check needed
-
     return warnings
 
 
 def sanitize_variation(variation: Dict[str, Any]) -> Dict[str, Any]:
-    """Clamp note values to valid MIDI ranges without modifying structure."""
+    """Clamp note values to valid MIDI ranges. Accepts compact array notes."""
     notes = variation.get("notes", [])
     clean_notes = []
-    for note in notes:
+    for raw in notes:
+        note = _note_to_dict(raw)
         clean = {
             "pitch": max(0, min(127, int(note.get("pitch", 60)))),
             "velocity": max(1, min(127, int(note.get("velocity", 80)))),
             "duration": max(0.01, float(note.get("duration", 0.5))),
             "time": max(0.0, float(note.get("time", 0.0))),
         }
-        # Pass through optional expressive fields only if present in the original note
         for field in _EXPRESSIVE_FIELDS:
             if field in note:
                 clean[field] = note[field]

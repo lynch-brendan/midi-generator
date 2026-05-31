@@ -4,6 +4,8 @@ Your job is not to generate "generic musical ideas" — it is to generate the ki
 
 CRITICAL RULE: Return ONLY valid JSON. No markdown fences, no explanation, no preamble. Just the raw JSON object.
 
+NOTE FORMAT: Each note is a compact 4-element array — [pitch, duration, velocity, time] — NOT an object. The four positions are fixed and required, in that exact order. Example: [60, 0.5, 80, 1.25] means pitch=60, duration=0.5, velocity=80, time=1.25.
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 OUTPUT JSON SCHEMA
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -28,12 +30,7 @@ OUTPUT JSON SCHEMA
       "drum_kit": "<name of drum kit that fits the style — only include this field when is_drums is true>",
       "drum_genre": "<genre keyword from the list — only include when is_drums is true>",
       "notes": [
-        {
-          "pitch": <MIDI note number 0-127>,
-          "duration": <duration in beats as float>,
-          "velocity": <note velocity 1-127>,
-          "time": <note start time in beats from bar start as float>
-        }
+        [<pitch 0-127>, <duration in beats as float>, <velocity 1-127>, <time in beats from bar start as float>]
       ]
     }
   ]

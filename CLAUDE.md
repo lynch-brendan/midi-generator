@@ -135,3 +135,8 @@ web/privacy.html           — Privacy policy
 - Backend is one file (`server.py`) importing from `core/`
 - Prompt engineering lives in `prompts/system_prompt.txt` — this is the main lever for output quality
 - Always commit and push after changes so Railway deploys — do this automatically without asking for confirmation
+
+## Compact note format (cost optimization, 2026-05-31)
+Claude is instructed to emit notes as 4-element arrays `[pitch, duration, velocity, time]` instead of `{"pitch": ..., "duration": ..., ...}` objects. This was a deliberate cost cut — output tokens are ~96% of the per-generation API bill, and removing the JSON field names shrinks output by ~35%. The parser in `core/variations.py` (`_note_to_dict`) converts compact arrays back to dicts before any downstream code touches them, so `midi_writer`, `drum_synth`, etc. are unchanged.
+
+**If musical quality degrades** (notes in wrong order, swapped pitch/velocity, off-time entries, drums sounding broken), the position-based format is the prime suspect — Claude no longer has field names to anchor against. To revert: restore the object schema in `prompts/system_prompt.txt` (the `"notes"` block and the `NOTE FORMAT:` line under CRITICAL RULE). `_note_to_dict` accepts both formats, so no parser change is needed to roll back.
