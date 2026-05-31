@@ -982,26 +982,37 @@ async def create_project(body: SaveProjectRequest, request: Request, db=Depends(
     db.add(proj)
     db.flush()
 
+    public_base = os.environ.get("R2_PUBLIC_URL", "").rstrip("/") if r2_enabled() else ""
+    generated_prefix = f"{public_base}/generated/" if public_base else None
+    permanent_prefixes = (
+        f"{public_base}/projects/" if public_base else "",
+        f"{public_base}/hearted/" if public_base else "",
+    )
+
+    def _promote_to_project(src_url: str, dest_name: str) -> str:
+        """Move src into projects/{user.id}/{proj.id}/. Local copy preferred, R2 copy as fallback."""
+        if not src_url or not r2_enabled():
+            return src_url
+        if any(p and src_url.startswith(p) for p in permanent_prefixes):
+            return src_url
+        dest_key = f"projects/{user.id}/{proj.id}/{dest_name}"
+        local = _url_to_local_path(src_url)
+        if local and local.exists():
+            uploaded = upload_to_r2(local, dest_key)
+            if uploaded:
+                return uploaded
+        if generated_prefix and src_url.startswith(generated_prefix):
+            copied = copy_within_r2(src_url, dest_key)
+            if copied:
+                return copied
+        return src_url
+
     saved_ids = []
     for f in body.files:
-        midi_url = f.midi_url
-        wav_url = f.wav_url
-
-        if r2_enabled():
-            midi_local = _url_to_local_path(f.midi_url)
-            if midi_local and midi_local.exists():
-                key = f"projects/{user.id}/{proj.id}/{midi_local.name}"
-                r2_midi = upload_to_r2(midi_local, key)
-                if r2_midi:
-                    midi_url = r2_midi
-
-            if f.wav_url:
-                wav_local = _url_to_local_path(f.wav_url)
-                if wav_local and wav_local.exists():
-                    key = f"projects/{user.id}/{proj.id}/{wav_local.name}"
-                    r2_wav = upload_to_r2(wav_local, key)
-                    if r2_wav:
-                        wav_url = r2_wav
+        midi_name = (f.midi_url or "").split("/")[-1].split("?")[0]
+        wav_name = (f.wav_url or "").split("/")[-1].split("?")[0]
+        midi_url = _promote_to_project(f.midi_url, midi_name) if f.midi_url else f.midi_url
+        wav_url = _promote_to_project(f.wav_url, wav_name) if f.wav_url else f.wav_url
 
         saved = SavedFile(
             id=str(_uuid_mod.uuid4()),
