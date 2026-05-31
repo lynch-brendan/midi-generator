@@ -2302,6 +2302,7 @@
               <input type="number" class="daw-bpm" id="dawBpm" min="40" max="240" placeholder="—" oninput="dawSetBpmFromInput()" />
             </div>
             <button class="daw-btn daw-play" id="dawPlayBtn" onclick="dawTogglePlay()">▶ Play</button>
+            <button class="daw-btn daw-download" id="dawDownloadBtn" onclick="dawDownloadAll()" title="Download MIDI + WAV for every clip">↓ All</button>
             <button class="daw-btn daw-clear" id="dawClearBtn" onclick="dawClear()">Clear</button>
           </div>
         </div>
@@ -4202,6 +4203,8 @@
         bars,
         variation: {
           wav_url: v.wav_url,
+          midi_url: v.midi_url || null,
+          drum_stems: v.drum_stems || null,
           name: v.name,
           instrument: v.instrument || null,
           tempo: v.tempo,
@@ -4240,6 +4243,32 @@
       // Hint visibility
       const hint = document.getElementById('dawHint');
       if (hint) hint.style.display = _dawClips.length ? 'none' : 'block';
+    }
+
+    async function dawDownloadAll() {
+      if (!_dawClips.length) { dawToast("loop is empty"); return; }
+      const urls = new Set();
+      for (const c of _dawClips) {
+        if (c.variation.midi_url) urls.add(c.variation.midi_url);
+        if (c.variation.wav_url) urls.add(c.variation.wav_url);
+        if (c.variation.drum_stems) {
+          for (const u of Object.values(c.variation.drum_stems)) if (u) urls.add(u);
+        }
+      }
+      if (!urls.size) { dawToast("nothing to download"); return; }
+      const download = async (url) => {
+        try {
+          const resp = await fetch(`/api/download?url=${encodeURIComponent(url)}`);
+          const blob = await resp.blob();
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = url.split('/').pop();
+          document.body.appendChild(a); a.click(); a.remove();
+          URL.revokeObjectURL(a.href);
+        } catch (_) {}
+      };
+      for (const url of urls) { await download(url); }
+      posthog.capture('file_downloaded', { file_type: 'loop_bundle', source: 'daw', count: urls.size });
     }
 
     function dawDuplicateClip(id) {
