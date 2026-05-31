@@ -3857,9 +3857,17 @@
       const v = currentVariations[idx];
       if (!v) return;
       let trackIdx = -1;
+      // First pass: prefer a completely empty track
       for (let t = 0; t < DAW_TRACKS; t++) {
-        const taken = _dawClips.some(c => c.trackIdx === t && c.startBar === 0);
-        if (!taken) { trackIdx = t; break; }
+        const empty = !_dawClips.some(c => c.trackIdx === t);
+        if (empty) { trackIdx = t; break; }
+      }
+      // Second pass: fall back to any track free at bar 0
+      if (trackIdx === -1) {
+        for (let t = 0; t < DAW_TRACKS; t++) {
+          const taken = _dawClips.some(c => c.trackIdx === t && c.startBar === 0);
+          if (!taken) { trackIdx = t; break; }
+        }
       }
       if (trackIdx === -1) { dawToast("loop is full at bar 1 — drag to an empty spot"); return; }
       _dawValidateAndPlace(trackIdx, 0, v);
