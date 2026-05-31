@@ -2971,7 +2971,12 @@
       const cta = document.getElementById("upgradeCta");
       if (!info) { el.textContent = ""; el.className = "usage-indicator"; if (cta) cta.style.display = "none"; return; }
       const { plan, used, limit, remaining } = info;
-      if (plan === "pro") {
+      if (plan === "admin") {
+        el.textContent = `Admin · unlimited`;
+        if (cta) cta.style.display = "none";
+        el.className = "usage-indicator";
+        return;
+      } else if (plan === "pro") {
         el.textContent = `Pro · ${used} / ${limit} generations this month`;
         if (cta) cta.style.display = "none";
       } else if (plan === "creator") {

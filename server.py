@@ -837,6 +837,18 @@ async def stripe_status(request: Request, db=Depends(get_db)):
     if user is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
+    admin_emails = {x.strip().lower() for x in os.environ.get("ADMIN_EMAILS", "").split(",") if x.strip()}
+    if user.email.lower() in admin_emails:
+        return JSONResponse({
+            "plan": "admin",
+            "status": "active",
+            "used": user.lifetime_generations or 0,
+            "limit": None,
+            "remaining": None,
+            "period": "unlimited",
+            "stripe_enabled": _stripe_enabled(),
+        })
+
     plan = user.subscription_plan
     status = user.subscription_status
     is_active = status == "active"
