@@ -1462,29 +1462,58 @@ def nasty_chat(req: NastyChatRequest):
         f"Current song state:\n```json\n{json.dumps(req.song, indent=2)}\n```\n\n"
         f"User: {req.message}"
     )
-    messages = req.history + [{"role": "user", "content": user_content}]
+    messages = list(req.history) + [{"role": "user", "content": user_content}]
     client = _nasty_anthropic.Anthropic()
-    try:
-        resp = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=8000,
-            system=_NASTY_SYSTEM_PROMPT,
-            tools=_NASTY_TOOLS,
-            messages=messages,
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Claude error: {e}")
-    tool_calls = []
-    text_parts = []
-    for block in resp.content:
-        if block.type == "tool_use":
-            tool_calls.append({"name": block.name, "input": block.input})
-        elif block.type == "text":
-            text_parts.append(block.text)
+
+    all_tool_calls: list[dict] = []
+    text_parts: list[str] = []
+    stop_reason = None
+
+    for _ in range(6):
+        try:
+            resp = client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=8000,
+                system=_NASTY_SYSTEM_PROMPT,
+                tools=_NASTY_TOOLS,
+                messages=messages,
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Claude error: {e}")
+
+        stop_reason = resp.stop_reason
+        turn_tool_uses = []
+        for block in resp.content:
+            if block.type == "tool_use":
+                all_tool_calls.append({"name": block.name, "input": block.input})
+                turn_tool_uses.append(block)
+            elif block.type == "text" and block.text.strip():
+                text_parts.append(block.text)
+
+        if stop_reason != "tool_use" or not turn_tool_uses:
+            break
+
+        # Feed synthetic tool_results back so Claude can continue chaining.
+        # The actual state lives in the client; we just acknowledge and echo the
+        # id Claude invented so it can reference it in follow-up calls.
+        messages.append({"role": "assistant", "content": resp.content})
+        tool_results = []
+        for block in turn_tool_uses:
+            result_text = "applied"
+            inp = block.input or {}
+            if block.name in ("add_track", "add_clip") and "id" in inp:
+                result_text = f"applied; id={inp['id']}"
+            tool_results.append({
+                "type": "tool_result",
+                "tool_use_id": block.id,
+                "content": result_text,
+            })
+        messages.append({"role": "user", "content": tool_results})
+
     return {
         "text": "\n".join(text_parts).strip(),
-        "tool_calls": tool_calls,
-        "stop_reason": resp.stop_reason,
+        "tool_calls": all_tool_calls,
+        "stop_reason": stop_reason,
     }
 
 
