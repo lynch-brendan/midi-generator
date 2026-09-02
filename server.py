@@ -1442,6 +1442,24 @@ _NASTY_TOOLS = [
             "required": ["track_id", "volume"],
         },
     },
+    {
+        "name": "repeat_clip",
+        "description": (
+            "Repeat an existing clip N times back-to-back after the original. "
+            "This is how you build longer songs cheaply — write a 4-bar pattern "
+            "once with add_clip, then repeat_clip(clip_id, times=7) fills 32 bars. "
+            "Each copy gets a new auto-generated id and is placed at "
+            "startBar + lengthBars * i for i in 1..times."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "clip_id": {"type": "string"},
+                "times": {"type": "integer", "minimum": 1, "maximum": 32},
+            },
+            "required": ["clip_id", "times"],
+        },
+    },
 ]
 
 

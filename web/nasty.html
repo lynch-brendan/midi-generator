@@ -546,6 +546,24 @@ function applyToolCalls(calls) {
       } else if (name === 'set_track_volume') {
         const track = song.tracks.find(t => t.id === input.track_id);
         if (track) { track.volume = input.volume; summaries.push(`vol ${track.name} → ${input.volume}`); }
+      } else if (name === 'repeat_clip') {
+        let sourceTrack = null, sourceClip = null;
+        for (const t of song.tracks) {
+          const c = t.clips.find(c => c.id === input.clip_id);
+          if (c) { sourceTrack = t; sourceClip = c; break; }
+        }
+        if (sourceClip) {
+          const times = Math.max(1, Math.min(32, input.times || 1));
+          for (let i = 1; i <= times; i++) {
+            sourceTrack.clips.push({
+              id: `${sourceClip.id}-r${i}${Date.now().toString(36).slice(-3)}`,
+              startBar: sourceClip.startBar + sourceClip.lengthBars * i,
+              lengthBars: sourceClip.lengthBars,
+              notes: sourceClip.notes.map(n => ({...n})),
+            });
+          }
+          summaries.push(`↻ ${input.clip_id} × ${times}`);
+        }
       }
     } catch (e) {
       console.error('tool apply failed', call, e);
