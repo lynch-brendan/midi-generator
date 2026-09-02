@@ -214,7 +214,8 @@
 // ============================================================
 // State
 // ============================================================
-let song = { bpm: 120, bars: 16, tracks: [] };
+const MIN_BARS = 500;
+let song = { bpm: 120, bars: MIN_BARS, tracks: [] };
 let chatHistory = [];
 const BAR_WIDTH = 40;
 
@@ -569,8 +570,8 @@ function applyToolCalls(calls) {
       console.error('tool apply failed', call, e);
     }
   }
-  // auto-expand bars to fit
-  let maxBar = 16;
+  // auto-expand bars to fit (never shrink below MIN_BARS canvas)
+  let maxBar = MIN_BARS;
   for (const t of song.tracks) {
     for (const c of t.clips) {
       const end = Math.ceil(c.startBar + c.lengthBars);
@@ -732,7 +733,7 @@ document.getElementById('loop-btn').addEventListener('click', () => {
 });
 document.getElementById('clear-btn').addEventListener('click', () => {
   if (!confirm('Clear the song?')) return;
-  song = { bpm: 120, bars: 16, tracks: [] };
+  song = { bpm: 120, bars: MIN_BARS, tracks: [] };
   chatHistory = [];
   document.getElementById('chat-messages').innerHTML = '';
   stopSong();
