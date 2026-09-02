@@ -103,6 +103,18 @@
     cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.3);
   }
   .clip:hover { filter: brightness(1.1); }
+  .clip.audio {
+    background: linear-gradient(135deg, #33c58a, #2b9adb);
+  }
+
+  #rec-btn.recording {
+    background: #e33; color: white; border-color: #e33;
+    animation: rec-pulse 1s ease-in-out infinite;
+  }
+  @keyframes rec-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
+  }
 
   #playhead {
     position: absolute; top: 28px; bottom: 0; width: 2px;
@@ -171,6 +183,7 @@
       <button id="play-btn">▶ Play</button>
       <button id="stop-btn">■ Stop</button>
       <button id="loop-btn">↻ Loop</button>
+      <button id="rec-btn">● Rec</button>
       <button id="clear-btn">✕ Clear</button>
       <div class="info">
         <span id="bpm-label">120</span> BPM ·
@@ -229,6 +242,13 @@ let playStartTime = 0;
 let songDurationSec = 0;
 let animationFrame = null;
 let loopEnabled = false;
+
+// Recording state
+let mediaRecorder = null;
+let recordingChunks = [];
+let isRecording = false;
+let recordStartBar = 0;
+const audioBuffers = new Map(); // clipId -> AudioBuffer (client-only, not JSON'd)
 
 function initAudio() {
   if (ctx) return;
@@ -429,7 +449,20 @@ function playSong() {
     const chain = chains[track.id];
     for (const clip of track.clips) {
       const clipStartBeats = clip.startBar * 4;
-      for (const note of clip.notes) {
+      if (clip.type === 'audio') {
+        const buf = audioBuffers.get(clip.id);
+        if (!buf) continue;
+        const t = playStartTime + beatsToSec(clipStartBeats);
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.connect(chain);
+        src.start(t);
+        scheduledSources.push(src);
+        const clipEndBeats = clipStartBeats + (clip.lengthBars * 4);
+        if (clipEndBeats > maxEndBeats) maxEndBeats = clipEndBeats;
+        continue;
+      }
+      for (const note of (clip.notes || [])) {
         const noteStartBeats = clipStartBeats + note.startBeat;
         const noteEndBeats = noteStartBeats + note.durationBeats;
         if (noteEndBeats > maxEndBeats) maxEndBeats = noteEndBeats;
@@ -448,6 +481,85 @@ function stopSong() {
   stopAllSources();
   document.getElementById('playhead').style.display = 'none';
   if (animationFrame) cancelAnimationFrame(animationFrame);
+}
+
+// ============================================================
+// Recording (mic → audio clip)
+// ============================================================
+async function startRecording() {
+  initAudio();
+  if (ctx.state === 'suspended') await ctx.resume();
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: false,
+      },
+    });
+  } catch (e) {
+    alert('Mic access denied or unavailable: ' + e.message);
+    return;
+  }
+  recordingChunks = [];
+  const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+    ? 'audio/webm;codecs=opus'
+    : 'audio/webm';
+  mediaRecorder = new MediaRecorder(stream, { mimeType });
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data && e.data.size > 0) recordingChunks.push(e.data);
+  };
+  mediaRecorder.onstop = async () => {
+    stream.getTracks().forEach((t) => t.stop());
+    const blob = new Blob(recordingChunks, { type: mimeType });
+    const arrayBuffer = await blob.arrayBuffer();
+    const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+    const durationBeats = audioBuffer.duration * song.bpm / 60;
+    const lengthBars = Math.max(1, Math.ceil(durationBeats / 4));
+    const clipId = `rec-${Date.now().toString(36)}`;
+    let recTrack = song.tracks.find((t) => t.instrument === 'audio');
+    if (!recTrack) {
+      recTrack = {
+        id: `audio-${Date.now().toString(36)}`,
+        name: 'Recording',
+        instrument: 'audio',
+        volume: 0.9,
+        effects: [],
+        clips: [],
+      };
+      song.tracks.push(recTrack);
+    }
+    recTrack.clips.push({
+      id: clipId,
+      type: 'audio',
+      startBar: recordStartBar,
+      lengthBars,
+    });
+    audioBuffers.set(clipId, audioBuffer);
+    // auto-grow bars if needed
+    const end = Math.ceil(recordStartBar + lengthBars);
+    if (end > song.bars) song.bars = end;
+    render();
+  };
+  // start playback from bar 0 so the musician records along
+  recordStartBar = 0;
+  if (song.tracks.length > 0) {
+    playSong();
+  }
+  mediaRecorder.start();
+  isRecording = true;
+  document.getElementById('rec-btn').classList.add('recording');
+  document.getElementById('rec-btn').textContent = '● Recording…';
+}
+
+function stopRecording() {
+  if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
+  mediaRecorder.stop();
+  isRecording = false;
+  document.getElementById('rec-btn').classList.remove('recording');
+  document.getElementById('rec-btn').textContent = '● Rec';
+  stopSong();
 }
 
 function animatePlayhead() {
@@ -623,11 +735,13 @@ function render() {
       row.style.width = totalWidth + 'px';
       for (const clip of track.clips) {
         const el = document.createElement('div');
-        el.className = 'clip';
+        el.className = 'clip' + (clip.type === 'audio' ? ' audio' : '');
         el.style.left = (clip.startBar * BAR_WIDTH) + 'px';
         el.style.width = (clip.lengthBars * BAR_WIDTH - 2) + 'px';
-        el.textContent = `${track.name}`;
-        el.title = `${clip.id} · ${clip.notes.length} notes`;
+        el.textContent = clip.type === 'audio' ? '🎤 ' + track.name : track.name;
+        el.title = clip.type === 'audio'
+          ? `${clip.id} · audio ${clip.lengthBars} bars`
+          : `${clip.id} · ${(clip.notes || []).length} notes`;
         row.appendChild(el);
       }
       timeline.appendChild(row);
@@ -726,15 +840,23 @@ document.getElementById('play-btn').addEventListener('click', () => {
   if (song.tracks.length === 0) return;
   playSong();
 });
-document.getElementById('stop-btn').addEventListener('click', stopSong);
+document.getElementById('stop-btn').addEventListener('click', () => {
+  if (isRecording) stopRecording();
+  else stopSong();
+});
 document.getElementById('loop-btn').addEventListener('click', () => {
   loopEnabled = !loopEnabled;
   document.getElementById('loop-btn').classList.toggle('active', loopEnabled);
+});
+document.getElementById('rec-btn').addEventListener('click', () => {
+  if (isRecording) stopRecording();
+  else startRecording();
 });
 document.getElementById('clear-btn').addEventListener('click', () => {
   if (!confirm('Clear the song?')) return;
   song = { bpm: 120, bars: MIN_BARS, tracks: [] };
   chatHistory = [];
+  audioBuffers.clear();
   document.getElementById('chat-messages').innerHTML = '';
   stopSong();
   render();
