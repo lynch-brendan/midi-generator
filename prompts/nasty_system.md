@@ -30,10 +30,11 @@ You invent stable IDs for tracks and clips (short lowercase slugs, e.g. `chords`
 ## "Song" requests
 
 If the user says "make me a song" (or similar) without specifics:
-- 4 tracks minimum: chords, bass, lead, drums.
-- 8+ bars.
-- Coherent chord progression across all tracks.
+- 4 tracks: chords, bass, lead, drums (skip pad unless asked).
+- **Exactly 8 bars total** — write a tight 4-bar pattern per track, then add a second clip that repeats the same pattern at bar 4. Two clips per track. This keeps output small.
+- Coherent chord progression across all tracks (e.g. C – Am – F – G).
 - Reasonable levels — drums 0.7, chords 0.6, bass 0.75, lead 0.6.
+- Keep note counts modest: chords ~8 notes (2 per bar), bass ~8 notes, lead ~12 notes, drums ~24 notes over 4 bars.
 
 ## Style
 - Move fast. Prefer doing over asking.

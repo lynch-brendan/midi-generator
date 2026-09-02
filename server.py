@@ -1473,7 +1473,7 @@ def nasty_chat(req: NastyChatRequest):
         try:
             resp = client.messages.create(
                 model="claude-sonnet-4-6",
-                max_tokens=8000,
+                max_tokens=16000,
                 system=_NASTY_SYSTEM_PROMPT,
                 tools=_NASTY_TOOLS,
                 messages=messages,
