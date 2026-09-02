@@ -15,7 +15,7 @@ if _SENTRY_DSN:
 
 from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import StreamingResponse, RedirectResponse, JSONResponse, Response
+from fastapi.responses import StreamingResponse, RedirectResponse, JSONResponse, Response, FileResponse
 from pydantic import BaseModel
 from datetime import datetime, timedelta, timezone
 import re
@@ -1288,6 +1288,204 @@ async def posthog_proxy(path: str, request: Request):
     except Exception:
         content = {}
     return JSONResponse(content=content, status_code=resp.status_code)
+
+
+# ---------------------------------------------------------------------------
+# Nasty — AI-native DAW (prompt-driven song building)
+# ---------------------------------------------------------------------------
+
+import anthropic as _nasty_anthropic
+
+_NASTY_SYSTEM_PROMPT = (Path(__file__).parent / "prompts" / "nasty_system.md").read_text()
+
+_NASTY_TOOLS = [
+    {
+        "name": "set_tempo",
+        "description": "Set the song's tempo in BPM.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"bpm": {"type": "number"}},
+            "required": ["bpm"],
+        },
+    },
+    {
+        "name": "add_track",
+        "description": "Create a new track. You invent the id (short slug).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "name": {"type": "string"},
+                "instrument": {
+                    "type": "string",
+                    "enum": ["piano", "bass", "lead", "pad", "drums"],
+                },
+            },
+            "required": ["id", "name", "instrument"],
+        },
+    },
+    {
+        "name": "delete_track",
+        "description": "Remove a track and all its clips.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"track_id": {"type": "string"}},
+            "required": ["track_id"],
+        },
+    },
+    {
+        "name": "add_clip",
+        "description": (
+            "Add a clip of notes to a track at a bar position. "
+            "You invent the clip id. Notes are objects: "
+            "{pitch, startBeat, durationBeats, velocity}. 1 bar = 4 beats."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "track_id": {"type": "string"},
+                "start_bar": {"type": "number"},
+                "length_bars": {"type": "number"},
+                "notes": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "pitch": {"type": "number"},
+                            "startBeat": {"type": "number"},
+                            "durationBeats": {"type": "number"},
+                            "velocity": {"type": "number"},
+                        },
+                        "required": ["pitch", "startBeat", "durationBeats"],
+                    },
+                },
+            },
+            "required": ["id", "track_id", "start_bar", "length_bars", "notes"],
+        },
+    },
+    {
+        "name": "edit_clip",
+        "description": "Replace the notes in an existing clip.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "clip_id": {"type": "string"},
+                "notes": {"type": "array", "items": {"type": "object"}},
+            },
+            "required": ["clip_id", "notes"],
+        },
+    },
+    {
+        "name": "move_clip",
+        "description": "Move a clip to a new starting bar.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "clip_id": {"type": "string"},
+                "start_bar": {"type": "number"},
+            },
+            "required": ["clip_id", "start_bar"],
+        },
+    },
+    {
+        "name": "delete_clip",
+        "description": "Delete a clip by id.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"clip_id": {"type": "string"}},
+            "required": ["clip_id"],
+        },
+    },
+    {
+        "name": "apply_effect",
+        "description": (
+            "Add or update an effect on a track. "
+            "compressor params: {}. "
+            "reverb params: {wet: 0-1, decay: seconds 0.5-4}. "
+            "delay params: {time: seconds 0.05-1, feedback: 0-0.8, wet: 0-1}."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "track_id": {"type": "string"},
+                "effect": {
+                    "type": "string",
+                    "enum": ["compressor", "reverb", "delay"],
+                },
+                "params": {"type": "object"},
+            },
+            "required": ["track_id", "effect"],
+        },
+    },
+    {
+        "name": "remove_effect",
+        "description": "Remove an effect from a track.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "track_id": {"type": "string"},
+                "effect": {"type": "string"},
+            },
+            "required": ["track_id", "effect"],
+        },
+    },
+    {
+        "name": "set_track_volume",
+        "description": "Set a track's volume (0-1).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "track_id": {"type": "string"},
+                "volume": {"type": "number"},
+            },
+            "required": ["track_id", "volume"],
+        },
+    },
+]
+
+
+class NastyChatRequest(BaseModel):
+    song: dict
+    message: str
+    history: list = []
+
+
+@app.get("/nasty")
+def nasty_page():
+    return FileResponse(WEB_DIR / "nasty.html")
+
+
+@app.post("/nasty/chat")
+def nasty_chat(req: NastyChatRequest):
+    user_content = (
+        f"Current song state:\n```json\n{json.dumps(req.song, indent=2)}\n```\n\n"
+        f"User: {req.message}"
+    )
+    messages = req.history + [{"role": "user", "content": user_content}]
+    client = _nasty_anthropic.Anthropic()
+    try:
+        resp = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=8000,
+            system=_NASTY_SYSTEM_PROMPT,
+            tools=_NASTY_TOOLS,
+            messages=messages,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Claude error: {e}")
+    tool_calls = []
+    text_parts = []
+    for block in resp.content:
+        if block.type == "tool_use":
+            tool_calls.append({"name": block.name, "input": block.input})
+        elif block.type == "text":
+            text_parts.append(block.text)
+    return {
+        "text": "\n".join(text_parts).strip(),
+        "tool_calls": tool_calls,
+        "stop_reason": resp.stop_reason,
+    }
 
 
 # ---------------------------------------------------------------------------
