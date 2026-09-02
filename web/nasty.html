@@ -44,6 +44,9 @@
     padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px;
   }
   #topbar button:hover { border-color: var(--accent-2); }
+  #topbar button.active {
+    background: var(--accent); color: white; border-color: var(--accent);
+  }
   #topbar .info { color: var(--dim); font-size: 12px; margin-left: auto; }
 
   /* Timeline area */
@@ -167,6 +170,7 @@
       <div class="logo">NASTY</div>
       <button id="play-btn">▶ Play</button>
       <button id="stop-btn">■ Stop</button>
+      <button id="loop-btn">↻ Loop</button>
       <button id="clear-btn">✕ Clear</button>
       <div class="info">
         <span id="bpm-label">120</span> BPM ·
@@ -223,6 +227,7 @@ let scheduledSources = [];
 let playStartTime = 0;
 let songDurationSec = 0;
 let animationFrame = null;
+let loopEnabled = false;
 
 function initAudio() {
   if (ctx) return;
@@ -453,7 +458,11 @@ function animatePlayhead() {
       animationFrame = requestAnimationFrame(tick);
       return;
     }
-    if (elapsed > songDurationSec + 0.5) {
+    if (elapsed > songDurationSec + 0.3) {
+      if (loopEnabled && song.tracks.length > 0) {
+        playSong();
+        return;
+      }
       stopSong();
       return;
     }
@@ -699,6 +708,10 @@ document.getElementById('play-btn').addEventListener('click', () => {
   playSong();
 });
 document.getElementById('stop-btn').addEventListener('click', stopSong);
+document.getElementById('loop-btn').addEventListener('click', () => {
+  loopEnabled = !loopEnabled;
+  document.getElementById('loop-btn').classList.toggle('active', loopEnabled);
+});
 document.getElementById('clear-btn').addEventListener('click', () => {
   if (!confirm('Clear the song?')) return;
   song = { bpm: 120, bars: 16, tracks: [] };
