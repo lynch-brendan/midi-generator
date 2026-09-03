@@ -161,6 +161,7 @@
     font-size: 12px;
   }
   .channel-row:hover, .pattern-row:hover { border-color: var(--accent-2); }
+  .channel-row.armed { border-color: var(--arm); box-shadow: 0 0 0 1px var(--arm); }
   .channel-row .swatch, .pattern-row .swatch {
     width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0;
   }
@@ -1299,8 +1300,15 @@ function renderChannelRack() {
   }
   for (const ch of song.channels) {
     const row = document.createElement('div');
-    row.className = 'channel-row';
+    row.className = 'channel-row' + (ch.armed ? ' armed' : '');
     row.dataset.chId = ch.id;
+    row.title = 'Click to select — then type on keyboard to play';
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('button') || e.target.closest('select') || e.target.closest('input')) return;
+      for (const c of song.channels) if (c !== ch) c.armed = false;
+      ch.armed = true;
+      render();
+    });
     const fxHtml = (ch.effects || []).map(fx =>
       `<span class="fxchip" data-ch="${ch.id}" data-fx="${fx.type}" title="Click to remove">${fx.type}</span>`
     ).join('');
@@ -2385,18 +2393,16 @@ const typingActive = {};
 
 document.addEventListener('keydown', (e) => {
   if (document.activeElement && ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)) return;
-  const isPrOpen = !document.getElementById('piano-roll').classList.contains('hidden');
-  if (!isPrOpen) return;
   const key = e.key;
   if (key === '[') { typingOctave = Math.max(-3, typingOctave - 1); return; }
   if (key === ']') { typingOctave = Math.min(3, typingOctave + 1); return; }
   const lk = key.toLowerCase();
   if (!(lk in TYPING_MAP)) return;
+  const ch = getActiveInputChannel();
+  if (!ch) return;
   if (typingActive[lk]) { e.preventDefault(); return; }
   e.preventDefault();
   const pitch = TYPING_BASE_PITCH + TYPING_MAP[lk] + typingOctave * 12;
-  const ch = getActiveInputChannel();
-  if (!ch) return;
   initAudio();
   if (ctx.state === 'suspended') ctx.resume();
   previewNote(ch.instrument, pitch, 0.8, 2);
@@ -2470,10 +2476,12 @@ document.getElementById('new-channel-ok').addEventListener('click', () => {
   const name = document.getElementById('new-channel-name').value.trim() || 'Channel';
   const inst = document.getElementById('new-channel-inst').value;
   const id = 'ch_' + inst + '_' + Date.now().toString(36);
+  for (const c of song.channels) c.armed = false;
   song.channels.push({
     id, name, instrument: inst, volume: 0.8, effects: [],
-    muted: false, solo: false, armed: false,
+    muted: false, solo: false, armed: true,
     color: PALETTE[song.channels.length % PALETTE.length],
+    insertId: 'master',
   });
   document.getElementById('add-channel-modal').classList.add('hidden');
   render();
