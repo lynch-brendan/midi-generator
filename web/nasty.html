@@ -439,6 +439,31 @@ function loadFromStorage() {
     }
   } catch (e) {}
 }
+function ensureDefaultTracks() {
+  if (song.tracks.length > 0) return;
+  const midi = [
+    { inst: 'drums', name: 'Drums' },
+    { inst: 'bass', name: 'Bass' },
+    { inst: 'lead', name: 'Lead' },
+    { inst: 'piano', name: 'Piano' },
+    { inst: 'pad', name: 'Pad' },
+  ];
+  for (const { inst, name } of midi) {
+    song.tracks.push({
+      id: inst + '_default', name, instrument: inst,
+      volume: 0.8, effects: [], clips: [],
+      muted: false, solo: false, armed: false,
+    });
+  }
+  for (let i = 1; i <= 8; i++) {
+    song.tracks.push({
+      id: 'audio_default_' + i, name: 'Audio ' + i, instrument: 'audio',
+      volume: 0.9, effects: [], clips: [],
+      muted: false, solo: false, armed: false,
+    });
+  }
+}
+
 function ensureShape(s) {
   s.bpm = s.bpm || 120;
   s.bars = Math.max(MIN_BARS, s.bars || MIN_BARS);
@@ -831,8 +856,15 @@ function initAudioDrop() {
     const dropBar = Math.max(0, Math.floor(x / BAR_WIDTH));
     let targetTrack = song.tracks[trackIdx];
     if (!targetTrack || targetTrack.instrument !== 'audio') {
-      targetTrack = song.tracks.find(t => t.instrument === 'audio');
-      if (!targetTrack) {
+      let bestIdx = -1, bestDist = Infinity;
+      for (let i = 0; i < song.tracks.length; i++) {
+        if (song.tracks[i].instrument === 'audio') {
+          const d = Math.abs(i - trackIdx);
+          if (d < bestDist) { bestDist = d; bestIdx = i; }
+        }
+      }
+      if (bestIdx >= 0) targetTrack = song.tracks[bestIdx];
+      else {
         targetTrack = {
           id: 'audio-' + Date.now().toString(36),
           name: 'Audio', instrument: 'audio',
@@ -1094,7 +1126,7 @@ function onClipMouseDown(e) {
   if (!clip) return;
   selectedClipId = clipId;
   clipDrag = {
-    clipId, trackId, startX: e.clientX, origBar: clip.startBar,
+    clipId, trackId, startX: e.clientX, startY: e.clientY, origBar: clip.startBar,
     moved: false, copy: e.altKey || e.metaKey, isAudio: clip.type === 'audio',
     el: e.currentTarget,
   };
@@ -1106,16 +1138,37 @@ function onClipMouseDown(e) {
 function onClipMouseMove(e) {
   if (!clipDrag) return;
   const dx = e.clientX - clipDrag.startX;
-  if (Math.abs(dx) > 3) clipDrag.moved = true;
+  const dy = e.clientY - clipDrag.startY;
+  if (Math.abs(dx) > 3 || Math.abs(dy) > 3) clipDrag.moved = true;
   const track = song.tracks.find(t => t.id === clipDrag.trackId);
   const clip = track && track.clips.find(c => c.id === clipDrag.clipId);
   if (!clip) return;
   const newBar = Math.max(0, Math.round(clipDrag.origBar + dx / BAR_WIDTH));
-  if (newBar !== clip.startBar) {
-    clip.startBar = newBar;
-    autoExpandBars();
-    render();
+
+  // Vertical: find track lane under cursor, move clip if compatible type
+  let targetTrackId = clipDrag.trackId;
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  const row = el && el.closest && el.closest('.track-row');
+  if (row) {
+    const rid = row.dataset.trackId;
+    const targetTrack = song.tracks.find(t => t.id === rid);
+    if (targetTrack) {
+      const clipIsAudio = clip.type === 'audio';
+      const targetIsAudio = targetTrack.instrument === 'audio';
+      if (clipIsAudio === targetIsAudio) targetTrackId = rid;
+    }
   }
+
+  let changed = false;
+  if (newBar !== clip.startBar) { clip.startBar = newBar; changed = true; }
+  if (targetTrackId !== clipDrag.trackId) {
+    track.clips = track.clips.filter(c => c.id !== clip.id);
+    const newTrack = song.tracks.find(t => t.id === targetTrackId);
+    newTrack.clips.push(clip);
+    clipDrag.trackId = targetTrackId;
+    changed = true;
+  }
+  if (changed) { autoExpandBars(); render(); }
 }
 
 function onClipMouseUp(e) {
@@ -1147,6 +1200,26 @@ document.addEventListener('keydown', (e) => {
     audioBuffers.delete(selectedClipId);
     selectedClipId = null;
     render();
+  }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b' && selectedClipId && pianoRollClipId === null) {
+    e.preventDefault();
+    for (const t of song.tracks) {
+      const c = t.clips.find(cl => cl.id === selectedClipId);
+      if (c) {
+        const copy = JSON.parse(JSON.stringify(c));
+        copy.id = 'clip_' + Date.now().toString(36);
+        copy.startBar = c.startBar + c.lengthBars;
+        t.clips.push(copy);
+        if (c.type === 'audio') {
+          const buf = audioBuffers.get(c.id);
+          if (buf) audioBuffers.set(copy.id, buf);
+        }
+        selectedClipId = copy.id;
+        autoExpandBars();
+        render();
+        break;
+      }
+    }
   }
   if (e.key === ' ' && pianoRollClipId === null) {
     e.preventDefault();
@@ -1759,6 +1832,7 @@ document.getElementById('clear-btn').addEventListener('click', () => {
   song = { bpm: 120, bars: MIN_BARS, tracks: [] };
   chatHistory = [];
   audioBuffers.clear();
+  ensureDefaultTracks();
   document.getElementById('chat-messages').innerHTML = '';
   stopSong();
   render();
@@ -1807,6 +1881,7 @@ document.getElementById('chat-input').addEventListener('keydown', (e) => {
 // Boot
 // ============================================================
 loadFromStorage();
+ensureDefaultTracks();
 render();
 initMIDI();
 initAudioDrop();
