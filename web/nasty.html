@@ -178,6 +178,11 @@
   .pattern-row.current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
   .pattern-row[draggable=true] { cursor: grab; }
   .pattern-row .pinfo { color: var(--dim); font-size: 10px; }
+  .ch-dot {
+    display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+    margin-right: 2px; vertical-align: middle;
+  }
+  .pattern-row .chs { display: flex; gap: 2px; margin-right: 4px; }
   .fx-inline {
     font-size: 10px; color: var(--dim); margin-left: 8px;
   }
@@ -1344,14 +1349,21 @@ function renderPatternList() {
     list.innerHTML = '<div style="color:var(--dim);padding:12px;font-size:12px">No patterns. Click + Pattern.</div>';
     return;
   }
+  const channelById = new Map(song.channels.map(c => [c.id, c]));
   for (const p of song.patterns) {
     const row = document.createElement('div');
     row.className = 'pattern-row' + (p.id === currentPatternId ? ' current' : '');
     row.draggable = true;
     row.dataset.patId = p.id;
+    const chSet = new Set(p.notes.map(n => n.channelId));
+    const chDots = [...chSet].map(cid => {
+      const c = channelById.get(cid);
+      return c ? `<span class="ch-dot" style="background:${c.color}" title="${escapeHtml(c.name)}"></span>` : '';
+    }).join('');
     row.innerHTML = `
       <span class="swatch" style="background:${p.color}"></span>
       <span class="pname">${escapeHtml(p.name)}</span>
+      <span class="chs">${chDots}</span>
       <span class="pinfo">${p.notes.length} notes · ${p.lengthBars} bars</span>
       <span class="pbtns">
         <button data-a="edit" data-pid="${p.id}" title="Open piano roll">edit</button>
@@ -1767,7 +1779,15 @@ function closePianoRoll() {
 function renderPianoRoll() {
   const p = song.patterns.find(pt => pt.id === currentPatternId);
   if (!p) { closePianoRoll(); return; }
-  document.getElementById('pr-info').textContent = `${p.notes.length} notes · ${p.lengthBars} bars`;
+  const perCh = {};
+  for (const n of p.notes) perCh[n.channelId] = (perCh[n.channelId] || 0) + 1;
+  const legend = Object.entries(perCh).map(([cid, count]) => {
+    const c = song.channels.find(ch => ch.id === cid);
+    if (!c) return '';
+    return `<span style="color:${c.color};font-weight:600">${escapeHtml(c.name)}: ${count}</span>`;
+  }).join(' · ');
+  document.getElementById('pr-info').innerHTML =
+    `${p.notes.length} notes · ${p.lengthBars} bars${legend ? ' — ' + legend : ''}`;
   const keysEl = document.getElementById('pr-keys');
   const gridWrap = document.getElementById('pr-grid-wrap');
   const grid = document.getElementById('pr-grid');
@@ -1829,6 +1849,34 @@ function renderPianoRoll() {
 let prNoteDrag = null;
 let prResizeDrag = null;
 let prCreateDrag = null;
+let prEraseDrag = false;
+
+function tryEraseAt(x, y) {
+  const el = document.elementFromPoint(x, y);
+  if (!el) return;
+  const noteEl = el.closest && el.closest('.pr-note');
+  if (!noteEl) return;
+  const idx = parseInt(noteEl.dataset.idx);
+  const p = song.patterns.find(pt => pt.id === currentPatternId);
+  if (!p) return;
+  if (idx >= 0 && idx < p.notes.length) {
+    p.notes.splice(idx, 1);
+    renderPianoRoll();
+  }
+}
+function onPrEraseMove(e) { if (prEraseDrag) tryEraseAt(e.clientX, e.clientY); }
+function onPrEraseUp() {
+  document.removeEventListener('mousemove', onPrEraseMove);
+  document.removeEventListener('mouseup', onPrEraseUp);
+  prEraseDrag = false;
+  persist(); render();
+}
+function startErase(x, y) {
+  prEraseDrag = true;
+  document.addEventListener('mousemove', onPrEraseMove);
+  document.addEventListener('mouseup', onPrEraseUp);
+  tryEraseAt(x, y);
+}
 function pxToBeat(x) { return x / PR_BEAT_WIDTH; }
 function snapBeat(b) {
   if (!document.getElementById('quantize').checked) return b;
@@ -1836,6 +1884,7 @@ function snapBeat(b) {
 }
 
 function onPrGridMouseDown(e) {
+  if (e.button === 2) { e.preventDefault(); startErase(e.clientX, e.clientY); return; }
   if (e.target !== e.currentTarget) return;
   const p = song.patterns.find(pt => pt.id === currentPatternId);
   if (!p) return;
@@ -1867,6 +1916,11 @@ function onPrCreateUp() {
 }
 
 function onPrNoteMouseDown(e) {
+  if (e.button === 2) {
+    e.preventDefault(); e.stopPropagation();
+    startErase(e.clientX, e.clientY);
+    return;
+  }
   e.stopPropagation();
   const idx = parseInt(e.currentTarget.dataset.idx);
   const p = song.patterns.find(pt => pt.id === currentPatternId);
@@ -2394,6 +2448,7 @@ document.getElementById('load-btn').addEventListener('click', loadFromFile);
 document.getElementById('export-btn').addEventListener('click', exportWAV);
 document.getElementById('midi-select').addEventListener('change', (e) => attachMidiInput(e.target.value));
 document.getElementById('pr-close').addEventListener('click', closePianoRoll);
+document.getElementById('piano-roll-panel').addEventListener('contextmenu', (e) => e.preventDefault());
 document.getElementById('pr-active-channel').addEventListener('change', (e) => {
   pianoRollActiveChannelId = e.target.value;
 });
