@@ -446,6 +446,7 @@
       <div class="spacer"></div>
       <label>Draw on:</label>
       <select id="pr-active-channel"></select>
+      <span style="font-size:11px;color:var(--dim);margin-left:10px" title="Z X C V B N M , . = white keys · S D G H J L ; = black keys · Q W E R T Y U I O = upper octave · [ / ] shift octave">⌨ type Z-M = piano · [/] octave</span>
       <button id="pr-close">Close</button>
     </div>
     <div id="pr-body">
@@ -2278,16 +2279,25 @@ function attachMidiInput(id) {
   currentMidiInput = input;
 }
 
+function getActiveInputChannel() {
+  const isPrOpen = !document.getElementById('piano-roll').classList.contains('hidden');
+  if (isPrOpen) {
+    const c = song.channels.find(c => c.id === pianoRollActiveChannelId);
+    if (c) return c;
+  }
+  return song.channels.find(c => c.armed);
+}
+
 function onMidiMessage(e) {
   const [status, data1, data2] = e.data;
   const type = status & 0xf0;
-  const armed = song.channels.find(c => c.armed);
+  const ch = getActiveInputChannel();
   if (type === 0x90 && data2 > 0) {
     const velocity = data2 / 127;
-    if (armed) previewNote(armed.instrument, data1, velocity, 0.5);
-    if (midiRecording) {
+    if (ch) previewNote(ch.instrument, data1, velocity, 0.5);
+    if (midiRecording && ch) {
       const t = ctx.currentTime - midiRecording.startTime;
-      midiRecording.active[data1] = { pitch: data1, velocity, tStart: t };
+      midiRecording.active[data1] = { pitch: data1, velocity, tStart: t, channelId: ch.id };
     }
   } else if (type === 0x80 || (type === 0x90 && data2 === 0)) {
     if (midiRecording && midiRecording.active[data1]) {
@@ -2295,6 +2305,7 @@ function onMidiMessage(e) {
       const t = ctx.currentTime - midiRecording.startTime;
       midiRecording.notes.push({
         pitch: start.pitch, velocity: start.velocity,
+        channelId: start.channelId,
         tStart: start.tStart, tEnd: t,
       });
       delete midiRecording.active[data1];
@@ -2303,8 +2314,8 @@ function onMidiMessage(e) {
 }
 
 function startMidiRecording() {
-  const armed = song.channels.find(c => c.armed);
-  if (!armed) { alert('Arm a channel first (● in the Channel Rack).'); return; }
+  const ch = getActiveInputChannel();
+  if (!ch) { alert('Open a pattern and pick a channel in "Draw on", or arm a channel (● in the Channel Rack).'); return; }
   const pat = song.patterns.find(p => p.id === currentPatternId);
   if (!pat) { alert('Select or create a pattern first.'); return; }
   initAudio();
@@ -2313,7 +2324,7 @@ function startMidiRecording() {
   const countInBeats = 4;
   const t0 = ctx.currentTime + 0.2;
   const recStart = t0 + countInBeats * secPerBeat;
-  midiRecording = { channelId: armed.id, patternId: pat.id, startTime: recStart, notes: [], active: {} };
+  midiRecording = { channelId: ch.id, patternId: pat.id, startTime: recStart, notes: [], active: {} };
   const totalBeats = countInBeats + pat.lengthBars * 4 * 4;
   for (let b = 0; b < totalBeats; b++) {
     const bt = t0 + b * secPerBeat;
@@ -2347,10 +2358,8 @@ function stopMidiRecording() {
     let startBeat = n.tStart * bpm / 60;
     let dur = (n.tEnd - n.tStart) * bpm / 60;
     if (q) { startBeat = Math.round(startBeat * 4) / 4; dur = Math.max(0.25, Math.round(dur * 4) / 4); }
-    // Wrap into pattern length if too long
-    if (startBeat > pat.lengthBars * 4) continue;
     pat.notes.push({
-      channelId: rec.channelId, pitch: n.pitch,
+      channelId: n.channelId || rec.channelId, pitch: n.pitch,
       startBeat, durationBeats: dur, velocity: n.velocity,
     });
   }
@@ -2358,6 +2367,61 @@ function stopMidiRecording() {
   if (maxEnd / 4 > pat.lengthBars) pat.lengthBars = Math.ceil(maxEnd / 4);
   render();
 }
+
+// ============================================================
+// Typing keyboard → play notes like a MIDI keyboard (FL-style)
+// ============================================================
+const TYPING_MAP = {
+  // Bottom row: white keys C to C+
+  'z': 0, 's': 1, 'x': 2, 'd': 3, 'c': 4, 'v': 5, 'g': 6, 'b': 7, 'h': 8, 'n': 9, 'j': 10, 'm': 11,
+  ',': 12, 'l': 13, '.': 14, ';': 15, '/': 16,
+  // Top row: octave up
+  'q': 12, '2': 13, 'w': 14, '3': 15, 'e': 16, 'r': 17, '5': 18, 't': 19, '6': 20, 'y': 21, '7': 22, 'u': 23,
+  'i': 24, '9': 25, 'o': 26, '0': 27, 'p': 28,
+};
+const TYPING_BASE_PITCH = 60; // middle C
+let typingOctave = 0;
+const typingActive = {};
+
+document.addEventListener('keydown', (e) => {
+  if (document.activeElement && ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)) return;
+  const isPrOpen = !document.getElementById('piano-roll').classList.contains('hidden');
+  if (!isPrOpen) return;
+  const key = e.key;
+  if (key === '[') { typingOctave = Math.max(-3, typingOctave - 1); return; }
+  if (key === ']') { typingOctave = Math.min(3, typingOctave + 1); return; }
+  const lk = key.toLowerCase();
+  if (!(lk in TYPING_MAP)) return;
+  if (typingActive[lk]) { e.preventDefault(); return; }
+  e.preventDefault();
+  const pitch = TYPING_BASE_PITCH + TYPING_MAP[lk] + typingOctave * 12;
+  const ch = getActiveInputChannel();
+  if (!ch) return;
+  initAudio();
+  if (ctx.state === 'suspended') ctx.resume();
+  previewNote(ch.instrument, pitch, 0.8, 2);
+  typingActive[lk] = { pitch, channelId: ch.id, tStart: ctx.currentTime };
+  if (midiRecording) {
+    const t = ctx.currentTime - midiRecording.startTime;
+    midiRecording.active[pitch] = { pitch, velocity: 0.8, tStart: t, channelId: ch.id };
+  }
+});
+document.addEventListener('keyup', (e) => {
+  const lk = e.key.toLowerCase();
+  const st = typingActive[lk];
+  if (!st) return;
+  delete typingActive[lk];
+  if (midiRecording && midiRecording.active[st.pitch]) {
+    const start = midiRecording.active[st.pitch];
+    const t = ctx.currentTime - midiRecording.startTime;
+    midiRecording.notes.push({
+      pitch: start.pitch, velocity: start.velocity,
+      channelId: start.channelId,
+      tStart: start.tStart, tEnd: t,
+    });
+    delete midiRecording.active[st.pitch];
+  }
+});
 
 // ============================================================
 // Wire up
