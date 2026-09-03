@@ -1309,8 +1309,12 @@ _NASTY_TOOLS = [
         },
     },
     {
-        "name": "add_track",
-        "description": "Create a new track. You invent the id (short slug).",
+        "name": "create_channel",
+        "description": (
+            "Create a new channel in the Channel Rack. A channel is one sound "
+            "(instrument). Notes reference channels by id. You invent the id "
+            "(short lowercase slug like `kick`, `bass`, `lead`)."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -1320,72 +1324,145 @@ _NASTY_TOOLS = [
                     "type": "string",
                     "enum": ["piano", "bass", "lead", "pad", "drums"],
                 },
+                "volume": {"type": "number"},
             },
             "required": ["id", "name", "instrument"],
         },
     },
     {
-        "name": "delete_track",
-        "description": "Remove a track and all its clips.",
+        "name": "delete_channel",
+        "description": "Delete a channel and all notes tagged to it in every pattern.",
         "input_schema": {
             "type": "object",
-            "properties": {"track_id": {"type": "string"}},
-            "required": ["track_id"],
+            "properties": {"channel_id": {"type": "string"}},
+            "required": ["channel_id"],
         },
     },
     {
-        "name": "add_clip",
+        "name": "set_channel_volume",
+        "description": "Set a channel's volume (0-1).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "channel_id": {"type": "string"},
+                "volume": {"type": "number"},
+            },
+            "required": ["channel_id", "volume"],
+        },
+    },
+    {
+        "name": "apply_effect",
         "description": (
-            "Add a clip of notes to a track at a bar position. "
-            "You invent the clip id. Notes are objects: "
-            "{pitch, startBeat, durationBeats, velocity}. 1 bar = 4 beats."
+            "Add or update an effect on a channel. "
+            "compressor params: {threshold, ratio, attack, release}. "
+            "reverb params: {wet: 0-1, decay: seconds 0.5-4}. "
+            "delay params: {time: seconds 0.05-1, feedback: 0-0.8, wet: 0-1}."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "channel_id": {"type": "string"},
+                "effect": {"type": "string", "enum": ["compressor", "reverb", "delay"]},
+                "params": {"type": "object"},
+            },
+            "required": ["channel_id", "effect"],
+        },
+    },
+    {
+        "name": "remove_effect",
+        "description": "Remove an effect from a channel.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "channel_id": {"type": "string"},
+                "effect": {"type": "string"},
+            },
+            "required": ["channel_id", "effect"],
+        },
+    },
+    {
+        "name": "create_pattern",
+        "description": (
+            "Create a pattern. A pattern is a block of notes that can contain notes "
+            "for MULTIPLE channels at once (e.g. one pattern with kick + snare + bass + "
+            "chords). You invent the pattern id (e.g. `verse`, `chorus`). Each note is "
+            "{channel_id, pitch, start_beat, duration_beats, velocity}. 1 bar = 4 beats. "
+            "start_beat is beats from the pattern start (not the song start)."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "id": {"type": "string"},
-                "track_id": {"type": "string"},
-                "start_bar": {"type": "number"},
+                "name": {"type": "string"},
                 "length_bars": {"type": "number"},
                 "notes": {
                     "type": "array",
                     "items": {
                         "type": "object",
                         "properties": {
+                            "channel_id": {"type": "string"},
                             "pitch": {"type": "number"},
-                            "startBeat": {"type": "number"},
-                            "durationBeats": {"type": "number"},
+                            "start_beat": {"type": "number"},
+                            "duration_beats": {"type": "number"},
                             "velocity": {"type": "number"},
                         },
-                        "required": ["pitch", "startBeat", "durationBeats"],
+                        "required": ["channel_id", "pitch", "start_beat", "duration_beats"],
                     },
                 },
             },
-            "required": ["id", "track_id", "start_bar", "length_bars", "notes"],
+            "required": ["id", "name", "length_bars", "notes"],
         },
     },
     {
-        "name": "edit_clip",
-        "description": "Replace the notes in an existing clip.",
+        "name": "edit_pattern",
+        "description": "Replace all notes in an existing pattern.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "clip_id": {"type": "string"},
+                "pattern_id": {"type": "string"},
                 "notes": {"type": "array", "items": {"type": "object"}},
             },
-            "required": ["clip_id", "notes"],
+            "required": ["pattern_id", "notes"],
+        },
+    },
+    {
+        "name": "delete_pattern",
+        "description": "Delete a pattern and all clips referencing it.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"pattern_id": {"type": "string"}},
+            "required": ["pattern_id"],
+        },
+    },
+    {
+        "name": "add_pattern_clip",
+        "description": (
+            "Place a pattern on a playlist track at a bar position. You invent the clip id. "
+            "Playlist tracks are pre-created (track_1..track_8) — no need to create them."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "track_id": {"type": "string"},
+                "pattern_id": {"type": "string"},
+                "start_bar": {"type": "number"},
+                "length_bars": {"type": "number"},
+            },
+            "required": ["id", "track_id", "pattern_id", "start_bar"],
         },
     },
     {
         "name": "move_clip",
-        "description": "Move a clip to a new starting bar.",
+        "description": "Move a clip to a new bar or track.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "clip_id": {"type": "string"},
                 "start_bar": {"type": "number"},
+                "track_id": {"type": "string"},
             },
-            "required": ["clip_id", "start_bar"],
+            "required": ["clip_id"],
         },
     },
     {
@@ -1398,58 +1475,10 @@ _NASTY_TOOLS = [
         },
     },
     {
-        "name": "apply_effect",
-        "description": (
-            "Add or update an effect on a track. "
-            "compressor params: {}. "
-            "reverb params: {wet: 0-1, decay: seconds 0.5-4}. "
-            "delay params: {time: seconds 0.05-1, feedback: 0-0.8, wet: 0-1}."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "track_id": {"type": "string"},
-                "effect": {
-                    "type": "string",
-                    "enum": ["compressor", "reverb", "delay"],
-                },
-                "params": {"type": "object"},
-            },
-            "required": ["track_id", "effect"],
-        },
-    },
-    {
-        "name": "remove_effect",
-        "description": "Remove an effect from a track.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "track_id": {"type": "string"},
-                "effect": {"type": "string"},
-            },
-            "required": ["track_id", "effect"],
-        },
-    },
-    {
-        "name": "set_track_volume",
-        "description": "Set a track's volume (0-1).",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "track_id": {"type": "string"},
-                "volume": {"type": "number"},
-            },
-            "required": ["track_id", "volume"],
-        },
-    },
-    {
         "name": "repeat_clip",
         "description": (
-            "Repeat an existing clip N times back-to-back after the original. "
-            "This is how you build longer songs cheaply — write a 4-bar pattern "
-            "once with add_clip, then repeat_clip(clip_id, times=7) fills 32 bars. "
-            "Each copy gets a new auto-generated id and is placed at "
-            "startBar + lengthBars * i for i in 1..times."
+            "Repeat a pattern-clip N times back-to-back after the original. Each copy references "
+            "the SAME pattern, placed at startBar + lengthBars * i. Cheap way to build sections."
         ),
         "input_schema": {
             "type": "object",
