@@ -287,6 +287,65 @@
   .modal-panel .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
   .rec-status { color: var(--record); font-size: 12px; font-weight: 600; }
   .hidden { display: none !important; }
+
+  /* Mixer modal */
+  #mixer-panel {
+    width: 92vw; height: 80vh; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 10px;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  #mixer-header {
+    padding: 10px 14px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 12px;
+    background: var(--panel-2);
+  }
+  #mixer-strips {
+    flex: 1; display: flex; padding: 12px; gap: 10px;
+    overflow-x: auto; overflow-y: hidden;
+    background: var(--bg);
+  }
+  .mixer-strip {
+    width: 140px; flex-shrink: 0; height: 100%;
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 8px; padding: 10px;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .mixer-strip.master { border-color: var(--accent); }
+  .mixer-strip .mname {
+    text-align: center; font-weight: 600; font-size: 12px;
+    padding: 4px; background: var(--bg); border-radius: 4px;
+    cursor: text;
+  }
+  .mixer-strip .mfx {
+    flex: 1; overflow-y: auto; min-height: 0;
+    display: flex; flex-direction: column; gap: 3px;
+  }
+  .mixer-strip .fxrow {
+    background: var(--bg); border-radius: 4px; padding: 4px 6px; font-size: 10px;
+  }
+  .mixer-strip .fxrow .fxhead {
+    display: flex; justify-content: space-between; align-items: center;
+    color: var(--accent); font-weight: 600;
+  }
+  .mixer-strip .fxrow .fxhead button { padding: 1px 4px; font-size: 9px; }
+  .mixer-strip .fxrow .knob { display: flex; gap: 4px; margin-top: 2px; align-items: center; }
+  .mixer-strip .fxrow .knob label { width: 40px; color: var(--dim); font-size: 10px; }
+  .mixer-strip .fxrow .knob input { flex: 1; margin: 0; padding: 0; }
+  .mixer-strip .addfx { width: 100%; font-size: 10px; }
+  .mixer-strip .send {
+    font-size: 10px; color: var(--dim); display: flex; align-items: center; gap: 4px;
+  }
+  .mixer-strip .send select { flex: 1; font-size: 10px; padding: 2px 4px; }
+  .mixer-strip .faderwrap {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 8px 0;
+  }
+  .mixer-strip .fader {
+    -webkit-appearance: slider-vertical; appearance: slider-vertical;
+    width: 22px; height: 120px;
+  }
+  .mixer-strip .db { font-size: 10px; color: var(--dim); width: 30px; text-align: right; }
+  .mixer-strip .del { font-size: 10px; padding: 2px 6px; align-self: center; }
 </style>
 </head>
 <body>
@@ -312,6 +371,7 @@
       </div>
       <div class="sep"></div>
       <div class="group">
+        <button id="mixer-btn">Mixer</button>
         <button id="save-btn">Save</button>
         <button id="load-btn">Load</button>
         <button id="export-btn">Export WAV</button>
@@ -390,6 +450,18 @@
   </div>
 </div>
 
+<div id="mixer-modal" class="modal hidden">
+  <div id="mixer-panel">
+    <div id="mixer-header">
+      <div style="font-weight:600">Mixer</div>
+      <button id="add-insert-btn">+ Insert</button>
+      <div style="flex:1"></div>
+      <button id="mixer-close">Close</button>
+    </div>
+    <div id="mixer-strips"></div>
+  </div>
+</div>
+
 <div id="add-channel-modal" class="modal hidden">
   <div class="modal-panel">
     <h3>New channel</h3>
@@ -439,7 +511,7 @@ const PR_PITCH_MAX = 108;
 const STORAGE_KEY = 'nasty.song.fl.v1';
 const PALETTE = ['#ff5c93','#6b7cff','#33c58a','#ffb020','#a95cff','#ff7c47','#42c8e0','#e05cff','#ffdd57','#5cff8f'];
 
-let song = { bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [] };
+let song = { bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] } };
 let chatHistory = [];
 let selectedClipId = null;
 let currentPatternId = null;
@@ -481,6 +553,16 @@ function ensureShape(s) {
   s.channels = s.channels || [];
   s.patterns = s.patterns || [];
   s.tracks = s.tracks || [];
+  s.mixer = s.mixer || { inserts: [] };
+  s.mixer.inserts = s.mixer.inserts || [];
+  if (!s.mixer.inserts.find(i => i.id === 'master')) {
+    s.mixer.inserts.unshift({ id: 'master', name: 'Master', volume: 0.8, effects: [], sendToId: null });
+  }
+  s.mixer.inserts.forEach(ins => {
+    ins.volume = ins.volume ?? 0.8;
+    ins.effects = ins.effects || [];
+    if (ins.id !== 'master' && !ins.sendToId) ins.sendToId = 'master';
+  });
   s.channels.forEach((c, i) => {
     c.volume = c.volume ?? 0.8;
     c.effects = c.effects || [];
@@ -488,6 +570,7 @@ function ensureShape(s) {
     c.solo = !!c.solo;
     c.armed = !!c.armed;
     c.color = c.color || PALETTE[i % PALETTE.length];
+    if (!c.insertId) c.insertId = 'master';
   });
   s.patterns.forEach((p, i) => {
     p.lengthBars = p.lengthBars || 2;
@@ -502,6 +585,15 @@ function ensureShape(s) {
   return s;
 }
 function ensureDefaults() {
+  if (!song.mixer.inserts.length) {
+    song.mixer.inserts.push({ id: 'master', name: 'Master', volume: 0.8, effects: [], sendToId: null });
+  }
+  if (song.mixer.inserts.length === 1) {
+    // add 4 empty inserts on empty song
+    for (let i = 1; i <= 4; i++) {
+      song.mixer.inserts.push({ id: 'ins_' + i, name: 'Insert ' + i, volume: 0.8, effects: [], sendToId: 'master' });
+    }
+  }
   if (!song.channels.length) {
     const defs = [
       { inst: 'drums', name: 'Drums' },
@@ -514,7 +606,7 @@ function ensureDefaults() {
       song.channels.push({
         id: 'ch_' + d.inst, name: d.name, instrument: d.inst,
         volume: 0.8, effects: [], muted: false, solo: false, armed: false,
-        color: PALETTE[i % PALETTE.length],
+        color: PALETTE[i % PALETTE.length], insertId: 'master',
       });
     });
   }
@@ -571,43 +663,46 @@ function makeImpulse(actx, decay) {
   return buf;
 }
 
+function applyFxTo(actx, prevNode, effect) {
+  const p = effect.params || {};
+  if (effect.type === 'compressor') {
+    const c = actx.createDynamicsCompressor();
+    c.threshold.value = p.threshold ?? -20;
+    c.ratio.value = p.ratio ?? 4;
+    c.attack.value = p.attack ?? 0.005;
+    c.release.value = p.release ?? 0.1;
+    prevNode.connect(c); return c;
+  } else if (effect.type === 'delay') {
+    const time = clamp(p.time ?? 0.25, 0.01, 1);
+    const feedback = clamp(p.feedback ?? 0.35, 0, 0.85);
+    const wetAmt = clamp(p.wet ?? 0.4, 0, 1);
+    const d = actx.createDelay(2); d.delayTime.value = time;
+    const fb = actx.createGain(); fb.gain.value = feedback;
+    const wet = actx.createGain(); wet.gain.value = wetAmt;
+    const dry = actx.createGain(); dry.gain.value = 1.0;
+    const merge = actx.createGain();
+    prevNode.connect(dry); dry.connect(merge);
+    prevNode.connect(d); d.connect(fb); fb.connect(d); d.connect(wet); wet.connect(merge);
+    return merge;
+  } else if (effect.type === 'reverb') {
+    const decay = clamp(p.decay ?? 2.0, 0.2, 5);
+    const wetAmt = clamp(p.wet ?? 0.3, 0, 1);
+    const conv = actx.createConvolver(); conv.buffer = makeImpulse(actx, decay);
+    const wet = actx.createGain(); wet.gain.value = wetAmt;
+    const dry = actx.createGain(); dry.gain.value = 1.0;
+    const merge = actx.createGain();
+    prevNode.connect(dry); dry.connect(merge);
+    prevNode.connect(conv); conv.connect(wet); wet.connect(merge);
+    return merge;
+  }
+  return prevNode;
+}
+
 function buildChannelChain(actx, dest, channel) {
   const input = actx.createGain();
   input.gain.value = channel.volume ?? 0.8;
   let node = input;
-  for (const effect of (channel.effects || [])) {
-    const p = effect.params || {};
-    if (effect.type === 'compressor') {
-      const c = actx.createDynamicsCompressor();
-      c.threshold.value = p.threshold ?? -20;
-      c.ratio.value = p.ratio ?? 4;
-      c.attack.value = p.attack ?? 0.005;
-      c.release.value = p.release ?? 0.1;
-      node.connect(c); node = c;
-    } else if (effect.type === 'delay') {
-      const time = clamp(p.time ?? 0.25, 0.01, 1);
-      const feedback = clamp(p.feedback ?? 0.35, 0, 0.85);
-      const wetAmt = clamp(p.wet ?? 0.4, 0, 1);
-      const d = actx.createDelay(2); d.delayTime.value = time;
-      const fb = actx.createGain(); fb.gain.value = feedback;
-      const wet = actx.createGain(); wet.gain.value = wetAmt;
-      const dry = actx.createGain(); dry.gain.value = 1.0;
-      const merge = actx.createGain();
-      node.connect(dry); dry.connect(merge);
-      node.connect(d); d.connect(fb); fb.connect(d); d.connect(wet); wet.connect(merge);
-      node = merge;
-    } else if (effect.type === 'reverb') {
-      const decay = clamp(p.decay ?? 2.0, 0.2, 5);
-      const wetAmt = clamp(p.wet ?? 0.3, 0, 1);
-      const conv = actx.createConvolver(); conv.buffer = makeImpulse(actx, decay);
-      const wet = actx.createGain(); wet.gain.value = wetAmt;
-      const dry = actx.createGain(); dry.gain.value = 1.0;
-      const merge = actx.createGain();
-      node.connect(dry); dry.connect(merge);
-      node.connect(conv); conv.connect(wet); wet.connect(merge);
-      node = merge;
-    }
-  }
+  for (const fx of (channel.effects || [])) node = applyFxTo(actx, node, fx);
   node.connect(dest);
   return input;
 }
@@ -782,12 +877,35 @@ function playSong() {
   animatePlayhead();
 }
 
-function scheduleSong(actx, master, tStart, sink) {
+function scheduleSong(actx, masterOut, tStart, sink) {
+  // Build insert chains: input gain → fx → volume gain (output).
+  const insertIn = {}, insertOut = {};
+  for (const ins of song.mixer.inserts) {
+    const input = actx.createGain();
+    let node = input;
+    for (const fx of (ins.effects || [])) node = applyFxTo(actx, node, fx);
+    const vol = actx.createGain();
+    vol.gain.value = ins.volume ?? 0.8;
+    node.connect(vol);
+    insertIn[ins.id] = input;
+    insertOut[ins.id] = vol;
+  }
+  // Wire insert sends
+  for (const ins of song.mixer.inserts) {
+    if (ins.id === 'master') insertOut[ins.id].connect(masterOut);
+    else {
+      const t = insertIn[ins.sendToId] || insertIn['master'];
+      insertOut[ins.id].connect(t);
+    }
+  }
   const patternById = new Map(song.patterns.map(p => [p.id, p]));
   const channelById = new Map(song.channels.map(c => [c.id, c]));
   const activeChannels = new Set(channelsToPlay().map(c => c.id));
   const channelChains = {};
-  for (const c of channelsToPlay()) channelChains[c.id] = buildChannelChain(actx, master, c);
+  for (const c of channelsToPlay()) {
+    const dest = insertIn[c.insertId] || insertIn['master'];
+    channelChains[c.id] = buildChannelChain(actx, dest, c);
+  }
   for (const track of tracksToPlay()) {
     for (const clip of track.clips) {
       const startBeats = clip.startBar * 4;
@@ -796,7 +914,7 @@ function scheduleSong(actx, master, tStart, sink) {
         const buf = audioBuffers.get(clip.id);
         if (!buf) continue;
         const src = actx.createBufferSource();
-        src.buffer = buf; src.connect(master);
+        src.buffer = buf; src.connect(insertIn['master']);
         src.start(t);
         if (sink) sink.push(src);
         continue;
@@ -1180,6 +1298,9 @@ function renderChannelRack() {
     const fxHtml = (ch.effects || []).map(fx =>
       `<span class="fxchip" data-ch="${ch.id}" data-fx="${fx.type}" title="Click to remove">${fx.type}</span>`
     ).join('');
+    const insertOpts = song.mixer.inserts.map(ins =>
+      `<option value="${ins.id}" ${ins.id === ch.insertId ? 'selected' : ''}>${escapeHtml(ins.name)}</option>`
+    ).join('');
     row.innerHTML = `
       <span class="swatch" style="background:${ch.color}"></span>
       <span class="cname">${escapeHtml(ch.name)}</span>
@@ -1193,6 +1314,9 @@ function renderChannelRack() {
           <option value="compressor">comp</option>
         </select>
       </span>
+      <select class="ch-insert" data-ch="${ch.id}" title="route to mixer insert" style="font-size:10px;padding:2px 4px;max-width:80px">
+        ${insertOpts}
+      </select>
       <span class="cbtns">
         <button class="${ch.muted?'on-mute':''}" data-a="mute" data-ch="${ch.id}">M</button>
         <button class="${ch.solo?'on-solo':''}" data-a="solo" data-ch="${ch.id}">S</button>
@@ -1206,6 +1330,11 @@ function renderChannelRack() {
   rack.querySelectorAll('.cbtns button').forEach(b => b.addEventListener('click', onChannelBtn));
   rack.querySelectorAll('.fx-add-sel').forEach(s => s.addEventListener('change', onChannelAddFx));
   rack.querySelectorAll('.fxchip').forEach(c => c.addEventListener('click', onChannelRemoveFx));
+  rack.querySelectorAll('.ch-insert').forEach(s => s.addEventListener('change', (e) => {
+    const cid = e.currentTarget.dataset.ch;
+    const ch = song.channels.find(c => c.id === cid);
+    if (ch) { ch.insertId = e.currentTarget.value; persist(); }
+  }));
 }
 
 function renderPatternList() {
@@ -1241,6 +1370,135 @@ function renderPatternList() {
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function volToDb(v) {
+  if (v <= 0.001) return '-∞';
+  return (20 * Math.log10(v)).toFixed(1);
+}
+
+function renderMixer() {
+  const strips = document.getElementById('mixer-strips');
+  strips.innerHTML = '';
+  for (const ins of song.mixer.inserts) {
+    const strip = document.createElement('div');
+    strip.className = 'mixer-strip' + (ins.id === 'master' ? ' master' : '');
+    const fxHtml = (ins.effects || []).map(fx => renderInsertFx(ins, fx)).join('');
+    const isMaster = ins.id === 'master';
+    const sendOpts = isMaster ? '' : song.mixer.inserts
+      .filter(i => i.id !== ins.id)
+      .map(i => `<option value="${i.id}" ${i.id === ins.sendToId ? 'selected' : ''}>${escapeHtml(i.name)}</option>`)
+      .join('');
+    strip.innerHTML = `
+      <div class="mname" contenteditable="${!isMaster}" data-ins="${ins.id}">${escapeHtml(ins.name)}</div>
+      <div class="mfx">${fxHtml}</div>
+      <select class="addfx" data-ins="${ins.id}">
+        <option value="">+ fx</option>
+        <option value="reverb">reverb</option>
+        <option value="delay">delay</option>
+        <option value="compressor">compressor</option>
+      </select>
+      <div class="faderwrap">
+        <input class="fader" type="range" min="0" max="1.5" step="0.01" value="${ins.volume}" data-ins="${ins.id}" />
+        <div class="db">${volToDb(ins.volume)} dB</div>
+      </div>
+      ${isMaster ? '' : `<div class="send">→ <select data-ins="${ins.id}" class="sendto">${sendOpts}</select></div>`}
+      ${isMaster ? '' : `<button class="del" data-ins="${ins.id}">✕ delete</button>`}
+    `;
+    strips.appendChild(strip);
+  }
+  strips.querySelectorAll('.fader').forEach(f => f.addEventListener('input', onInsertFader));
+  strips.querySelectorAll('.addfx').forEach(s => s.addEventListener('change', onInsertAddFx));
+  strips.querySelectorAll('.fxrow .fx-remove').forEach(b => b.addEventListener('click', onInsertRemoveFx));
+  strips.querySelectorAll('.fxrow .fx-knob').forEach(k => k.addEventListener('input', onInsertFxKnob));
+  strips.querySelectorAll('.sendto').forEach(s => s.addEventListener('change', onInsertSendTo));
+  strips.querySelectorAll('.del').forEach(b => b.addEventListener('click', onInsertDelete));
+  strips.querySelectorAll('.mname').forEach(n => n.addEventListener('blur', onInsertRename));
+}
+
+function renderInsertFx(ins, fx) {
+  const p = fx.params || {};
+  let knobs = '';
+  const kn = (name, val, min, max, step) =>
+    `<div class="knob"><label>${name}</label><input class="fx-knob" type="range" min="${min}" max="${max}" step="${step}" value="${val}" data-ins="${ins.id}" data-fx="${fx.type}" data-p="${name}"/></div>`;
+  if (fx.type === 'reverb') {
+    knobs = kn('wet', p.wet ?? 0.3, 0, 1, 0.01) + kn('decay', p.decay ?? 2, 0.2, 5, 0.1);
+  } else if (fx.type === 'delay') {
+    knobs = kn('wet', p.wet ?? 0.4, 0, 1, 0.01) + kn('time', p.time ?? 0.25, 0.01, 1, 0.01) + kn('fdbk', p.feedback ?? 0.35, 0, 0.85, 0.01);
+  } else if (fx.type === 'compressor') {
+    knobs = kn('thresh', p.threshold ?? -20, -60, 0, 1) + kn('ratio', p.ratio ?? 4, 1, 20, 0.5);
+  }
+  return `<div class="fxrow">
+    <div class="fxhead"><span>${fx.type}</span>
+      <button class="fx-remove" data-ins="${ins.id}" data-fx="${fx.type}">✕</button>
+    </div>${knobs}
+  </div>`;
+}
+
+function onInsertFader(e) {
+  const id = e.currentTarget.dataset.ins;
+  const ins = song.mixer.inserts.find(i => i.id === id);
+  if (!ins) return;
+  ins.volume = parseFloat(e.currentTarget.value);
+  e.currentTarget.nextElementSibling.textContent = volToDb(ins.volume) + ' dB';
+  persist();
+}
+function onInsertAddFx(e) {
+  const id = e.currentTarget.dataset.ins;
+  const type = e.currentTarget.value;
+  if (!type) return;
+  const ins = song.mixer.inserts.find(i => i.id === id);
+  if (ins && !ins.effects.find(f => f.type === type)) {
+    ins.effects.push({ type, params: {} });
+    renderMixer();
+  }
+}
+function onInsertRemoveFx(e) {
+  const id = e.currentTarget.dataset.ins;
+  const type = e.currentTarget.dataset.fx;
+  const ins = song.mixer.inserts.find(i => i.id === id);
+  if (!ins) return;
+  ins.effects = ins.effects.filter(f => f.type !== type);
+  renderMixer();
+}
+function onInsertFxKnob(e) {
+  const id = e.currentTarget.dataset.ins;
+  const type = e.currentTarget.dataset.fx;
+  const p = e.currentTarget.dataset.p;
+  const ins = song.mixer.inserts.find(i => i.id === id);
+  const fx = ins && ins.effects.find(f => f.type === type);
+  if (!fx) return;
+  fx.params = fx.params || {};
+  const key = p === 'thresh' ? 'threshold' : p === 'fdbk' ? 'feedback' : p;
+  fx.params[key] = parseFloat(e.currentTarget.value);
+  persist();
+}
+function onInsertSendTo(e) {
+  const id = e.currentTarget.dataset.ins;
+  const ins = song.mixer.inserts.find(i => i.id === id);
+  if (ins) { ins.sendToId = e.currentTarget.value; persist(); }
+}
+function onInsertDelete(e) {
+  const id = e.currentTarget.dataset.ins;
+  if (id === 'master') return;
+  if (!confirm('Delete this insert?')) return;
+  song.mixer.inserts = song.mixer.inserts.filter(i => i.id !== id);
+  for (const c of song.channels) if (c.insertId === id) c.insertId = 'master';
+  for (const i of song.mixer.inserts) if (i.sendToId === id) i.sendToId = 'master';
+  renderMixer(); render();
+}
+function onInsertRename(e) {
+  const id = e.currentTarget.dataset.ins;
+  const ins = song.mixer.inserts.find(i => i.id === id);
+  if (ins && id !== 'master') { ins.name = e.currentTarget.textContent.trim() || ins.name; render(); }
+}
+function openMixer() {
+  document.getElementById('mixer-modal').classList.remove('hidden');
+  renderMixer();
+}
+function closeMixer() {
+  document.getElementById('mixer-modal').classList.add('hidden');
+  render();
 }
 
 // ============================================================
@@ -1667,6 +1925,130 @@ function onPrResizeUp() {
 }
 
 // ============================================================
+// MIDI file parsing + drop into piano roll
+// ============================================================
+function parseVarLen(view, offset) {
+  let value = 0, byte, n = 0;
+  do {
+    byte = view.getUint8(offset + n);
+    value = (value << 7) | (byte & 0x7f);
+    n++;
+  } while (byte & 0x80);
+  return { value, bytesRead: n };
+}
+
+function parseMidiFile(buffer) {
+  const view = new DataView(buffer);
+  if (view.getUint8(0) !== 0x4D || view.getUint8(1) !== 0x54 ||
+      view.getUint8(2) !== 0x68 || view.getUint8(3) !== 0x64) {
+    throw new Error('Not a MIDI file');
+  }
+  const headerLen = view.getUint32(4);
+  const numTracks = view.getUint16(10);
+  const division = view.getUint16(12);
+  if (division & 0x8000) throw new Error('SMPTE-format MIDI files not supported');
+  const ticksPerQuarter = division;
+  let offset = 8 + headerLen;
+  const allNotes = [];
+  for (let ti = 0; ti < numTracks; ti++) {
+    if (view.getUint8(offset) !== 0x4D || view.getUint8(offset+1) !== 0x54 ||
+        view.getUint8(offset+2) !== 0x72 || view.getUint8(offset+3) !== 0x6B) {
+      throw new Error('Missing track chunk');
+    }
+    const trackLen = view.getUint32(offset + 4);
+    const trackEnd = offset + 8 + trackLen;
+    offset += 8;
+    let currentTick = 0, runningStatus = 0;
+    const activeNotes = {};
+    while (offset < trackEnd) {
+      const dt = parseVarLen(view, offset);
+      offset += dt.bytesRead;
+      currentTick += dt.value;
+      let status = view.getUint8(offset);
+      if (status < 0x80) { status = runningStatus; }
+      else { offset++; runningStatus = status; }
+      const type = status & 0xf0;
+      if (type === 0x80 || type === 0x90) {
+        const pitch = view.getUint8(offset); offset++;
+        const velocity = view.getUint8(offset); offset++;
+        if (type === 0x90 && velocity > 0) {
+          activeNotes[pitch] = { tick: currentTick, velocity: velocity / 127 };
+        } else {
+          const start = activeNotes[pitch];
+          if (start) {
+            allNotes.push({
+              pitch, velocity: start.velocity,
+              startBeat: start.tick / ticksPerQuarter,
+              durationBeats: Math.max(0.0625, (currentTick - start.tick) / ticksPerQuarter),
+            });
+            delete activeNotes[pitch];
+          }
+        }
+      } else if (type === 0xA0 || type === 0xB0 || type === 0xE0) {
+        offset += 2;
+      } else if (type === 0xC0 || type === 0xD0) {
+        offset += 1;
+      } else if (status === 0xFF) {
+        offset++;
+        const metaLen = parseVarLen(view, offset);
+        offset += metaLen.bytesRead;
+        offset += metaLen.value;
+      } else if (status === 0xF0 || status === 0xF7) {
+        const sysexLen = parseVarLen(view, offset);
+        offset += sysexLen.bytesRead;
+        offset += sysexLen.value;
+      } else {
+        console.warn('unknown midi status', status.toString(16));
+        break;
+      }
+    }
+    offset = trackEnd;
+  }
+  return allNotes;
+}
+
+function initPianoRollDrop() {
+  const wrap = document.getElementById('pr-grid-wrap');
+  wrap.addEventListener('dragover', (e) => {
+    if (e.dataTransfer.types.includes('Files')) {
+      e.preventDefault();
+      wrap.style.boxShadow = 'inset 0 0 0 2px var(--accent-2)';
+    }
+  });
+  wrap.addEventListener('dragleave', () => { wrap.style.boxShadow = ''; });
+  wrap.addEventListener('drop', async (e) => {
+    if (!e.dataTransfer.types.includes('Files')) return;
+    e.preventDefault();
+    wrap.style.boxShadow = '';
+    const files = [...e.dataTransfer.files].filter(f =>
+      f.name.toLowerCase().endsWith('.mid') || f.name.toLowerCase().endsWith('.midi'));
+    if (!files.length) { alert('Drop a .mid or .midi file'); return; }
+    const p = song.patterns.find(pt => pt.id === currentPatternId);
+    if (!p) { alert('Open a pattern first'); return; }
+    const activeCh = song.channels.find(c => c.id === pianoRollActiveChannelId);
+    if (!activeCh) { alert('Pick a channel in the Draw on dropdown first'); return; }
+    for (const file of files) {
+      try {
+        const buf = await file.arrayBuffer();
+        const notes = parseMidiFile(buf);
+        for (const n of notes) {
+          p.notes.push({
+            channelId: activeCh.id, pitch: n.pitch,
+            startBeat: n.startBeat, durationBeats: n.durationBeats,
+            velocity: n.velocity,
+          });
+        }
+        const maxEnd = p.notes.reduce((m,n)=>Math.max(m, n.startBeat+n.durationBeats), 0);
+        if (maxEnd / 4 > p.lengthBars) p.lengthBars = Math.ceil(maxEnd / 4);
+      } catch (err) {
+        alert('Could not parse ' + file.name + ': ' + err.message);
+      }
+    }
+    renderPianoRoll(); render();
+  });
+}
+
+// ============================================================
 // Chat
 // ============================================================
 function addChatMessage(role, text, tools) {
@@ -1946,7 +2328,7 @@ document.getElementById('midi-rec-btn').addEventListener('click', () => {
 });
 document.getElementById('clear-btn').addEventListener('click', () => {
   if (!confirm('Clear the song? (channels, patterns, and playlist all reset)')) return;
-  song = { bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [] };
+  song = { bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] } };
   chatHistory = [];
   audioBuffers.clear();
   currentPatternId = null;
@@ -1997,6 +2379,16 @@ document.getElementById('new-pattern-ok').addEventListener('click', () => {
   document.getElementById('add-pattern-modal').classList.add('hidden');
   render();
 });
+document.getElementById('mixer-btn').addEventListener('click', openMixer);
+document.getElementById('mixer-close').addEventListener('click', closeMixer);
+document.getElementById('add-insert-btn').addEventListener('click', () => {
+  const nextIdx = song.mixer.inserts.filter(i => i.id !== 'master').length + 1;
+  song.mixer.inserts.push({
+    id: 'ins_' + Date.now().toString(36),
+    name: 'Insert ' + nextIdx, volume: 0.8, effects: [], sendToId: 'master',
+  });
+  renderMixer(); render();
+});
 document.getElementById('save-btn').addEventListener('click', saveToFile);
 document.getElementById('load-btn').addEventListener('click', loadFromFile);
 document.getElementById('export-btn').addEventListener('click', exportWAV);
@@ -2021,6 +2413,7 @@ ensureDefaults();
 render();
 initMIDI();
 initAudioDrop();
+initPianoRollDrop();
 </script>
 </body>
 </html>
