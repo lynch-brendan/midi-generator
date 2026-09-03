@@ -807,6 +807,62 @@ function stopMicRecording() {
 }
 
 // ============================================================
+// Audio file drag & drop
+// ============================================================
+function initAudioDrop() {
+  const scroll = document.getElementById('timeline-scroll');
+  scroll.addEventListener('dragover', (e) => {
+    if (!e.dataTransfer.types.includes('Files')) return;
+    e.preventDefault();
+    scroll.style.boxShadow = 'inset 0 0 0 2px var(--accent-2)';
+  });
+  scroll.addEventListener('dragleave', () => { scroll.style.boxShadow = ''; });
+  scroll.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    scroll.style.boxShadow = '';
+    const files = [...e.dataTransfer.files].filter(f => f.type.startsWith('audio/'));
+    if (!files.length) return;
+    initAudio();
+    if (ctx.state === 'suspended') await ctx.resume();
+    const rect = scroll.getBoundingClientRect();
+    const x = e.clientX - rect.left + scroll.scrollLeft;
+    const y = e.clientY - rect.top + scroll.scrollTop - 28;
+    const trackIdx = Math.floor(y / 60);
+    const dropBar = Math.max(0, Math.floor(x / BAR_WIDTH));
+    let targetTrack = song.tracks[trackIdx];
+    if (!targetTrack || targetTrack.instrument !== 'audio') {
+      targetTrack = song.tracks.find(t => t.instrument === 'audio');
+      if (!targetTrack) {
+        targetTrack = {
+          id: 'audio-' + Date.now().toString(36),
+          name: 'Audio', instrument: 'audio',
+          volume: 0.9, effects: [], clips: [],
+          muted: false, solo: false, armed: false,
+        };
+        song.tracks.push(targetTrack);
+      }
+    }
+    let cursor = dropBar;
+    for (const file of files) {
+      try {
+        const arrayBuf = await file.arrayBuffer();
+        const audioBuffer = await ctx.decodeAudioData(arrayBuf);
+        const durBeats = audioBuffer.duration * song.bpm / 60;
+        const lengthBars = Math.max(1, Math.ceil(durBeats / 4));
+        const clipId = 'drop-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,5);
+        targetTrack.clips.push({ id: clipId, type: 'audio', startBar: cursor, lengthBars, name: file.name });
+        audioBuffers.set(clipId, audioBuffer);
+        cursor += lengthBars;
+      } catch (err) {
+        alert('Could not load ' + file.name + ': ' + err.message);
+      }
+    }
+    autoExpandBars();
+    render();
+  });
+}
+
+// ============================================================
 // AI tool calls
 // ============================================================
 function applyToolCalls(calls) {
@@ -1753,6 +1809,7 @@ document.getElementById('chat-input').addEventListener('keydown', (e) => {
 loadFromStorage();
 render();
 initMIDI();
+initAudioDrop();
 </script>
 </body>
 </html>
