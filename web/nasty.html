@@ -126,6 +126,11 @@
   .clip.dragging { cursor: grabbing; opacity: 0.75; z-index: 10; }
   .clip.selected { outline: 2px solid var(--text); outline-offset: -2px; }
   .clip.audio { background: linear-gradient(135deg, #33c58a, #2b9adb); }
+  .clip .resize {
+    position: absolute; right: 0; top: 0; bottom: 0; width: 6px;
+    cursor: ew-resize; background: rgba(255,255,255,0.15);
+  }
+  .clip:hover .resize { background: rgba(255,255,255,0.3); }
 
   #playhead {
     position: absolute; top: 28px; bottom: 0; width: 2px;
@@ -920,22 +925,33 @@ function scheduleSong(actx, masterOut, tStart, sink) {
       if (clip.type === 'audio') {
         const buf = audioBuffers.get(clip.id);
         if (!buf) continue;
+        const clipLenSec = beatsToSec(clip.lengthBars * 4);
         const src = actx.createBufferSource();
         src.buffer = buf; src.connect(insertIn['master']);
-        src.start(t);
+        src.start(t, 0, Math.min(clipLenSec, buf.duration));
         if (sink) sink.push(src);
         continue;
       }
       const pattern = patternById.get(clip.patternId);
       if (!pattern) continue;
-      for (const note of pattern.notes) {
-        if (!activeChannels.has(note.channelId)) continue;
-        const channel = channelById.get(note.channelId);
-        if (!channel) continue;
-        const noteT = t + beatsToSec(note.startBeat);
-        const dur = beatsToSec(note.durationBeats);
-        playNote(actx, channelChains[channel.id], channel.instrument,
-          note.pitch, note.velocity, noteT, dur, sink);
+      const clipLenBeats = clip.lengthBars * 4;
+      const patLenBeats = pattern.lengthBars * 4;
+      const loops = Math.max(1, Math.ceil(clipLenBeats / patLenBeats));
+      for (let loop = 0; loop < loops; loop++) {
+        const loopOffsetBeats = loop * patLenBeats;
+        for (const note of pattern.notes) {
+          if (!activeChannels.has(note.channelId)) continue;
+          const channel = channelById.get(note.channelId);
+          if (!channel) continue;
+          const localStart = loopOffsetBeats + note.startBeat;
+          if (localStart >= clipLenBeats) continue;
+          const localEnd = localStart + note.durationBeats;
+          const effectiveDur = Math.min(localEnd, clipLenBeats) - localStart;
+          if (effectiveDur <= 0) continue;
+          const noteT = t + beatsToSec(localStart);
+          playNote(actx, channelChains[channel.id], channel.instrument,
+            note.pitch, note.velocity, noteT, beatsToSec(effectiveDur), sink);
+        }
       }
     }
   }
@@ -1265,6 +1281,10 @@ function renderPlaylist() {
       el.dataset.clipId = clip.id;
       el.dataset.trackId = track.id;
       el.addEventListener('mousedown', onClipMouseDown);
+      const rz = document.createElement('div');
+      rz.className = 'resize';
+      rz.addEventListener('mousedown', onClipResizeStart);
+      el.appendChild(rz);
       row.appendChild(el);
     }
     timeline.appendChild(row);
@@ -1598,6 +1618,43 @@ function onPatternBtn(e) {
 // Lane click / clip drag / pattern drop
 // ============================================================
 let clipDrag = null;
+let clipResizeDrag = null;
+
+function onClipResizeStart(e) {
+  e.stopPropagation();
+  const clipEl = e.currentTarget.parentElement;
+  const clipId = clipEl.dataset.clipId;
+  const trackId = clipEl.dataset.trackId;
+  const track = song.tracks.find(t => t.id === trackId);
+  const clip = track && track.clips.find(c => c.id === clipId);
+  if (!clip) return;
+  selectedClipId = clipId;
+  clipResizeDrag = { clipId, trackId, startX: e.clientX, origLen: clip.lengthBars };
+  document.addEventListener('mousemove', onClipResizeMove);
+  document.addEventListener('mouseup', onClipResizeUp);
+}
+function onClipResizeMove(e) {
+  if (!clipResizeDrag) return;
+  const track = song.tracks.find(t => t.id === clipResizeDrag.trackId);
+  const clip = track && track.clips.find(c => c.id === clipResizeDrag.clipId);
+  if (!clip) return;
+  const dx = e.clientX - clipResizeDrag.startX;
+  const dBars = dx / BAR_WIDTH;
+  const snap = document.getElementById('quantize').checked ? 0.25 : 0.0625;
+  let newLen = clipResizeDrag.origLen + dBars;
+  newLen = Math.max(snap, Math.round(newLen / snap) * snap);
+  if (Math.abs(newLen - clip.lengthBars) > 0.001) {
+    clip.lengthBars = newLen;
+    autoExpandBars();
+    render();
+  }
+}
+function onClipResizeUp() {
+  document.removeEventListener('mousemove', onClipResizeMove);
+  document.removeEventListener('mouseup', onClipResizeUp);
+  clipResizeDrag = null;
+  persist();
+}
 
 function onLaneMouseDown(e) {
   if (e.target !== e.currentTarget) return;
