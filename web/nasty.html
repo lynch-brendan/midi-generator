@@ -544,6 +544,7 @@ let masterGain = null;
 let scheduledSources = [];
 let playStartTime = 0;
 let songDurationSec = 0;
+let singleLoopDurSec = 0;
 let animationFrame = null;
 
 function initAudio() {
@@ -766,8 +767,17 @@ function playSong() {
   if (ctx.state === 'suspended') ctx.resume();
   stopAllSources();
   playStartTime = ctx.currentTime + 0.1;
-  scheduleSong(ctx, masterGain, playStartTime, scheduledSources);
-  songDurationSec = computeSongDurationSec();
+  const singleDur = computeSongDurationSec();
+  singleLoopDurSec = singleDur;
+  if (singleDur <= 0) {
+    document.getElementById('playhead').style.display = 'none';
+    return;
+  }
+  const N = loopEnabled ? Math.min(100, Math.max(2, Math.ceil(600 / singleDur))) : 1;
+  for (let i = 0; i < N; i++) {
+    scheduleSong(ctx, masterGain, playStartTime + i * singleDur, scheduledSources);
+  }
+  songDurationSec = singleDur * N;
   document.getElementById('playhead').style.display = 'block';
   animatePlayhead();
 }
@@ -819,12 +829,10 @@ function animatePlayhead() {
     if (!ctx) return;
     const elapsed = ctx.currentTime - playStartTime;
     if (elapsed < 0) { animationFrame = requestAnimationFrame(tick); return; }
-    if (elapsed > songDurationSec + 0.3 && !midiRecording) {
-      if (loopEnabled && song.tracks.some(t => t.clips.length)) { playSong(); return; }
-      stopSong(); return;
-    }
-    const beatsElapsed = elapsed * song.bpm / 60;
-    const barsElapsed = beatsElapsed / 4;
+    if (elapsed > songDurationSec + 0.3 && !midiRecording) { stopSong(); return; }
+    const displayElapsed = (loopEnabled && singleLoopDurSec > 0)
+      ? (elapsed % singleLoopDurSec) : elapsed;
+    const barsElapsed = (displayElapsed * song.bpm / 60) / 4;
     ph.style.left = (barsElapsed * BAR_WIDTH) + 'px';
     animationFrame = requestAnimationFrame(tick);
   };
