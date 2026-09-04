@@ -3086,7 +3086,8 @@ async function sendMessage() {
   thinking.classList.add('thinking');
   thinking.textContent = 'thinking...';
   try {
-    const resp = await fetch('/nasty/chat', {
+    const apiBase = (window.nasty && window.nasty.apiBase) || '';
+    const resp = await fetch(apiBase + '/nasty/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ song, message: text, history: chatHistory }),
