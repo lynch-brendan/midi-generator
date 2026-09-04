@@ -328,8 +328,8 @@
   #channel-rack-window {
     position: absolute;
     top: 40px; left: 60px;
-    width: 620px; height: 340px;
-    min-width: 320px; min-height: 160px;
+    width: 920px; height: 380px;
+    min-width: 480px; min-height: 200px;
     background: var(--panel);
     display: flex; flex-direction: column; overflow: hidden;
     z-index: 30;
@@ -339,7 +339,7 @@
   }
   #channel-rack-window.collapsed { display: none; }
   #channel-rack-window .fl-title-bar { cursor: move; user-select: none; }
-  #channel-rack-window .cr-body { flex: 1; overflow-y: auto; min-height: 0; padding: 4px; }
+  #channel-rack-window .cr-body { flex: 1; overflow: auto; min-height: 0; padding: 4px; }
   #channel-rack-window .cr-actions {
     padding: 4px 8px; background: var(--panel-2); border-top: 1px solid var(--line);
     display: flex; gap: 6px;
@@ -407,6 +407,67 @@
     background: transparent; border: 1px dashed var(--line-2); border-radius: 2px;
     cursor: pointer;
   }
+
+  /* Step sequencer — FL-style chiclets, sticky left cluster, shared scroll */
+  #channel-rack { padding-bottom: 0; }
+  .channel-row {
+    display: flex; align-items: center; gap: 0; padding: 3px 0;
+    min-width: max-content;
+    background: linear-gradient(#5c6672, #48525c);
+    border: 1px solid var(--line);
+    border-top-color: var(--hi);
+    border-radius: 2px;
+    margin: 0 4px 2px 4px;
+  }
+  .channel-row .ch-left {
+    position: sticky; left: 4px; z-index: 2;
+    display: flex; align-items: center; gap: 4px;
+    width: 340px; flex-shrink: 0;
+    padding: 2px 6px 2px 4px;
+    border-right: 1px solid var(--line);
+    background: linear-gradient(#5c6672, #48525c);
+  }
+  .channel-row.armed .ch-left {
+    background: linear-gradient(#5c6672, #48525c);
+    box-shadow: inset 3px 0 0 var(--arm);
+  }
+  .channel-row .ch-left .cname {
+    flex: 1; font-weight: 600; font-size: 11px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .channel-row .ch-left .cvol { width: 48px; }
+  .channel-row .ch-left .ch-insert {
+    font-size: 9px; padding: 1px 3px; max-width: 62px;
+  }
+  .channel-row .ch-steps {
+    display: flex; align-items: center;
+    gap: 0; padding: 0 8px;
+    height: 32px;
+  }
+  .step-cell {
+    width: 22px; height: 26px; flex-shrink: 0;
+    margin: 0 1px;
+    background: linear-gradient(#40474f, #2c323a);
+    border: 1px solid #14171c;
+    border-top-color: #545b64;
+    border-radius: 2px;
+    cursor: pointer;
+    box-shadow: inset 0 -3px 4px rgba(0,0,0,0.25);
+    transition: background 60ms;
+  }
+  .step-cell:hover {
+    background: linear-gradient(#525a63, #3a414a);
+  }
+  .step-cell.beat-start { margin-left: 5px; }
+  .step-cell.bar-start  { margin-left: 10px; box-shadow: -3px 0 0 #ffb040, inset 0 -3px 4px rgba(0,0,0,0.25); }
+  .step-cell.on {
+    background: linear-gradient(var(--cell-color, #ff5c93), color-mix(in srgb, var(--cell-color, #ff5c93) 55%, black));
+    border-top-color: color-mix(in srgb, var(--cell-color, #ff5c93) 90%, white);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.2), inset 0 -4px 6px rgba(0,0,0,0.35);
+  }
+  .step-cell.on:hover { filter: brightness(1.1); }
+  .ch-steps::-webkit-scrollbar { height: 8px; }
+  .ch-steps::-webkit-scrollbar-thumb { background: #2a2f36; border-radius: 3px; }
 
   /* Piano roll — floats over workspace like FL */
   #piano-roll {
@@ -1153,11 +1214,19 @@
     <input id="new-channel-name" type="text" value="Channel" />
     <label>Instrument</label>
     <select id="new-channel-inst">
-      <option value="piano">piano</option>
-      <option value="bass">bass</option>
-      <option value="lead">lead</option>
-      <option value="pad">pad</option>
-      <option value="drums">drums</option>
+      <optgroup label="Melodic">
+        <option value="piano">Piano</option>
+        <option value="bass">Bass</option>
+        <option value="lead">Lead</option>
+        <option value="pad">Pad</option>
+      </optgroup>
+      <optgroup label="Drums">
+        <option value="drums:36">Kick</option>
+        <option value="drums:38">Snare</option>
+        <option value="drums:39">Clap</option>
+        <option value="drums:42">Hi-Hat</option>
+        <option value="drums:46">Open Hat</option>
+      </optgroup>
     </select>
     <div class="row">
       <button id="new-channel-cancel">Cancel</button>
@@ -1255,6 +1324,9 @@ function ensureShape(s) {
     c.armed = !!c.armed;
     c.color = c.color || PALETTE[i % PALETTE.length];
     if (!c.insertId) c.insertId = 'master';
+    // drumPitch: fixed pitch for drum-piece channels (kick=36, snare=38, etc)
+    // For melodic channels this stays null and the step sequencer uses C5 (60)
+    if (c.instrument === 'drums' && c.drumPitch == null) c.drumPitch = 36;
   });
   s.patterns.forEach((p, i) => {
     p.lengthBars = p.lengthBars || 2;
@@ -1280,19 +1352,56 @@ function ensureDefaults() {
   }
   if (!song.channels.length) {
     const defs = [
-      { inst: 'drums', name: 'Drums' },
-      { inst: 'bass', name: 'Bass' },
-      { inst: 'lead', name: 'Lead' },
-      { inst: 'piano', name: 'Piano' },
-      { inst: 'pad', name: 'Pad' },
+      { id: 'ch_kick',    name: 'Kick',     inst: 'drums', drumPitch: 36 },
+      { id: 'ch_snare',   name: 'Snare',    inst: 'drums', drumPitch: 38 },
+      { id: 'ch_clap',    name: 'Clap',     inst: 'drums', drumPitch: 39 },
+      { id: 'ch_hh',      name: 'Hi-Hat',   inst: 'drums', drumPitch: 42 },
+      { id: 'ch_hho',     name: 'Open Hat', inst: 'drums', drumPitch: 46 },
+      { id: 'ch_bass',    name: 'Bass',     inst: 'bass' },
+      { id: 'ch_lead',    name: 'Lead',     inst: 'lead' },
+      { id: 'ch_piano',   name: 'Piano',    inst: 'piano' },
+      { id: 'ch_pad',     name: 'Pad',      inst: 'pad' },
     ];
     defs.forEach((d, i) => {
       song.channels.push({
-        id: 'ch_' + d.inst, name: d.name, instrument: d.inst,
+        id: d.id, name: d.name, instrument: d.inst,
+        drumPitch: d.drumPitch ?? null,
         volume: 0.8, effects: [], muted: false, solo: false, armed: false,
         color: PALETTE[i % PALETTE.length], insertId: 'master',
       });
     });
+  } else {
+    // Migrate legacy single "Drums" channel — split it into 5 per-piece channels
+    const legacyDrums = song.channels.find(c => c.id === 'ch_drums' && (c.drumPitch == null || c.drumPitch === 36));
+    const hasSplit = song.channels.some(c => c.id === 'ch_kick');
+    if (legacyDrums && !hasSplit) {
+      const idx = song.channels.indexOf(legacyDrums);
+      const newDrums = [
+        { id: 'ch_kick',  name: 'Kick',     inst: 'drums', drumPitch: 36 },
+        { id: 'ch_snare', name: 'Snare',    inst: 'drums', drumPitch: 38 },
+        { id: 'ch_clap',  name: 'Clap',     inst: 'drums', drumPitch: 39 },
+        { id: 'ch_hh',    name: 'Hi-Hat',   inst: 'drums', drumPitch: 42 },
+        { id: 'ch_hho',   name: 'Open Hat', inst: 'drums', drumPitch: 46 },
+      ];
+      const built = newDrums.map((d, i) => ({
+        id: d.id, name: d.name, instrument: d.inst, drumPitch: d.drumPitch,
+        volume: legacyDrums.volume ?? 0.8, effects: [],
+        muted: false, solo: false, armed: false,
+        color: PALETTE[(idx + i) % PALETTE.length],
+        insertId: legacyDrums.insertId || 'master',
+      }));
+      song.channels.splice(idx, 1, ...built);
+      // Reassign any notes on ch_drums to the matching piece channel by pitch
+      const pitchToNewId = { 35:'ch_kick', 36:'ch_kick', 38:'ch_snare', 40:'ch_snare',
+                              39:'ch_clap', 42:'ch_hh', 44:'ch_hh', 46:'ch_hho' };
+      for (const p of song.patterns) {
+        for (const n of p.notes) {
+          if (n.channelId === 'ch_drums') {
+            n.channelId = pitchToNewId[n.pitch] || 'ch_kick';
+          }
+        }
+      }
+    }
   }
   if (!song.patterns.length) {
     song.patterns.push({
@@ -1432,6 +1541,7 @@ function playNote(actx, dest, instrument, pitch, velocity, t, duration, sink) {
 function playDrum(actx, dest, pitch, velocity, t, sink) {
   const v = velocity;
   if (pitch === 36 || pitch === 35) {
+    // Kick
     const osc = actx.createOscillator();
     const gain = actx.createGain();
     osc.frequency.setValueAtTime(150, t);
@@ -1442,6 +1552,7 @@ function playDrum(actx, dest, pitch, velocity, t, sink) {
     osc.start(t); osc.stop(t + 0.3);
     if (sink) sink.push(osc);
   } else if (pitch === 38 || pitch === 40) {
+    // Snare
     const noise = actx.createBufferSource();
     const buf = actx.createBuffer(1, actx.sampleRate * 0.2, actx.sampleRate);
     const data = buf.getChannelData(0);
@@ -1463,7 +1574,29 @@ function playDrum(actx, dest, pitch, velocity, t, sink) {
     noise.start(t); noise.stop(t + 0.2);
     osc.start(t); osc.stop(t + 0.15);
     if (sink) sink.push(noise, osc);
+  } else if (pitch === 39) {
+    // Clap — bright noise with 3 short envelopes for the layered slap
+    const noise = actx.createBufferSource();
+    const buf = actx.createBuffer(1, actx.sampleRate * 0.25, actx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    noise.buffer = buf;
+    const filter = actx.createBiquadFilter();
+    filter.type = 'bandpass'; filter.frequency.value = 1200; filter.Q.value = 0.9;
+    const gain = actx.createGain();
+    gain.gain.setValueAtTime(0.0001, t);
+    // three quick pulses at 10ms intervals then tail
+    for (let i = 0; i < 3; i++) {
+      gain.gain.setValueAtTime(v * 0.7, t + i * 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.01 + 0.015);
+    }
+    gain.gain.setValueAtTime(v * 0.4, t + 0.03);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+    noise.connect(filter); filter.connect(gain); gain.connect(dest);
+    noise.start(t); noise.stop(t + 0.2);
+    if (sink) sink.push(noise);
   } else {
+    // Hi-Hat closed (42/44/anything else) or open (46)
     const isOpen = pitch === 46;
     const noise = actx.createBufferSource();
     const buf = actx.createBuffer(1, actx.sampleRate * 0.3, actx.sampleRate);
@@ -1985,6 +2118,36 @@ function renderPlaylist() {
   }
 }
 
+// Step sequencer helpers
+const STEP_BEATS = 0.25; // 1/16 note = 0.25 beats
+function stepPitchFor(channel) {
+  if (channel.instrument === 'drums') return channel.drumPitch ?? 36;
+  return 60; // C5 default for melodic step-sequencer taps
+}
+function findStepNote(pattern, channel, stepIdx) {
+  const pitch = stepPitchFor(channel);
+  const start = stepIdx * STEP_BEATS;
+  return pattern.notes.find(n =>
+    n.channelId === channel.id &&
+    n.pitch === pitch &&
+    Math.abs(n.startBeat - start) < 1e-4
+  );
+}
+function toggleStepNote(pattern, channel, stepIdx) {
+  const existing = findStepNote(pattern, channel, stepIdx);
+  if (existing) {
+    pattern.notes = pattern.notes.filter(n => n !== existing);
+  } else {
+    pattern.notes.push({
+      channelId: channel.id,
+      pitch: stepPitchFor(channel),
+      startBeat: stepIdx * STEP_BEATS,
+      durationBeats: STEP_BEATS,
+      velocity: 0.8,
+    });
+  }
+}
+
 function renderChannelRack() {
   const rack = document.getElementById('channel-rack');
   rack.innerHTML = '';
@@ -1992,27 +2155,27 @@ function renderChannelRack() {
     rack.innerHTML = '<div style="color:var(--dim);padding:12px;font-size:12px">No channels. Click + Channel.</div>';
     return;
   }
+  const pattern = song.patterns.find(p => p.id === currentPatternId);
+  const stepCount = pattern ? pattern.lengthBars * 16 : 16;
+
   for (const ch of song.channels) {
     const row = document.createElement('div');
     row.className = 'channel-row' + (ch.armed ? ' armed' : '');
     row.dataset.chId = ch.id;
-    row.title = 'Click to select — then type on keyboard to play';
-    row.addEventListener('click', (e) => {
-      if (e.target.closest('button') || e.target.closest('select') || e.target.closest('input')) return;
-      for (const c of song.channels) if (c !== ch) c.armed = false;
-      ch.armed = true;
-      render();
-    });
+    row.title = 'Click name to select — steps program the current pattern';
     const fxHtml = (ch.effects || []).map(fx =>
       `<span class="fxchip" data-ch="${ch.id}" data-fx="${fx.type}" title="Click to remove">${fx.type}</span>`
     ).join('');
     const insertOpts = song.mixer.inserts.map(ins =>
       `<option value="${ins.id}" ${ins.id === ch.insertId ? 'selected' : ''}>${escapeHtml(ins.name)}</option>`
     ).join('');
-    row.innerHTML = `
+
+    // Left cluster: name + controls
+    const left = document.createElement('div');
+    left.className = 'ch-left';
+    left.innerHTML = `
       <span class="swatch" style="background:${ch.color}"></span>
-      <span class="cname">${escapeHtml(ch.name)}</span>
-      <span class="cinst">${ch.instrument}</span>
+      <span class="cname" title="${escapeHtml(ch.instrument)}${ch.drumPitch != null ? ' · pitch ' + ch.drumPitch : ''}">${escapeHtml(ch.name)}</span>
       <input class="cvol" type="range" min="0" max="1" step="0.01" value="${ch.volume}" data-ch="${ch.id}" title="volume" />
       <span class="fx-inline">${fxHtml}
         <select class="fx-add-sel" data-ch="${ch.id}">
@@ -2022,7 +2185,7 @@ function renderChannelRack() {
           <option value="compressor">comp</option>
         </select>
       </span>
-      <select class="ch-insert" data-ch="${ch.id}" title="route to mixer insert" style="font-size:10px;padding:2px 4px;max-width:80px">
+      <select class="ch-insert" data-ch="${ch.id}" title="route to mixer insert">
         ${insertOpts}
       </select>
       <span class="cbtns">
@@ -2032,8 +2195,58 @@ function renderChannelRack() {
         <button data-a="del" data-ch="${ch.id}" title="Delete channel">✕</button>
       </span>
     `;
+    row.appendChild(left);
+
+    // Step grid
+    const steps = document.createElement('div');
+    steps.className = 'ch-steps';
+    if (!pattern) {
+      steps.innerHTML = '<div style="color:var(--dim);font-size:10px;padding:0 6px">no pattern</div>';
+    } else {
+      for (let i = 0; i < stepCount; i++) {
+        const cell = document.createElement('div');
+        cell.className = 'step-cell';
+        if (i % 16 === 0 && i > 0) cell.classList.add('bar-start');
+        else if (i % 4 === 0 && i > 0) cell.classList.add('beat-start');
+        if (findStepNote(pattern, ch, i)) {
+          cell.classList.add('on');
+          cell.style.setProperty('--cell-color', ch.color);
+        }
+        cell.title = `Step ${i+1}`;
+        cell.dataset.chId = ch.id;
+        cell.dataset.step = i;
+        steps.appendChild(cell);
+      }
+    }
+    row.appendChild(steps);
+
+    // Selection = click on the name/left area (but not on inputs/buttons)
+    left.addEventListener('click', (e) => {
+      if (e.target.closest('button') || e.target.closest('select') || e.target.closest('input')) return;
+      for (const c of song.channels) if (c !== ch) c.armed = false;
+      ch.armed = true;
+      render();
+    });
+
     rack.appendChild(row);
   }
+
+  // Step cell clicks (delegated for perf on big grids)
+  rack.querySelectorAll('.step-cell').forEach(cell => {
+    cell.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!pattern) return;
+      const chId = cell.dataset.chId;
+      const idx = parseInt(cell.dataset.step);
+      const ch = song.channels.find(c => c.id === chId);
+      if (!ch) return;
+      toggleStepNote(pattern, ch, idx);
+      // Preview the sound so it feels responsive
+      if (!cell.classList.contains('on')) previewNote(ch.instrument, stepPitchFor(ch), 0.7, 0.15);
+      render();
+    });
+  });
+
   rack.querySelectorAll('.cvol').forEach(i => i.addEventListener('input', onChannelVol));
   rack.querySelectorAll('.cbtns button').forEach(b => b.addEventListener('click', onChannelBtn));
   rack.querySelectorAll('.fx-add-sel').forEach(s => s.addEventListener('change', onChannelAddFx));
@@ -3205,11 +3418,19 @@ document.getElementById('new-channel-cancel').addEventListener('click', () => {
 });
 document.getElementById('new-channel-ok').addEventListener('click', () => {
   const name = document.getElementById('new-channel-name').value.trim() || 'Channel';
-  const inst = document.getElementById('new-channel-inst').value;
-  const id = 'ch_' + inst + '_' + Date.now().toString(36);
+  const raw = document.getElementById('new-channel-inst').value;
+  // "drums:36" → instrument=drums, drumPitch=36
+  let instrument = raw, drumPitch = null;
+  if (raw.includes(':')) {
+    const [inst, p] = raw.split(':');
+    instrument = inst;
+    drumPitch = parseInt(p);
+  }
+  const id = 'ch_' + instrument + '_' + Date.now().toString(36);
   for (const c of song.channels) c.armed = false;
   song.channels.push({
-    id, name, instrument: inst, volume: 0.8, effects: [],
+    id, name, instrument, drumPitch,
+    volume: 0.8, effects: [],
     muted: false, solo: false, armed: true,
     color: PALETTE[song.channels.length % PALETTE.length],
     insertId: 'master',
@@ -3465,13 +3686,17 @@ function renderBrowser() {
   if (browserTab === 'instruments') {
     const instFolders = [
       { name: 'Nasty Synths', instruments: [
-        { name: 'Piano', inst: 'piano' },
-        { name: 'Bass',  inst: 'bass' },
-        { name: 'Lead',  inst: 'lead' },
-        { name: 'Pad',   inst: 'pad' },
+        { name: 'Piano', inst: 'piano', pitch: null },
+        { name: 'Bass',  inst: 'bass',  pitch: null },
+        { name: 'Lead',  inst: 'lead',  pitch: null },
+        { name: 'Pad',   inst: 'pad',   pitch: null },
       ]},
       { name: 'Drums', instruments: [
-        { name: 'Kit — built-in', inst: 'drums' },
+        { name: 'Kick',     inst: 'drums', pitch: 36 },
+        { name: 'Snare',    inst: 'drums', pitch: 38 },
+        { name: 'Clap',     inst: 'drums', pitch: 39 },
+        { name: 'Hi-Hat',   inst: 'drums', pitch: 42 },
+        { name: 'Open Hat', inst: 'drums', pitch: 46 },
       ]},
     ];
     instFolders.forEach(f => {
@@ -3485,12 +3710,14 @@ function renderBrowser() {
         const itEl = document.createElement('div');
         itEl.className = 'br-item draggable';
         itEl.textContent = inst.name;
-        itEl.title = `Drag or double-click to add "${inst.name}" as a channel`;
+        itEl.title = `Double-click to add "${inst.name}" as a channel`;
         itEl.addEventListener('dblclick', () => {
           const id = 'ch_' + inst.inst + '_' + Date.now().toString(36);
           for (const c of song.channels) c.armed = false;
           song.channels.push({
-            id, name: inst.name, instrument: inst.inst, volume: 0.8, effects: [],
+            id, name: inst.name, instrument: inst.inst,
+            drumPitch: inst.pitch ?? null,
+            volume: 0.8, effects: [],
             muted: false, solo: false, armed: true,
             color: PALETTE[song.channels.length % PALETTE.length],
             insertId: 'master',
