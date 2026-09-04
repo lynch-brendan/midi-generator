@@ -555,6 +555,326 @@
   }
   .mixer-strip .db { font-size: 10px; color: var(--dim); width: 30px; text-align: right; }
   .mixer-strip .del { font-size: 10px; padding: 2px 6px; align-self: center; }
+
+  /* ====================================================================
+     FL aesthetic overrides — muted blue-grey palette, subtle 3D buttons,
+     amber LCD, pink demoted to selection accents only.
+     ==================================================================== */
+  :root {
+    --bg:        #252932;    /* app chrome */
+    --workspace: #3d4954;    /* playlist grid bg (FL blue-grey) */
+    --panel:     #4a545e;    /* window body */
+    --panel-2:   #40495a;    /* panel headers */
+    --panel-3:   #5a6470;    /* raised button base */
+    --panel-4:   #6a7480;    /* button hover */
+    --line:      #1a1e24;
+    --line-2:    #2a2f36;
+    --hi:        #7a8490;    /* button top highlight */
+    --text:      #e8e8e8;
+    --text-dim:  #b8c0c8;
+    --dim:       #8a929a;
+    --accent:    #ff5c93;    /* pattern/selection accent — used sparingly */
+    --accent-2:  #6bb4ff;
+    --lcd-bg:    #14170f;
+    --lcd-fg:    #ffce4a;    /* amber LCD */
+    --lcd-glow:  rgba(255,206,74,0.35);
+  }
+  html, body {
+    font-family: "Segoe UI", Verdana, Tahoma, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+
+  /* Buttons — subtle 3D emboss */
+  button {
+    background: linear-gradient(#5c6672, #48525c);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-top-color: var(--hi);
+    border-left-color: #6a7480;
+    padding: 3px 8px;
+    border-radius: 2px;
+    text-shadow: 0 1px 0 rgba(0,0,0,0.5);
+    cursor: pointer;
+    font-size: 11px;
+    font-family: inherit;
+  }
+  button:hover { background: linear-gradient(#6a7480, #56606c); }
+  button:active,
+  button.active,
+  button.on {
+    background: linear-gradient(#2d333b, #3b424c);
+    border-top-color: var(--line);
+    border-left-color: var(--line-2);
+    color: #fff;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.5);
+    text-shadow: none;
+  }
+  input, select, textarea {
+    background: #1e2229; color: var(--text);
+    border: 1px solid var(--line); border-top-color: #101319;
+    border-radius: 1px;
+  }
+
+  /* Menu bar */
+  #menubar {
+    background: linear-gradient(#525c68, #3b434e);
+    border-bottom: 1px solid var(--line);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+  }
+  #menubar .brand {
+    background: none;
+    -webkit-background-clip: initial; background-clip: initial;
+    color: #ffb8d0; /* subtle Nasty-pink brand text */
+    text-shadow: 0 1px 0 rgba(0,0,0,0.5);
+  }
+  #menubar .menu-item { color: var(--text); text-shadow: 0 1px 0 rgba(0,0,0,0.5); }
+  #menubar .menu-item:hover,
+  #menubar .menu-item.open {
+    background: linear-gradient(#6a7480, #4a545e);
+    color: #fff;
+  }
+  #menubar .menu-drop {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    box-shadow: 3px 3px 10px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05);
+  }
+  #menubar .menu-drop .mi:hover { background: #2f6db8; color: #fff; }
+
+  /* Transport */
+  #transport {
+    background: linear-gradient(#4a545e, #38414b);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+    height: 56px;
+  }
+  #transport .t-sep { background: var(--line); box-shadow: 1px 0 0 rgba(255,255,255,0.05); }
+  #transport .lcd {
+    background: var(--lcd-bg);
+    border: 1px solid #000;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.7), 0 1px 0 rgba(255,255,255,0.05);
+    color: var(--lcd-fg);
+    text-shadow: 0 0 6px var(--lcd-glow);
+    border-radius: 1px;
+    padding: 4px 12px;
+  }
+  #transport .lcd .big  { font-family: "Consolas", "Menlo", monospace; font-weight: 700; }
+  #transport .lcd .sub  { color: #7a6a34; font-weight: 700; }
+  #transport #bpm-input {
+    background: transparent; color: var(--lcd-fg);
+    text-shadow: 0 0 6px var(--lcd-glow);
+    font-family: "Consolas", "Menlo", monospace;
+  }
+  #transport #bpm-input:focus { background: #000; }
+  #transport .patsong {
+    background: #14170f;
+    border: 1px solid #000;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.7);
+  }
+  #transport .patsong .ps-btn { color: #7a6a34; text-shadow: 0 0 4px rgba(255,206,74,0.2); }
+  #transport .patsong .ps-btn.active {
+    background: linear-gradient(#ffb040, #d97a20);
+    color: #201510;
+    text-shadow: 0 1px 0 rgba(255,255,255,0.3);
+    box-shadow: 0 0 6px rgba(255,140,40,0.5);
+    border-radius: 1px;
+  }
+  #transport .rec-led { background: #200; border-color: #400; }
+  #transport .rec-led.on { background: var(--record); box-shadow: 0 0 10px var(--record); }
+  #mic-rec-btn.recording, #midi-rec-btn.active {
+    background: linear-gradient(#e04040, #a02024);
+    color: #fff;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.2), 0 0 8px rgba(255,60,70,0.5);
+    border-color: #300;
+  }
+
+  /* Toolbar */
+  #toolbar {
+    background: linear-gradient(#4a545e, #3b434c);
+    border-bottom: 1px solid var(--line);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+  }
+  #toolbar .tb-btn .fkey { color: #a8b0b8; opacity: 0.7; }
+  #toolbar .tb-btn.on .fkey { color: rgba(255,255,255,0.6); opacity: 0.8; }
+  #toolbar select { background: #1e2229; }
+
+  /* Workspace */
+  #workspace { background: var(--workspace); }
+
+  /* Browser dock */
+  #browser-dock { background: var(--panel); }
+  #browser-dock .bh {
+    background: linear-gradient(#5a6470, #48525c);
+    border-bottom: 1px solid var(--line);
+    color: var(--text); text-shadow: 0 1px 0 rgba(0,0,0,0.5);
+  }
+  #browser-dock .bh-tabs .bt {
+    background: linear-gradient(#48525c, #3b434c);
+    border: 1px solid var(--line); border-top-color: #5a6470;
+    color: var(--text-dim);
+  }
+  #browser-dock .bh-tabs .bt.on {
+    background: linear-gradient(#2d333b, #3b424c);
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.5);
+    color: #fff;
+  }
+  .br-folder:hover, .br-item:hover { background: #2f6db8; color: #fff; }
+  .br-folder { color: var(--text); }
+  .br-folder::before { color: var(--dim); }
+  .br-item { color: var(--text-dim); }
+  .br-item::before { color: #6bb4ff; }
+
+  /* Title bars */
+  .fl-title-bar {
+    background: linear-gradient(#5a6470, #48525c);
+    border-bottom: 1px solid var(--line);
+    color: var(--text); text-shadow: 0 1px 0 rgba(0,0,0,0.5);
+  }
+  .fl-title-bar .tb-title { color: var(--text); }
+  .fl-title-bar .tb-close, .fl-title-bar .tb-btn-x, .ch-x {
+    background: linear-gradient(#5c6672, #48525c);
+    color: var(--text);
+    border: 1px solid var(--line); border-top-color: var(--hi);
+  }
+  .fl-title-bar .tb-close:hover, .ch-x:hover { background: linear-gradient(#e04040, #a02024); color: #fff; }
+
+  /* Picker Panel */
+  #picker-panel { background: var(--panel); }
+  #picker-panel .ph {
+    background: linear-gradient(#48525c, #3b434c);
+    color: var(--text-dim); border-bottom: 1px solid var(--line);
+  }
+
+  /* Track headers — thinner and cleaner */
+  #track-headers { background: var(--panel); width: 130px; }
+  .header-spacer {
+    height: 22px; background: linear-gradient(#48525c, #3b434c);
+    border-bottom: 1px solid var(--line);
+  }
+  .track-header {
+    height: 36px; padding: 3px 6px;
+    background: linear-gradient(90deg, var(--panel), #424c56);
+    border-bottom: 1px solid var(--line-2);
+    border-top: 1px solid rgba(255,255,255,0.03);
+  }
+  .track-header .tname { font-size: 10px; color: var(--text); }
+  .track-header .btns button { padding: 1px 3px; font-size: 8px; min-width: 14px; }
+
+  /* Timeline / playlist grid */
+  #timeline-scroll { background: var(--workspace); }
+  .ruler {
+    background: linear-gradient(#48525c, #3b434c);
+    border-bottom: 1px solid var(--line); height: 22px;
+  }
+  .tick {
+    height: 22px; color: var(--text-dim);
+    border-left: 1px solid #2f353c; font-size: 10px;
+    text-shadow: 0 1px 0 rgba(0,0,0,0.4);
+  }
+  .track-row {
+    height: 36px;
+    border-bottom: 1px solid #2f353c;
+    background:
+      repeating-linear-gradient(90deg,
+        transparent 0, transparent 159px, rgba(0,0,0,0.25) 159px, rgba(0,0,0,0.25) 160px),
+      repeating-linear-gradient(90deg,
+        transparent 0, transparent 39px, rgba(255,255,255,0.03) 39px, rgba(255,255,255,0.03) 40px),
+      linear-gradient(var(--workspace), var(--workspace));
+  }
+  .track-row:nth-child(even) { background-color: #414d59; }
+  #playhead { top: 22px; background: #ff8040; box-shadow: 0 0 6px rgba(255,128,64,0.6); }
+
+  /* Clips */
+  .clip {
+    top: 2px; bottom: 2px;
+    border: 1px solid rgba(0,0,0,0.55);
+    border-top-color: rgba(255,255,255,0.3);
+    border-radius: 1px;
+    font-size: 10px;
+    box-shadow: inset 0 -6px 8px rgba(0,0,0,0.15), 0 1px 2px rgba(0,0,0,0.4);
+    text-shadow: 0 1px 1px rgba(0,0,0,0.5);
+  }
+
+  /* Channel Rack */
+  #channel-rack-window { background: var(--panel); height: 240px; }
+  #channel-rack-window .cr-actions {
+    background: linear-gradient(#48525c, #3b434c);
+    border-top: 1px solid var(--line);
+  }
+  .channel-row, .pattern-row {
+    background: linear-gradient(#5c6672, #48525c);
+    border: 1px solid var(--line);
+    border-top-color: var(--hi);
+    color: var(--text);
+    text-shadow: 0 1px 0 rgba(0,0,0,0.4);
+  }
+  .channel-row:hover, .pattern-row:hover {
+    background: linear-gradient(#6a7480, #56606c);
+  }
+  .channel-row .cinst { color: #b8c0c8; }
+  .pattern-row .pinfo { color: #b8c0c8; }
+  .pattern-row.current {
+    background: linear-gradient(#2d333b, #3b424c);
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.5);
+    border-color: var(--accent);
+  }
+  .channel-row.armed { border-color: var(--arm); box-shadow: 0 0 0 1px var(--arm); }
+  .fx-inline .fxchip { background: #1e2229; color: #ffb8d0; }
+
+  /* Chat dock */
+  #chat-dock { background: var(--panel); border-left: 1px solid var(--line); }
+  #chat-dock .ch-header {
+    background: linear-gradient(#5a6470, #48525c);
+    color: var(--text); border-bottom: 1px solid var(--line);
+    text-shadow: 0 1px 0 rgba(0,0,0,0.5);
+  }
+  #chat-messages { background: var(--workspace); }
+  .msg.user { background: linear-gradient(#5a6470, #48525c); border: 1px solid var(--line); color: var(--text); }
+  .msg.assistant { color: var(--text); }
+  #chat-input {
+    background: #1e2229; color: var(--text);
+    border: 1px solid var(--line); border-top-color: #101319;
+  }
+  #send-btn {
+    background: linear-gradient(#ffb040, #d97a20);
+    color: #201510;
+    border: 1px solid var(--line); border-top-color: #ffd070;
+    text-shadow: 0 1px 0 rgba(255,255,255,0.3);
+    font-weight: 700;
+  }
+  #send-btn:hover { background: linear-gradient(#ffc060, #e88a30); }
+
+  /* Modals & mixer */
+  #piano-roll { background: rgba(0,0,0,0.4); }
+  #piano-roll-panel, #mixer-panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    box-shadow: 0 10px 40px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.05);
+  }
+  #pr-header, #mixer-header {
+    background: linear-gradient(#5a6470, #48525c);
+    color: var(--text); text-shadow: 0 1px 0 rgba(0,0,0,0.5);
+    border-bottom: 1px solid var(--line);
+  }
+  .modal { background: rgba(0,0,0,0.5); }
+  .modal-panel {
+    background: var(--panel); border: 1px solid var(--line);
+    box-shadow: 0 10px 40px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.05);
+  }
+
+  /* Mixer strips */
+  .mixer-strip {
+    background: linear-gradient(#4a545e, #3b434c);
+    border: 1px solid var(--line); border-top-color: var(--hi);
+    border-radius: 2px;
+  }
+  .mixer-strip.master { border-color: #ffb040; }
+  .mixer-strip .mname { background: #1e2229; color: var(--text); }
+  .mixer-strip .fxrow { background: #1e2229; }
+
+  /* Piano roll keys */
+  .pr-key.white { background: #e8e8e8; color: #333; }
+  .pr-key.black { background: #202428; color: #666; }
+  #pr-grid { background: var(--workspace); }
 </style>
 </head>
 <body>
