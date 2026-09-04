@@ -1,39 +1,49 @@
 // Nasty Audio Engine — entry point.
 //
 // This binary runs as a subprocess of the Electron app. It hosts native
-// audio plugins (VST3/AU/CLAP) and speaks to the UI over a local WebSocket.
+// audio plugins (VST3/AU) and speaks JSON lines over stdin/stdout to the UI.
 //
-// Status: SCAFFOLDING. Enumerates plugins on startup and sits on the IPC
-// socket. Actually loading plugins and rendering audio is the next iteration.
+// Wire format: one JSON object per line, both directions.
+//   UI → engine: {"cmd":"scan_plugins"}          {"cmd":"load_plugin","channelId":"...","pluginId":"..."}
+//   engine → UI: {"event":"ready","plugins":N}   {"event":"plugin_list","plugins":[...]}
 
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include "PluginHost.h"
-#include "IpcServer.h"
+#include "StdioBridge.h"
 
 #include <iostream>
 
-int main(int argc, char** argv) {
-    juce::ScopedJuceInitialiser_GUI juceInit; // event loop for plugin scanning
+int main(int /*argc*/, char** /*argv*/) {
+    juce::ScopedJuceInitialiser_GUI juceInit;
 
-    const int port = (argc >= 2) ? std::atoi(argv[1]) : 37173;
-
-    std::cout << "[nasty-audio-engine] starting on ws://127.0.0.1:" << port << std::endl;
+    // Unbuffered stdout so Electron sees lines immediately.
+    std::setvbuf(stdout, nullptr, _IOLBF, 0);
 
     nasty::PluginHost host;
-    host.scanDefaultPaths(); // populate available plugins
+    nasty::StdioBridge bridge(host);
 
-    nasty::IpcServer server(host, port);
-    if (!server.start()) {
-        std::cerr << "[nasty-audio-engine] failed to start IPC server" << std::endl;
-        return 1;
-    }
+    // Send ready event before scanning (scan can take seconds).
+    bridge.sendEvent({{"event", juce::var("starting")}});
 
-    std::cout << "[nasty-audio-engine] ready. "
-              << host.pluginCount() << " plugins discovered." << std::endl;
+    host.scanDefaultPaths([&](const juce::String& name, int idx, int total) {
+        bridge.sendEvent({
+            {"event", juce::var("scanning")},
+            {"name",  juce::var(name)},
+            {"index", juce::var(idx)},
+            {"total", juce::var(total)},
+        });
+    });
 
-    // Block on JUCE's message loop (needed for plugin UIs, timers, etc.)
+    bridge.sendEvent({
+        {"event",   juce::var("ready")},
+        {"plugins", juce::var((int)host.pluginCount())},
+    });
+
+    // Block on JUCE's message loop for plugin UIs, timers, etc.
+    // The bridge reads stdin on a background thread and dispatches to us.
+    bridge.startReadThread();
     juce::MessageManager::getInstance()->runDispatchLoop();
     return 0;
 }

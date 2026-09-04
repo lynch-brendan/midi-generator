@@ -1,116 +1,105 @@
 # Nasty Audio Engine
 
-Native C++ subprocess that hosts VST3/AU/CLAP plugins and drives the audio device.
-Electron talks to it over a local WebSocket. This is the piece that unlocks
-"load Serum, load Sytrus, load Auto-Tune."
+Native C++ subprocess that hosts VST3/AU plugins. Electron spawns it and
+speaks JSON over stdin/stdout. Built on JUCE.
 
-## Why a separate process (not inside Electron)
+## What works today
 
-- **Audio has to be real-time.** The audio callback needs to run every ~5 ms
-  without stalls. Chromium/Node's garbage collector and JS event loop can freeze
-  for tens of ms. A native process gets a dedicated real-time audio thread.
-- **Plugins can crash.** A misbehaving VST shouldn't take down the whole DAW.
-  If the audio engine crashes, Electron respawns it and the UI keeps working.
-- **License isolation.** Plugin binaries load into the audio process; the UI
-  process stays clean.
+- ✅ Builds on macOS (Xcode Command Line Tools + CMake)
+- ✅ Scans the system's VST3 and AudioUnit folders on startup
+- ✅ Reports every plugin found as JSON on stdout
+- ✅ Loads a plugin instance into an `AudioProcessorGraph` node and wires
+  it to the default audio output device on demand
+- ✅ Piped to Electron: the desktop app's Browser dock shows a "Plugins"
+  tab listing every discovered VST3/AU
 
-## The tech choice — JUCE
+## What doesn't work yet
 
-JUCE is the industry-standard C++ framework for audio work — MIT-licensed for
-open source, used by most commercial plugin/host developers. It ships:
+- ❌ **MIDI note routing.** The engine accepts `note_on` / `note_off`
+  messages but doesn't yet inject them into the plugin's audio callback.
+  A proper impl needs a lock-free MIDI queue per plugin node. This is the
+  next task if you want to actually hear the plugins play.
+- ❌ **Plugin UIs.** Loading Serum's GUI window requires wiring
+  `AudioProcessorEditor` into a native window and passing keyboard focus
+  correctly. Not started.
+- ❌ **Transport sync.** Play/stop from the DAW doesn't drive the plugin
+  yet.
+- ❌ **Codesigning.** Bundled `.dmg` will trigger "unknown developer"
+  warnings.
 
-- `AudioPluginFormatManager` — scans and instantiates VST3/AU/AAX/LV2/CLAP
-- `AudioProcessorGraph` — patches plugins together with audio routing
-- `AudioDeviceManager` — talks to CoreAudio/WASAPI/ASIO/JACK
-- Reference example: JUCE ships `AudioPluginHost/` — a working plugin host
-  we can lift patterns from directly.
+## Build (once JUCE is fetched)
 
-Alternatives considered:
-- **CLAP host (clap-host)** — cleaner API but only hosts CLAP-format plugins
-  (small ecosystem still). Would exclude most existing VST3 libraries.
-- **Roll our own** — months of work reimplementing what JUCE already provides.
-- **iPlug2** — similar to JUCE, smaller community.
+```sh
+cd audio-engine
+git submodule update --init --depth 1     # first time
+mkdir -p build && cd build
+cmake ..
+cmake --build . --config Release          # ~3 min first time
+```
+
+Binary lands at `build/nasty-audio-engine_artefacts/nasty-audio-engine`.
+
+## Run standalone (for debugging)
+
+```sh
+echo '{"cmd":"list_plugins"}' | ./build/nasty-audio-engine_artefacts/nasty-audio-engine
+```
+
+You'll see JSON lines: `{"event":"scanning","name":"..."}` while it
+scans, then `{"event":"ready","plugins":N}` and then the list.
+
+The Electron app does the same thing automatically — just launch the
+desktop app and the plugin list appears in the Browser dock's "Plugins"
+tab within a few seconds.
 
 ## Architecture
 
 ```
-┌───────────────────────────────┐     WebSocket JSON     ┌────────────────────────────┐
-│                               │◄──────────────────────►│                            │
-│  Electron (nasty.html + JS)   │    localhost:37173     │   nasty-audio-engine       │
-│  - UI, song state, sequencer  │                        │   - JUCE plugin host       │
-│  - Web Audio for previews     │                        │   - AudioDeviceManager     │
-│  - Sends: load plugin, note on│                        │   - Real-time audio thread │
-│  - Receives: plugin list, ...│                        │   - Renders to output       │
-└───────────────────────────────┘                        └────────────────────────────┘
+┌──────────────────────────┐  stdin JSON lines   ┌────────────────────────────┐
+│  Electron (nasty.html)   │────────────────────►│                            │
+│  - Browser dock UI       │                     │   nasty-audio-engine       │
+│  - Sends: load_plugin,   │◄────────────────────│   - JUCE plugin host       │
+│    note_on, set_param    │  stdout JSON lines  │   - AudioProcessorGraph    │
+└──────────────────────────┘                     │   - default output device  │
+                                                  └────────────────────────────┘
 ```
 
-**Message shapes (draft):**
+Why a separate process:
+1. **Real-time audio can't tolerate GC pauses.** Chromium's V8 stalls
+   for tens of ms; the audio callback needs to run every ~5 ms.
+2. **Plugins crash.** A misbehaving VST that segfaults takes down its
+   process, not the whole DAW.
+3. **License isolation.** Plugin binaries load in the engine, not the UI.
 
-Electron → engine:
-- `{cmd:"scan_plugins", paths:[...]}` — enumerate installed plugins
-- `{cmd:"load_plugin", channelId:"...", pluginId:"..."}` — instantiate
-- `{cmd:"unload_plugin", channelId:"..."}` 
-- `{cmd:"set_param", channelId:"...", paramId:..., value:...}`
-- `{cmd:"note_on", channelId:"...", pitch:60, velocity:0.8, atSample:...}`
-- `{cmd:"note_off", channelId:"...", pitch:60, atSample:...}`
-- `{cmd:"transport", playing:true, bpm:120, startBar:0}`
-- `{cmd:"set_channel_gain", channelId:"...", gain:0.8}`
+## Message protocol
 
-Engine → Electron:
-- `{event:"plugin_list", plugins:[{id, name, format, category, ...}]}`
-- `{event:"plugin_loaded", channelId, params:[...]}`
-- `{event:"level", channelId, dbfs:...}` — for meter animation
-- `{event:"error", message:"..."}`
+**Electron → engine** (one JSON object per line):
 
-**Audio flow:**
+| cmd              | fields                                          |
+|------------------|-------------------------------------------------|
+| `list_plugins`   | —                                               |
+| `load_plugin`    | `channelId`, `pluginId`                         |
+| `unload_plugin`  | `channelId`                                     |
+| `note_on`        | `channelId`, `pitch`, `velocity` (0..1)         |
+| `note_off`       | `channelId`, `pitch`                            |
+| `set_param`      | `channelId`, `paramIndex`, `value` (0..1)       |
 
-The engine owns the output device. Each Nasty channel with a plugin becomes an
-`AudioProcessorGraph` node routed to the master output. Channels without
-plugins can still be handled by Electron's Web Audio synths — the two systems
-sum acoustically through the OS mixer (fine for MVP; later we route Web Audio
-into the engine too for unified mixing).
+**Engine → Electron** (one JSON object per line):
 
-## Build (once JUCE is available)
+| event            | fields                                              |
+|------------------|-----------------------------------------------------|
+| `starting`       | —                                                   |
+| `scanning`       | `name`, `index`, `total`                            |
+| `ready`          | `plugins` (count)                                   |
+| `plugin_list`    | `plugins` (array of {id, name, format, manufacturer, category, isInstrument}) |
+| `plugin_loaded`  | `channelId`                                         |
+| `error`          | `error`, `channelId?`                               |
 
-The project uses CMake. Two ways to bring in JUCE:
+## Next concrete steps
 
-**Option A — as a git submodule (recommended):**
-```sh
-cd audio-engine
-git submodule add https://github.com/juce-framework/JUCE.git juce
-git submodule update --init --recursive
-mkdir build && cd build
-cmake .. -G Xcode              # macOS
-# or: cmake .. -G "Visual Studio 17 2022"   # Windows
-cmake --build . --config Release
-```
-
-**Option B — system JUCE via Homebrew:**
-```sh
-brew install juce
-# then in CMakeLists.txt use find_package(JUCE)
-```
-
-The output binary `nasty-audio-engine` gets bundled into the Electron app via
-`extraResources` in `electron/package.json`.
-
-## Current status
-
-This directory contains **scaffolding, not a working engine yet.** What's here:
-- `CMakeLists.txt` — starter build file (expects JUCE at `./juce`)
-- `src/main.cpp` — entry point that opens the WebSocket
-- `src/PluginHost.h/.cpp` — class skeleton
-- `src/IpcServer.h/.cpp` — WebSocket wrapper
-- Electron's `main.js` has a `startAudioEngine()` stub that will spawn this
-  binary when it exists (silently no-ops today)
-
-**Concrete next steps to get "load Serum" working:**
-1. Add JUCE submodule and get the empty project building
-2. Wire `AudioPluginFormatManager` scan → return plugin list via IPC
-3. Load a plugin, print its parameters, close it
-4. Open `AudioDeviceManager` default output; render a test tone through the
-   loaded plugin
-5. Wire MIDI note-on/note-off from Electron
-6. Sync transport/BPM to the sequencer
-7. Bundle the binary into the Electron `.dmg` and add codesigning
-   entitlements for plugin loading
+1. Implement the MIDI queue so `note_on` actually plays sound
+2. Cache the plugin scan across launches (startup is ~10s on first run)
+3. Route the sequencer transport to plugins
+4. Show plugin UIs in native windows
+5. Bundle the binary in the `.dmg` (already wired via `extraResources`)
+6. Ship curated free plugins (Surge XT, Sfizz, Vitalium) alongside

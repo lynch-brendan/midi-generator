@@ -1110,6 +1110,7 @@
         Browser
         <div class="bh-tabs">
           <div class="bt on" data-btab="instruments">Inst</div>
+          <div class="bt" data-btab="plugins" title="VST/AU plugins on your system (desktop only)">Plugins</div>
           <div class="bt" data-btab="patterns">Pat</div>
         </div>
       </div>
@@ -3746,7 +3747,110 @@ function renderBrowser() {
     });
     tree.appendChild(wrap);
     fEl.addEventListener('click', () => fEl.classList.toggle('open'));
+  } else if (browserTab === 'plugins') {
+    if (!window.nasty || !window.nasty.isDesktop) {
+      tree.innerHTML = '<div style="padding:12px;color:var(--dim);font-size:11px;line-height:1.5">' +
+        'VST/AU plugins only work in the desktop app. ' +
+        'Web can only run built-in synths.' +
+        '</div>';
+      return;
+    }
+    if (enginePluginsError) {
+      tree.innerHTML = '<div style="padding:12px;color:var(--record);font-size:11px">' +
+        escapeHtml(enginePluginsError) + '</div>';
+      return;
+    }
+    if (!enginePluginsList) {
+      tree.innerHTML = '<div style="padding:12px;color:var(--dim);font-size:11px">' +
+        (engineScanning ? ('Scanning… ' + escapeHtml(engineScanning)) : 'Waiting for audio engine…') +
+        '</div>';
+      return;
+    }
+    // Group plugins by category
+    const groups = {};
+    for (const p of enginePluginsList) {
+      const cat = p.isInstrument ? 'Instruments' : (p.category || 'Effects');
+      (groups[cat] = groups[cat] || []).push(p);
+    }
+    const catNames = Object.keys(groups).sort((a, b) => {
+      if (a === 'Instruments') return -1;
+      if (b === 'Instruments') return 1;
+      return a.localeCompare(b);
+    });
+    catNames.forEach(cat => {
+      const fEl = document.createElement('div');
+      fEl.className = 'br-folder open';
+      fEl.textContent = `${cat} (${groups[cat].length})`;
+      tree.appendChild(fEl);
+      const wrap = document.createElement('div');
+      wrap.className = 'br-children';
+      groups[cat].sort((a, b) => a.name.localeCompare(b.name)).forEach(p => {
+        const it = document.createElement('div');
+        it.className = 'br-item draggable';
+        it.textContent = `${p.name}  · ${p.format}`;
+        it.title = `${p.manufacturer || ''} — double-click to add as channel`;
+        it.addEventListener('dblclick', () => addPluginChannel(p));
+        wrap.appendChild(it);
+      });
+      tree.appendChild(wrap);
+      fEl.addEventListener('click', () => fEl.classList.toggle('open'));
+    });
   }
+}
+
+// State for the plugins tab, populated by engine events
+let enginePluginsList = null;
+let enginePluginsError = null;
+let engineScanning = null;
+
+function addPluginChannel(pluginDesc) {
+  const id = 'ch_plugin_' + Date.now().toString(36);
+  for (const c of song.channels) c.armed = false;
+  const ch = {
+    id,
+    name: pluginDesc.name,
+    instrument: 'plugin',
+    pluginId: pluginDesc.id,
+    pluginFormat: pluginDesc.format,
+    drumPitch: null,
+    volume: 0.8, effects: [],
+    muted: false, solo: false, armed: true,
+    color: PALETTE[song.channels.length % PALETTE.length],
+    insertId: 'master',
+  };
+  song.channels.push(ch);
+  // Tell the engine to load the plugin into this channel
+  if (window.nasty && window.nasty.engine) {
+    window.nasty.engine.send({
+      cmd: 'load_plugin', channelId: id, pluginId: pluginDesc.id,
+    });
+  }
+  render();
+}
+
+// Subscribe to audio-engine events (desktop only)
+if (window.nasty && window.nasty.engine) {
+  window.nasty.engine.onEvent((msg) => {
+    if (msg.event === 'scanning') {
+      engineScanning = msg.name;
+      if (browserTab === 'plugins') renderBrowser();
+    } else if (msg.event === 'ready') {
+      engineScanning = null;
+      // Fetch plugin list once scan finishes
+      window.nasty.engine.send({ cmd: 'list_plugins' });
+    } else if (msg.event === 'plugin_list') {
+      enginePluginsList = msg.plugins || [];
+      enginePluginsError = null;
+      if (browserTab === 'plugins') renderBrowser();
+    } else if (msg.event === 'plugin_loaded') {
+      // could show a "loaded" toast here later
+    } else if (msg.event === 'error') {
+      enginePluginsError = msg.error || 'engine error';
+      if (browserTab === 'plugins') renderBrowser();
+    }
+  });
+  // Ask for plugin list on startup (engine will respond after scan finishes)
+  setTimeout(() => window.nasty.engine.send({ cmd: 'list_plugins' }), 500);
 }
 
 // Sync FL shell state on every render()

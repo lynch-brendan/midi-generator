@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(nasty-audio-engine VERSION 0.1.0 LANGUAGES CXX)
+project(nasty-audio-engine VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -30,7 +30,7 @@ juce_add_console_app(nasty-audio-engine
 target_sources(nasty-audio-engine PRIVATE
     src/main.cpp
     src/PluginHost.cpp
-    src/IpcServer.cpp
+    src/StdioBridge.cpp
 )
 
 target_compile_definitions(nasty-audio-engine PRIVATE

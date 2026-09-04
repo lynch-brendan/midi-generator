@@ -1,40 +1,58 @@
 #pragma once
 
-// PluginHost — thin wrapper around JUCE's AudioPluginFormatManager +
-// KnownPluginList. Handles scanning, instantiation, and eventual routing.
-//
-// Status: SCAFFOLDING. Real implementation pending.
+// PluginHost — JUCE plugin scanning + instantiation + audio graph.
+// Runs plugins through an AudioProcessorGraph fed by MIDI from the UI.
 
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <juce_audio_utils/juce_audio_utils.h>
+#include <functional>
 #include <memory>
-#include <vector>
+#include <mutex>
 
 namespace nasty {
 
-class PluginHost {
+class PluginHost : private juce::AudioProcessorPlayer {
 public:
     PluginHost();
-    ~PluginHost();
+    ~PluginHost() override;
 
-    // Enumerate plugins from OS default locations (~/Library/Audio/Plug-Ins on macOS,
-    // %COMMONPROGRAMFILES%/VST3 on Windows, etc). Blocks — call once at startup.
-    void scanDefaultPaths();
+    using ScanProgress = std::function<void(const juce::String& name, int idx, int total)>;
 
-    // How many plugins we know about after scan.
+    void scanDefaultPaths(const ScanProgress& onProgress = {});
     size_t pluginCount() const;
 
-    // JSON-serialisable list for the UI: [{id, name, format, manufacturer, category}, ...]
+    // Serialise the discovered plugin catalog as JSON-array-of-objects for the UI.
     juce::var pluginListAsJson() const;
 
-    // Instantiate a plugin by KnownPluginList unique id. Returns nullptr on failure.
-    std::unique_ptr<juce::AudioPluginInstance> instantiate(const juce::String& pluginId,
-                                                            double sampleRate,
-                                                            int blockSize,
-                                                            juce::String& outError);
+    // Ensure audio output is open at the default device / rate.
+    void startAudio();
+    void stopAudio();
+
+    // Load a plugin into a channel slot. Returns error string on failure, empty on success.
+    juce::String loadPlugin(const juce::String& channelId, const juce::String& pluginId);
+    void unloadPlugin(const juce::String& channelId);
+
+    // MIDI note events routed to a channel's plugin.
+    void noteOn (const juce::String& channelId, int pitch, float velocity);
+    void noteOff(const juce::String& channelId, int pitch);
+
+    // Parameter automation.
+    void setParam(const juce::String& channelId, int paramIndex, float value01);
 
 private:
     juce::AudioPluginFormatManager formatManager;
     juce::KnownPluginList          knownPlugins;
+    juce::AudioDeviceManager       deviceManager;
+    juce::AudioProcessorGraph      graph;
+
+    struct ChannelSlot {
+        juce::AudioProcessorGraph::NodeID nodeId;
+        int midiChannel = 1;
+    };
+
+    mutable std::mutex mutex;
+    std::map<juce::String, ChannelSlot> channels; // by channelId
+    bool audioRunning = false;
 };
 
 } // namespace nasty

@@ -29,6 +29,11 @@
         "from": "../web",
         "to": "web",
         "filter": ["**/*"]
+      },
+      {
+        "from": "../audio-engine/build/nasty-audio-engine_artefacts",
+        "to": "audio-engine",
+        "filter": ["nasty-audio-engine"]
       }
     ],
     "mac": {

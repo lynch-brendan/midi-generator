@@ -1,31 +1,55 @@
-const { app, BrowserWindow, Menu, shell } = require('electron');
+const { app, BrowserWindow, Menu, shell, ipcMain } = require('electron');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const readline = require('readline');
 
 let mainWindow;
 let audioEngineProc = null;
-const AUDIO_ENGINE_PORT = 37173;
+let engineReady = false;
+let engineStdinRl = null;
 
-// Try to spawn the native audio engine subprocess. If the binary isn't built
-// yet (VST hosting is a separate track — see audio-engine/README.md), this
-// silently no-ops and Nasty keeps working with just Web Audio.
-function startAudioEngine() {
+function findAudioEngineBinary() {
   const candidates = [
+    path.join(__dirname, '..', 'audio-engine', 'build', 'nasty-audio-engine_artefacts', 'nasty-audio-engine'),
     path.join(__dirname, '..', 'audio-engine', 'build', 'nasty-audio-engine_artefacts', 'Release', 'nasty-audio-engine'),
     path.join(__dirname, '..', 'audio-engine', 'build', 'nasty-audio-engine'),
     path.join(process.resourcesPath || '', 'audio-engine', 'nasty-audio-engine'),
   ];
-  const bin = candidates.find(p => p && fs.existsSync(p));
+  return candidates.find(p => p && fs.existsSync(p));
+}
+
+// Spawn the native audio engine and pipe JSON lines both ways.
+function startAudioEngine() {
+  const bin = findAudioEngineBinary();
   if (!bin) {
-    console.log('[nasty] audio engine binary not found — VST hosting disabled. See audio-engine/README.md');
+    console.log('[nasty] audio engine binary not found — VST hosting disabled. Build it with: cd audio-engine/build && cmake --build .');
     return;
   }
   console.log('[nasty] spawning audio engine:', bin);
-  audioEngineProc = spawn(bin, [String(AUDIO_ENGINE_PORT)], { stdio: 'inherit' });
+  audioEngineProc = spawn(bin, [], { stdio: ['pipe', 'pipe', 'pipe'] });
+
+  const rl = readline.createInterface({ input: audioEngineProc.stdout });
+  rl.on('line', (line) => {
+    let msg;
+    try { msg = JSON.parse(line); }
+    catch { return; }
+    if (msg.event === 'ready') engineReady = true;
+    // Forward every engine event to the renderer as 'engine-event'.
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('engine-event', msg);
+    }
+  });
+
+  // Engine stderr is noisy (plugins print init logs). Keep visible in dev console only.
+  audioEngineProc.stderr.on('data', (buf) => {
+    process.stderr.write('[engine] ' + buf.toString());
+  });
+
   audioEngineProc.on('exit', (code) => {
     console.log('[nasty] audio engine exited', code);
     audioEngineProc = null;
+    engineReady = false;
   });
 }
 
@@ -33,8 +57,27 @@ function stopAudioEngine() {
   if (audioEngineProc) {
     try { audioEngineProc.kill('SIGTERM'); } catch {}
     audioEngineProc = null;
+    engineReady = false;
   }
 }
+
+// Renderer → engine: forward JSON commands over stdin.
+ipcMain.handle('engine-cmd', (_evt, msg) => {
+  if (!audioEngineProc || !audioEngineProc.stdin.writable) {
+    return { ok: false, error: 'audio engine not running' };
+  }
+  try {
+    audioEngineProc.stdin.write(JSON.stringify(msg) + '\n');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+});
+
+ipcMain.handle('engine-status', () => ({
+  running: !!audioEngineProc,
+  ready: engineReady,
+}));
 
 function findNastyHtml() {
   // Dev: web/nasty.html is one level up from electron/
