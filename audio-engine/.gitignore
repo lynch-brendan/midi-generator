@@ -1,0 +1,5 @@
+build/
+juce/
+.cache/
+*.o
+*.obj

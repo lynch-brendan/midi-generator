@@ -1,8 +1,40 @@
 const { app, BrowserWindow, Menu, shell } = require('electron');
+const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
 let mainWindow;
+let audioEngineProc = null;
+const AUDIO_ENGINE_PORT = 37173;
+
+// Try to spawn the native audio engine subprocess. If the binary isn't built
+// yet (VST hosting is a separate track — see audio-engine/README.md), this
+// silently no-ops and Nasty keeps working with just Web Audio.
+function startAudioEngine() {
+  const candidates = [
+    path.join(__dirname, '..', 'audio-engine', 'build', 'nasty-audio-engine_artefacts', 'Release', 'nasty-audio-engine'),
+    path.join(__dirname, '..', 'audio-engine', 'build', 'nasty-audio-engine'),
+    path.join(process.resourcesPath || '', 'audio-engine', 'nasty-audio-engine'),
+  ];
+  const bin = candidates.find(p => p && fs.existsSync(p));
+  if (!bin) {
+    console.log('[nasty] audio engine binary not found — VST hosting disabled. See audio-engine/README.md');
+    return;
+  }
+  console.log('[nasty] spawning audio engine:', bin);
+  audioEngineProc = spawn(bin, [String(AUDIO_ENGINE_PORT)], { stdio: 'inherit' });
+  audioEngineProc.on('exit', (code) => {
+    console.log('[nasty] audio engine exited', code);
+    audioEngineProc = null;
+  });
+}
+
+function stopAudioEngine() {
+  if (audioEngineProc) {
+    try { audioEngineProc.kill('SIGTERM'); } catch {}
+    audioEngineProc = null;
+  }
+}
 
 function findNastyHtml() {
   // Dev: web/nasty.html is one level up from electron/
@@ -23,6 +55,7 @@ function createWindow() {
     backgroundColor: '#252932',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     trafficLightPosition: { x: 12, y: 6 },
+    icon: path.join(__dirname, 'build', process.platform === 'win32' ? 'icon.ico' : 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -144,6 +177,7 @@ function buildMenu() {
 app.whenReady().then(() => {
   createWindow();
   buildMenu();
+  startAudioEngine();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
@@ -152,3 +186,5 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
+
+app.on('before-quit', stopAudioEngine);
