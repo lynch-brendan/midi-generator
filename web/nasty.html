@@ -324,18 +324,44 @@
     z-index: 4; display: none;
   }
 
-  /* Channel Rack — docked bottom, toggleable */
+  /* Channel Rack — floating, draggable, resizable window over the workspace */
   #channel-rack-window {
-    height: 260px; flex-shrink: 0; background: var(--panel);
+    position: absolute;
+    top: 40px; left: 60px;
+    width: 620px; height: 340px;
+    min-width: 320px; min-height: 160px;
+    background: var(--panel);
     display: flex; flex-direction: column; overflow: hidden;
+    z-index: 30;
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.06);
   }
   #channel-rack-window.collapsed { display: none; }
+  #channel-rack-window .fl-title-bar { cursor: move; user-select: none; }
   #channel-rack-window .cr-body { flex: 1; overflow-y: auto; min-height: 0; padding: 4px; }
   #channel-rack-window .cr-actions {
     padding: 4px 8px; background: var(--panel-2); border-top: 1px solid var(--line);
     display: flex; gap: 6px;
   }
   #channel-rack-window .cr-actions button { padding: 3px 10px; font-size: 10px; }
+  #channel-rack-window .fl-resize {
+    position: absolute; right: 0; bottom: 0; width: 14px; height: 14px;
+    cursor: nwse-resize; z-index: 5;
+    background:
+      linear-gradient(135deg, transparent 0 46%, rgba(255,255,255,0.25) 46% 54%, transparent 54% 60%,
+                              rgba(255,255,255,0.25) 60% 68%, transparent 68% 74%,
+                              rgba(255,255,255,0.25) 74% 82%, transparent 82%);
+  }
+  #channel-rack-window.maximized {
+    top: 40px !important; left: 40px !important;
+    width: calc(100% - 80px) !important; height: calc(100% - 80px) !important;
+  }
+  .fl-title-bar .tb-max {
+    width: 16px; height: 14px; padding: 0; font-size: 9px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--panel-2); margin-right: 2px;
+  }
 
   .channel-row, .pattern-row {
     display: flex; align-items: center; gap: 5px;
@@ -981,7 +1007,7 @@
   <div id="toolbar">
     <div class="tb-group">
       <button class="tb-btn on" id="tb-playlist" data-cmd="toggle-playlist">Playlist<span class="fkey">F5</span></button>
-      <button class="tb-btn on" id="tb-rack" data-cmd="toggle-rack">Rack<span class="fkey">F6</span></button>
+      <button class="tb-btn" id="tb-rack" data-cmd="toggle-rack">Rack<span class="fkey">F6</span></button>
       <button class="tb-btn" id="tb-pr" data-cmd="toggle-pr">Piano Roll<span class="fkey">F7</span></button>
       <button class="tb-btn on" id="tb-browser" data-cmd="toggle-browser">Browser<span class="fkey">F8</span></button>
       <button class="tb-btn" id="tb-mixer" data-cmd="toggle-mixer">Mixer<span class="fkey">F9</span></button>
@@ -1054,15 +1080,17 @@
         </div>
       </div>
 
-      <div id="channel-rack-window">
-        <div class="fl-title-bar">
+      <div id="channel-rack-window" class="collapsed">
+        <div class="fl-title-bar" id="cr-title-bar">
           <span class="tb-title">◆ Channel Rack</span>
+          <button class="tb-max" id="cr-max" title="Maximize">▢</button>
           <button class="tb-close" data-cmd="toggle-rack" title="Hide">×</button>
         </div>
         <div class="cr-body" id="channel-rack"></div>
         <div class="cr-actions">
           <button id="add-channel-btn">+ Channel</button>
         </div>
+        <div class="fl-resize" id="cr-resize" title="Resize"></div>
       </div>
 
     </div>
@@ -3538,6 +3566,179 @@ function renderFlShell() {
   // Time LCD default when stopped
   if (!ctx || !scheduledSources || !scheduledSources.length) updateTimeLcd(0);
 }
+
+// ============================================================
+// Floating windows — drag by title bar, resize by bottom-right handle
+// ============================================================
+
+const FL_WIN_STATE_KEY = 'nasty.flwin.v1';
+
+function loadFlWinState() {
+  try { return JSON.parse(localStorage.getItem(FL_WIN_STATE_KEY)) || {}; }
+  catch { return {}; }
+}
+function saveFlWinState(state) {
+  try { localStorage.setItem(FL_WIN_STATE_KEY, JSON.stringify(state)); } catch {}
+}
+
+function clampWindowInside(el, containerRect) {
+  const maxLeft = Math.max(0, containerRect.width  - el.offsetWidth  - 4);
+  const maxTop  = Math.max(0, containerRect.height - el.offsetHeight - 4);
+  const left = Math.min(Math.max(0, parseInt(el.style.left) || 0), maxLeft);
+  const top  = Math.min(Math.max(0, parseInt(el.style.top)  || 0), maxTop);
+  el.style.left = left + 'px';
+  el.style.top  = top  + 'px';
+}
+
+function makeFloating(opts) {
+  // opts: { winId, titleBarId, resizeHandleId, storageKey, defaultPos: {top,left,w,h} }
+  const el = document.getElementById(opts.winId);
+  const titleBar = document.getElementById(opts.titleBarId);
+  const resizeH = document.getElementById(opts.resizeHandleId);
+  if (!el || !titleBar) return;
+
+  const container = el.parentElement;
+  container.style.position = container.style.position || 'relative';
+
+  const state = loadFlWinState();
+  const saved = state[opts.storageKey];
+  if (saved) {
+    if (typeof saved.top  === 'number') el.style.top  = saved.top  + 'px';
+    if (typeof saved.left === 'number') el.style.left = saved.left + 'px';
+    if (typeof saved.w    === 'number') el.style.width  = saved.w + 'px';
+    if (typeof saved.h    === 'number') el.style.height = saved.h + 'px';
+    if (saved.maximized) el.classList.add('maximized');
+  }
+
+  function persist() {
+    const s = loadFlWinState();
+    s[opts.storageKey] = {
+      top: parseInt(el.style.top)  || 0,
+      left: parseInt(el.style.left) || 0,
+      w:   el.offsetWidth,
+      h:   el.offsetHeight,
+      maximized: el.classList.contains('maximized'),
+    };
+    saveFlWinState(s);
+  }
+
+  function bringToFront() {
+    document.querySelectorAll('#center-area > .fl-floating').forEach(w => w.style.zIndex = 20);
+    el.style.zIndex = 40;
+  }
+  el.classList.add('fl-floating');
+  el.addEventListener('mousedown', bringToFront);
+
+  // Drag
+  let dragging = false;
+  let dragOffX = 0, dragOffY = 0;
+  titleBar.addEventListener('mousedown', (e) => {
+    if (e.target.closest('button')) return;
+    if (el.classList.contains('maximized')) return;
+    dragging = true;
+    const rect = el.getBoundingClientRect();
+    dragOffX = e.clientX - rect.left;
+    dragOffY = e.clientY - rect.top;
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const containerRect = container.getBoundingClientRect();
+    let left = e.clientX - containerRect.left - dragOffX;
+    let top  = e.clientY - containerRect.top  - dragOffY;
+    left = Math.max(0, Math.min(containerRect.width  - 60,  left));
+    top  = Math.max(0, Math.min(containerRect.height - 24,  top));
+    el.style.left = left + 'px';
+    el.style.top  = top  + 'px';
+  });
+  document.addEventListener('mouseup', () => {
+    if (dragging) { dragging = false; persist(); }
+    if (resizing) { resizing = false; persist(); }
+  });
+
+  // Resize
+  let resizing = false;
+  let startX = 0, startY = 0, startW = 0, startH = 0;
+  if (resizeH) {
+    resizeH.addEventListener('mousedown', (e) => {
+      if (el.classList.contains('maximized')) return;
+      resizing = true;
+      startX = e.clientX; startY = e.clientY;
+      startW = el.offsetWidth; startH = el.offsetHeight;
+      e.preventDefault(); e.stopPropagation();
+    });
+  }
+  document.addEventListener('mousemove', (e) => {
+    if (!resizing) return;
+    const min = { w: parseInt(getComputedStyle(el).minWidth)  || 200,
+                  h: parseInt(getComputedStyle(el).minHeight) || 120 };
+    const w = Math.max(min.w, startW + (e.clientX - startX));
+    const h = Math.max(min.h, startH + (e.clientY - startY));
+    el.style.width  = w + 'px';
+    el.style.height = h + 'px';
+  });
+
+  return {
+    persist, bringToFront,
+    firstOpenPosition() {
+      // Only apply defaults if no saved state
+      if (!saved && opts.defaultPos) {
+        el.style.top  = opts.defaultPos.top  + 'px';
+        el.style.left = opts.defaultPos.left + 'px';
+        el.style.width  = opts.defaultPos.w + 'px';
+        el.style.height = opts.defaultPos.h + 'px';
+      }
+      const containerRect = container.getBoundingClientRect();
+      clampWindowInside(el, containerRect);
+      bringToFront();
+    },
+  };
+}
+
+const crFloat = makeFloating({
+  winId: 'channel-rack-window',
+  titleBarId: 'cr-title-bar',
+  resizeHandleId: 'cr-resize',
+  storageKey: 'channel-rack',
+  defaultPos: { top: 60, left: 80, w: 640, h: 340 },
+});
+
+// Maximize toggle
+document.getElementById('cr-max').addEventListener('click', (e) => {
+  e.stopPropagation();
+  const el = document.getElementById('channel-rack-window');
+  el.classList.toggle('maximized');
+  if (crFloat) crFloat.persist();
+});
+
+// Hook the window toggle so first-open positions properly
+const _origToggleWindow = toggleWindow;
+toggleWindow = function(name) {
+  const wasOpen = isWindowOpen(name);
+  _origToggleWindow(name);
+  if (!wasOpen && name === 'rack' && crFloat) {
+    // just opened — position it
+    crFloat.firstOpenPosition();
+  }
+};
+
+// Persist open/collapsed for the rack too
+(function persistRackOpen() {
+  const state = loadFlWinState();
+  const openState = state['channel-rack-open'];
+  if (openState === true) setWindow('rack', true);
+  // Wrap setWindow to persist for rack
+  const _setWindow = setWindow;
+  setWindow = function(name, open) {
+    _setWindow(name, open);
+    if (name === 'rack') {
+      const s = loadFlWinState();
+      s['channel-rack-open'] = !!open;
+      saveFlWinState(s);
+      if (open && crFloat) crFloat.firstOpenPosition();
+    }
+  };
+})();
 
 // ============================================================
 // Boot
