@@ -5,226 +5,411 @@
 <title>Nasty</title>
 <style>
   :root {
-    --bg: #0e0f13;
-    --panel: #14161c;
-    --panel-2: #1a1d25;
-    --line: #262a35;
-    --text: #e8e8ec;
-    --dim: #7d8391;
+    /* FL-style greys */
+    --bg: #1c1c1c;
+    --workspace: #2a2a2a;
+    --panel: #383838;
+    --panel-2: #404040;
+    --panel-3: #4a4a4a;
+    --line: #111;
+    --line-2: #555;
+    --text: #d8d8d8;
+    --text-dim: #a0a0a0;
+    --dim: #7a7a7a;
     --accent: #ff5c93;
     --accent-2: #6b7cff;
     --record: #ff3b47;
     --arm: #ff8c42;
     --solo: #ffdd57;
     --mute: #6b7cff;
+    --ok: #33c58a;
   }
   * { box-sizing: border-box; }
   html, body {
     margin: 0; height: 100%; background: var(--bg); color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
-    font-size: 14px;
+    font-size: 11px;
     overflow: hidden;
+    user-select: none;
   }
   button {
-    background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
-    padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px;
+    background: linear-gradient(var(--panel-3), var(--panel-2));
+    color: var(--text); border: 1px solid var(--line);
+    padding: 3px 8px; border-radius: 2px; cursor: pointer; font-size: 11px;
     font-family: inherit;
   }
-  button:hover { border-color: var(--accent-2); }
+  button:hover { background: linear-gradient(#5a5a5a, var(--panel-3)); }
+  button:active { background: var(--panel-2); }
   button:disabled { opacity: 0.4; cursor: not-allowed; }
-  button.active { background: var(--accent); color: white; border-color: var(--accent); }
-  input, select {
-    background: var(--bg); color: var(--text);
-    border: 1px solid var(--line); border-radius: 6px;
-    padding: 4px 8px; font-size: 13px; font-family: inherit;
+  button.active, button.on {
+    background: linear-gradient(var(--accent), #d94276);
+    color: white; border-color: #111;
   }
-  input:focus, select:focus { outline: none; border-color: var(--accent-2); }
+  input, select, textarea {
+    background: #1a1a1a; color: var(--text);
+    border: 1px solid var(--line); border-radius: 2px;
+    padding: 3px 6px; font-size: 11px; font-family: inherit;
+    user-select: text;
+  }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent-2); }
 
-  #app { display: flex; height: 100vh; }
-  #daw {
-    flex: 1; min-width: 0; display: flex; flex-direction: column;
-    border-right: 1px solid var(--line);
+  /* ==================== SHELL LAYOUT ==================== */
+  #app { display: flex; flex-direction: column; height: 100vh; }
+
+  /* Menu bar */
+  #menubar {
+    height: 22px; background: linear-gradient(var(--panel-2), var(--panel));
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: stretch; flex-shrink: 0;
+    font-size: 11px;
   }
-  #topbar {
-    display: flex; align-items: center; gap: 8px;
-    padding: 8px 12px; border-bottom: 1px solid var(--line);
-    background: var(--panel);
-    flex-wrap: wrap;
-  }
-  #topbar .logo {
-    font-weight: 700; letter-spacing: 0.5px;
+  #menubar .brand {
+    padding: 0 10px; display: flex; align-items: center;
+    font-weight: 700; font-size: 11px; letter-spacing: 1px;
     background: linear-gradient(90deg, var(--accent), var(--accent-2));
     -webkit-background-clip: text; background-clip: text; color: transparent;
-    font-size: 18px; margin-right: 6px;
   }
-  #topbar .sep { width: 1px; height: 20px; background: var(--line); margin: 0 4px; }
-  #topbar .group { display: flex; align-items: center; gap: 6px; }
-  #topbar .info { color: var(--dim); font-size: 12px; margin-left: auto; }
-  #bpm-input { width: 60px; text-align: center; font-weight: 600; }
+  #menubar .menu-item {
+    padding: 0 10px; display: flex; align-items: center;
+    cursor: pointer; position: relative; color: var(--text);
+  }
+  #menubar .menu-item:hover, #menubar .menu-item.open {
+    background: var(--accent); color: white;
+  }
+  #menubar .menu-item .menu-drop {
+    position: absolute; top: 100%; left: 0; min-width: 200px;
+    background: var(--panel); border: 1px solid var(--line);
+    box-shadow: 3px 3px 8px rgba(0,0,0,0.6);
+    z-index: 200; display: none; padding: 3px 0;
+  }
+  #menubar .menu-item.open .menu-drop { display: block; }
+  #menubar .menu-drop .mi {
+    padding: 4px 20px 4px 24px; color: var(--text); cursor: pointer;
+    display: flex; justify-content: space-between; gap: 20px;
+  }
+  #menubar .menu-drop .mi:hover { background: var(--accent); color: white; }
+  #menubar .menu-drop .mi .sh { color: var(--dim); font-size: 10px; }
+  #menubar .menu-drop .mi:hover .sh { color: rgba(255,255,255,0.8); }
+  #menubar .menu-drop .msep { height: 1px; background: var(--line); margin: 3px 0; }
+
+  /* Transport bar */
+  #transport {
+    height: 60px; background: linear-gradient(var(--panel), var(--panel-2));
+    border-bottom: 1px solid var(--line); flex-shrink: 0;
+    display: flex; align-items: center; gap: 10px; padding: 0 10px;
+  }
+  #transport .t-group { display: flex; align-items: center; gap: 3px; }
+  #transport .t-sep { width: 1px; height: 40px; background: var(--line); margin: 0 4px; }
+  #transport .t-btn {
+    width: 28px; height: 28px; padding: 0; font-size: 13px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #transport .t-btn.big { width: 36px; height: 36px; font-size: 16px; }
+  #transport .patsong {
+    display: flex; flex-direction: column; gap: 2px;
+    background: #111; padding: 3px 5px; border-radius: 2px; border: 1px solid var(--line);
+    font-size: 10px; font-weight: 700; letter-spacing: 1px;
+  }
+  #transport .patsong .ps-btn {
+    padding: 1px 6px; cursor: pointer; color: var(--dim);
+    border-radius: 2px; text-align: center;
+  }
+  #transport .patsong .ps-btn.active {
+    background: var(--arm); color: white;
+  }
+  #transport .lcd {
+    background: #0a0a0a; border: 1px solid var(--line); border-radius: 2px;
+    padding: 4px 10px; font-family: ui-monospace, Menlo, monospace;
+    color: var(--accent); text-shadow: 0 0 4px rgba(255,92,147,0.5);
+    display: flex; flex-direction: column; align-items: center; line-height: 1;
+  }
+  #transport .lcd .big { font-size: 20px; font-weight: 700; }
+  #transport .lcd .sub { font-size: 8px; color: var(--dim); letter-spacing: 1px; margin-top: 2px; }
+  #transport .lcd-time .big { font-size: 22px; letter-spacing: 1px; }
+  #transport #bpm-input {
+    width: 60px; text-align: center; font-weight: 700; font-size: 18px;
+    background: transparent; border: none; color: var(--accent); padding: 0;
+    font-family: ui-monospace, Menlo, monospace;
+    text-shadow: 0 0 4px rgba(255,92,147,0.5);
+  }
+  #transport #bpm-input:focus { background: #111; }
+  #transport .rec-led {
+    width: 12px; height: 12px; border-radius: 50%;
+    background: #440000; border: 1px solid #220000;
+    margin-left: 4px;
+  }
+  #transport .rec-led.on { background: var(--record); box-shadow: 0 0 8px var(--record); animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: 0.55; } }
+  #transport .t-info { margin-left: auto; color: var(--dim); font-size: 11px; text-align: right; }
   #mic-rec-btn.recording, #midi-rec-btn.active {
-    background: var(--record); border-color: var(--record); color: white;
+    background: linear-gradient(var(--record), #b02830); color: white; border-color: #111;
     animation: pulse 1s ease-in-out infinite;
   }
-  @keyframes pulse { 50% { opacity: 0.6; } }
 
-  #playlist-wrap {
-    flex: 1; display: flex; overflow: hidden; min-height: 0;
+  /* Toolbar (window toggles + tools) */
+  #toolbar {
+    height: 30px; background: linear-gradient(var(--panel-2), var(--panel));
+    border-bottom: 1px solid var(--line); flex-shrink: 0;
+    display: flex; align-items: center; gap: 4px; padding: 0 8px;
   }
-  #track-headers {
-    width: 160px; flex-shrink: 0; background: var(--panel);
-    border-right: 1px solid var(--line); overflow-y: hidden;
+  #toolbar .tb-group { display: flex; align-items: center; gap: 3px; }
+  #toolbar .tb-sep { width: 1px; height: 20px; background: var(--line); margin: 0 4px; }
+  #toolbar .tb-btn {
+    padding: 3px 8px; font-size: 10px; letter-spacing: 0.3px;
   }
-  .header-spacer { height: 28px; border-bottom: 1px solid var(--line); }
-  .track-header {
-    height: 50px; padding: 6px 10px; border-bottom: 1px solid var(--line);
-    display: flex; flex-direction: column; justify-content: center;
+  #toolbar .tb-btn .fkey {
+    font-size: 8px; color: var(--dim); margin-left: 4px;
+  }
+  #toolbar .tb-btn.on .fkey { color: rgba(255,255,255,0.7); }
+  #toolbar label { font-size: 10px; color: var(--dim); }
+  #toolbar select { padding: 2px 5px; font-size: 10px; }
+
+  /* ==================== WORKSPACE ==================== */
+  #workspace {
+    flex: 1; display: flex; min-height: 0;
+    background: var(--workspace);
+  }
+  #browser-dock {
+    width: 220px; flex-shrink: 0; background: var(--panel);
+    border-right: 1px solid var(--line);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  #browser-dock.collapsed { display: none; }
+  #browser-dock .bh {
+    padding: 4px 8px; background: linear-gradient(var(--panel-2), var(--panel));
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 6px;
+    font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--text-dim); font-weight: 700;
+  }
+  #browser-dock .bh .bh-tabs { display: flex; gap: 2px; margin-left: auto; }
+  #browser-dock .bh-tabs .bt {
+    padding: 1px 6px; font-size: 9px; background: var(--panel-3);
+    border: 1px solid var(--line); border-radius: 2px; cursor: pointer;
+    color: var(--dim);
+  }
+  #browser-dock .bh-tabs .bt.on { background: var(--accent); color: white; }
+  #browser-tree { flex: 1; overflow-y: auto; padding: 4px 0; font-size: 11px; }
+  .br-folder, .br-item {
+    padding: 3px 8px 3px 22px; cursor: pointer;
+    display: flex; align-items: center; gap: 6px;
     position: relative;
   }
-  .track-header .tname { font-weight: 600; font-size: 12px; }
-  .track-header .btns { position: absolute; right: 6px; top: 6px; display: flex; gap: 3px; }
+  .br-folder { font-weight: 600; }
+  .br-folder::before {
+    content: "▸"; position: absolute; left: 8px; font-size: 8px; color: var(--dim);
+  }
+  .br-folder.open::before { content: "▾"; }
+  .br-item { padding-left: 32px; color: var(--text-dim); }
+  .br-item::before {
+    content: "♪"; position: absolute; left: 18px; font-size: 10px; color: var(--accent-2);
+  }
+  .br-folder:hover, .br-item:hover { background: var(--panel-3); }
+  .br-item.draggable { cursor: grab; }
+  .br-item.draggable:active { cursor: grabbing; }
+  .br-children { display: none; }
+  .br-folder.open + .br-children { display: block; }
+  .br-swatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
+
+  /* Center area — playlist stack + docked windows */
+  #center-area {
+    flex: 1; display: flex; flex-direction: column; min-width: 0;
+    overflow: hidden; position: relative;
+  }
+  #playlist-window {
+    flex: 1; display: flex; flex-direction: column; min-height: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .fl-title-bar {
+    height: 20px; background: linear-gradient(#5a5a5a, var(--panel-3));
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; padding: 0 8px; gap: 6px;
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--text); flex-shrink: 0;
+  }
+  .fl-title-bar .tb-title { flex: 1; }
+  .fl-title-bar .tb-close, .fl-title-bar .tb-btn-x {
+    width: 16px; height: 14px; padding: 0; font-size: 10px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--panel-2);
+  }
+  .fl-title-bar .tb-close:hover { background: var(--record); color: white; }
+
+  #playlist-body {
+    flex: 1; display: flex; min-height: 0; overflow: hidden;
+    background: var(--workspace);
+  }
+
+  /* Picker Panel (Patterns) — FL's left dock in the Playlist window */
+  #picker-panel {
+    width: 140px; flex-shrink: 0; background: var(--panel);
+    border-right: 1px solid var(--line);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  #picker-panel .ph {
+    padding: 3px 6px; background: linear-gradient(var(--panel-2), var(--panel));
+    border-bottom: 1px solid var(--line); font-size: 10px;
+    text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim);
+    font-weight: 700; display: flex; align-items: center; gap: 4px;
+  }
+  #picker-panel .ph button { padding: 1px 5px; font-size: 9px; margin-left: auto; }
+  #pattern-list { flex: 1; overflow-y: auto; padding: 3px; }
+
+  #track-headers {
+    width: 140px; flex-shrink: 0; background: var(--panel);
+    border-right: 1px solid var(--line); overflow-y: hidden;
+  }
+  .header-spacer { height: 22px; border-bottom: 1px solid var(--line); background: var(--panel-2); }
+  .track-header {
+    height: 44px; padding: 4px 8px; border-bottom: 1px solid var(--line);
+    display: flex; flex-direction: column; justify-content: center;
+    position: relative;
+    background: linear-gradient(90deg, var(--panel), var(--panel-2));
+  }
+  .track-header .tname { font-weight: 600; font-size: 11px; }
+  .track-header .btns { position: absolute; right: 4px; top: 4px; display: flex; gap: 2px; }
   .track-header .btns button {
-    padding: 2px 5px; font-size: 9px; border-radius: 3px; min-width: 18px;
-    background: var(--bg); border: 1px solid var(--line);
+    padding: 1px 4px; font-size: 8px; border-radius: 2px; min-width: 16px;
   }
   .track-header .btns button.on-mute { background: var(--mute); border-color: var(--mute); color: white; }
   .track-header .btns button.on-solo { background: var(--solo); border-color: var(--solo); color: black; }
 
   #timeline-scroll {
     flex: 1; overflow: auto; position: relative;
-    background: var(--bg);
+    background: #232323;
   }
   #timeline { position: relative; min-height: 100%; }
   .ruler {
-    height: 28px; position: sticky; top: 0; z-index: 3;
-    background: var(--panel);
+    height: 22px; position: sticky; top: 0; z-index: 3;
+    background: linear-gradient(var(--panel-2), var(--panel));
     border-bottom: 1px solid var(--line);
   }
   .tick {
-    position: absolute; top: 0; height: 28px; width: 40px;
-    color: var(--dim); font-size: 11px;
-    display: flex; align-items: center; padding-left: 4px;
+    position: absolute; top: 0; height: 22px; width: 40px;
+    color: var(--text-dim); font-size: 10px;
+    display: flex; align-items: center; padding-left: 3px;
     border-left: 1px solid var(--line);
   }
   .track-row {
-    height: 50px; border-bottom: 1px solid var(--line);
+    height: 44px; border-bottom: 1px solid #1a1a1a;
     position: relative;
-    background: repeating-linear-gradient(
-      90deg, transparent 0, transparent 39px, #1a1d25 39px, #1a1d25 40px
-    );
+    background:
+      repeating-linear-gradient(90deg, transparent 0, transparent 159px, #2f2f2f 159px, #2f2f2f 160px),
+      repeating-linear-gradient(90deg, transparent 0, transparent 39px, #262626 39px, #262626 40px);
     cursor: crosshair;
   }
   .clip {
-    position: absolute; top: 4px; bottom: 4px;
-    background: linear-gradient(135deg, var(--accent), var(--accent-2));
-    border-radius: 4px; padding: 3px 6px;
-    font-size: 11px; color: white; font-weight: 600;
+    position: absolute; top: 2px; bottom: 2px;
+    background: linear-gradient(180deg, var(--accent), #d94276);
+    border: 1px solid rgba(0,0,0,0.5); border-top-color: rgba(255,255,255,0.25);
+    border-radius: 2px; padding: 2px 4px;
+    font-size: 10px; color: white; font-weight: 600;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    cursor: grab; box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    cursor: grab; box-shadow: 0 1px 2px rgba(0,0,0,0.4);
     user-select: none;
   }
-  .clip:hover { filter: brightness(1.1); }
+  .clip:hover { filter: brightness(1.15); }
   .clip.dragging { cursor: grabbing; opacity: 0.75; z-index: 10; }
-  .clip.selected { outline: 2px solid var(--text); outline-offset: -2px; }
-  .clip.audio { background: linear-gradient(135deg, #33c58a, #2b9adb); }
+  .clip.selected { outline: 1px solid var(--text); outline-offset: -1px; }
+  .clip.audio { background: linear-gradient(180deg, #33c58a, #2b9adb); }
   .clip .resize {
-    position: absolute; right: 0; top: 0; bottom: 0; width: 6px;
+    position: absolute; right: 0; top: 0; bottom: 0; width: 5px;
     cursor: ew-resize; background: rgba(255,255,255,0.15);
   }
   .clip:hover .resize { background: rgba(255,255,255,0.3); }
 
   #playhead {
-    position: absolute; top: 28px; bottom: 0; width: 2px;
+    position: absolute; top: 22px; bottom: 0; width: 2px;
     background: var(--accent); pointer-events: none;
     z-index: 4; display: none;
   }
 
-  /* Bottom panel: Channel Rack + Pattern List */
-  #bottom-panel {
-    height: 240px; border-top: 1px solid var(--line);
-    background: var(--panel);
-    display: flex; min-height: 0;
+  /* Channel Rack — docked bottom, toggleable */
+  #channel-rack-window {
+    height: 260px; flex-shrink: 0; background: var(--panel);
+    display: flex; flex-direction: column; overflow: hidden;
   }
-  .bp-side {
-    flex: 1; min-width: 0; display: flex; flex-direction: column;
-    border-right: 1px solid var(--line);
+  #channel-rack-window.collapsed { display: none; }
+  #channel-rack-window .cr-body { flex: 1; overflow-y: auto; min-height: 0; padding: 4px; }
+  #channel-rack-window .cr-actions {
+    padding: 4px 8px; background: var(--panel-2); border-top: 1px solid var(--line);
+    display: flex; gap: 6px;
   }
-  .bp-side:last-child { border-right: none; }
-  .bp-header {
-    padding: 6px 12px; font-size: 11px; color: var(--dim);
-    text-transform: uppercase; letter-spacing: 1px; font-weight: 600;
-    border-bottom: 1px solid var(--line);
-    display: flex; align-items: center; gap: 8px; background: var(--panel-2);
-  }
-  .bp-header button { padding: 2px 8px; font-size: 11px; margin-left: auto; }
-  .bp-body { flex: 1; overflow-y: auto; min-height: 0; padding: 6px; }
+  #channel-rack-window .cr-actions button { padding: 3px 10px; font-size: 10px; }
 
   .channel-row, .pattern-row {
-    display: flex; align-items: center; gap: 6px;
-    padding: 6px 8px; border-radius: 4px; margin-bottom: 3px;
-    background: var(--bg); border: 1px solid var(--line);
+    display: flex; align-items: center; gap: 5px;
+    padding: 4px 6px; border-radius: 2px; margin-bottom: 2px;
+    background: linear-gradient(var(--panel-3), var(--panel-2));
+    border: 1px solid var(--line);
     cursor: pointer; user-select: none;
-    font-size: 12px;
+    font-size: 11px;
   }
-  .channel-row:hover, .pattern-row:hover { border-color: var(--accent-2); }
+  .channel-row:hover, .pattern-row:hover { background: linear-gradient(#5a5a5a, var(--panel-3)); }
   .channel-row.armed { border-color: var(--arm); box-shadow: 0 0 0 1px var(--arm); }
   .channel-row .swatch, .pattern-row .swatch {
-    width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0;
+    width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0;
+    border: 1px solid rgba(0,0,0,0.4);
   }
   .channel-row .cname, .pattern-row .pname { flex: 1; font-weight: 600; }
   .channel-row .cinst { color: var(--dim); font-size: 10px; }
-  .channel-row .cvol { width: 60px; margin: 0; }
-  .channel-row .cbtns, .pattern-row .pbtns { display: flex; gap: 3px; }
+  .channel-row .cvol { width: 55px; margin: 0; }
+  .channel-row .cbtns, .pattern-row .pbtns { display: flex; gap: 2px; }
   .channel-row .cbtns button, .pattern-row .pbtns button {
-    padding: 2px 5px; font-size: 9px; min-width: 20px;
-    background: var(--panel-2); border: 1px solid var(--line);
+    padding: 1px 4px; font-size: 8px; min-width: 18px;
   }
   .channel-row .cbtns button.on-mute { background: var(--mute); border-color: var(--mute); color: white; }
   .channel-row .cbtns button.on-solo { background: var(--solo); border-color: var(--solo); color: black; }
   .channel-row .cbtns button.on-arm { background: var(--arm); border-color: var(--arm); color: white; }
   .pattern-row.current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
   .pattern-row[draggable=true] { cursor: grab; }
-  .pattern-row .pinfo { color: var(--dim); font-size: 10px; }
+  .pattern-row .pinfo { color: var(--dim); font-size: 9px; }
   .ch-dot {
-    display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
     margin-right: 2px; vertical-align: middle;
   }
   .pattern-row .chs { display: flex; gap: 2px; margin-right: 4px; }
   .fx-inline {
-    font-size: 10px; color: var(--dim); margin-left: 8px;
+    font-size: 10px; color: var(--dim); margin-left: 6px;
   }
   .fx-inline .fxchip {
-    display: inline-block; padding: 1px 5px; background: var(--panel-2);
-    border-radius: 3px; margin-right: 3px; color: var(--accent);
+    display: inline-block; padding: 1px 4px; background: #1a1a1a;
+    border-radius: 2px; margin-right: 2px; color: var(--accent);
   }
   .fx-inline .fx-add {
-    display: inline-block; padding: 1px 5px; font-size: 10px;
-    background: transparent; border: 1px dashed var(--line); border-radius: 3px;
+    display: inline-block; padding: 1px 4px; font-size: 10px;
+    background: transparent; border: 1px dashed var(--line-2); border-radius: 2px;
     cursor: pointer;
   }
 
-  /* Piano roll */
+  /* Piano roll — floats over workspace like FL */
   #piano-roll {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.75);
-    z-index: 100; display: flex; align-items: center; justify-content: center;
+    position: fixed; inset: 0; z-index: 100;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.35);
   }
   #piano-roll.hidden { display: none; }
   #piano-roll-panel {
-    width: 92vw; height: 88vh; background: var(--panel);
-    border: 1px solid var(--line); border-radius: 10px;
+    width: 88vw; height: 84vh; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 3px;
     display: flex; flex-direction: column; overflow: hidden;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.6);
   }
   #pr-header {
-    padding: 10px 14px; border-bottom: 1px solid var(--line);
-    display: flex; align-items: center; gap: 12px;
-    background: var(--panel-2);
+    padding: 0 8px; height: 22px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 10px;
+    background: linear-gradient(#5a5a5a, var(--panel-3));
+    font-size: 11px;
   }
-  #pr-header .pr-title { font-weight: 600; }
-  #pr-header .pr-info { color: var(--dim); font-size: 12px; }
+  #pr-header .pr-title { font-weight: 700; text-transform: uppercase; letter-spacing: 1px; font-size: 10px; }
+  #pr-header .pr-info { color: var(--text-dim); font-size: 10px; }
   #pr-header .spacer { flex: 1; }
-  #pr-header label { font-size: 11px; color: var(--dim); }
+  #pr-header label { font-size: 10px; color: var(--text-dim); }
+  #pr-header select { font-size: 10px; }
+  #pr-header button { padding: 2px 8px; font-size: 10px; }
   #pr-body { flex: 1; display: flex; overflow: hidden; min-height: 0; }
   #pr-keys {
-    width: 60px; flex-shrink: 0; overflow-y: hidden;
+    width: 55px; flex-shrink: 0; overflow-y: hidden;
     background: var(--panel-2); border-right: 1px solid var(--line);
   }
   .pr-key {
@@ -233,87 +418,100 @@
     display: flex; align-items: center; justify-content: flex-end;
     cursor: pointer; user-select: none;
   }
-  .pr-key.black { background: #0a0b0e; color: #555; }
-  .pr-key.white { background: var(--panel-2); }
+  .pr-key.black { background: #1a1a1a; color: #555; }
+  .pr-key.white { background: #e0e0e0; color: #333; }
   .pr-key:hover { background: var(--accent-2); color: white; }
   #pr-grid-wrap { flex: 1; overflow: auto; position: relative; }
-  #pr-grid { position: relative; background-color: var(--bg); }
+  #pr-grid { position: relative; background-color: #232323; }
   .pr-note {
     position: absolute; height: 12px;
-    border-radius: 2px; cursor: grab;
+    border-radius: 1px; cursor: grab;
     box-shadow: 0 1px 2px rgba(0,0,0,0.4);
     user-select: none;
   }
   .pr-note .resize { position: absolute; right: 0; top: 0; bottom: 0; width: 6px; cursor: ew-resize; }
 
-  /* Chat */
-  #chat {
-    width: 360px; flex-shrink: 0; background: var(--panel);
+  /* Chat dock — right side, toggleable */
+  #chat-dock {
+    width: 340px; flex-shrink: 0; background: var(--panel);
+    border-left: 1px solid var(--line);
     display: flex; flex-direction: column;
   }
-  #chat-header {
-    padding: 12px 16px; border-bottom: 1px solid var(--line);
-    font-weight: 600; color: var(--dim); font-size: 12px;
+  #chat-dock.collapsed { display: none; }
+  #chat-dock .ch-header {
+    padding: 0 8px; height: 22px;
+    background: linear-gradient(#5a5a5a, var(--panel-3));
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 6px;
+    font-weight: 700; color: var(--text); font-size: 10px;
     text-transform: uppercase; letter-spacing: 1px;
   }
+  #chat-dock .ch-header .ch-x { margin-left: auto; padding: 1px 6px; font-size: 10px; }
   #chat-messages {
-    flex: 1; overflow-y: auto; padding: 14px;
-    display: flex; flex-direction: column; gap: 10px;
+    flex: 1; overflow-y: auto; padding: 10px;
+    display: flex; flex-direction: column; gap: 8px;
+    background: var(--workspace);
+    user-select: text;
   }
-  .msg { padding: 9px 12px; border-radius: 8px; font-size: 13px; line-height: 1.5; }
-  .msg.user { background: var(--panel-2); border: 1px solid var(--line); align-self: flex-end; max-width: 85%; }
+  .msg { padding: 6px 9px; border-radius: 3px; font-size: 12px; line-height: 1.5; }
+  .msg.user { background: var(--panel-2); border: 1px solid var(--line); align-self: flex-end; max-width: 85%; color: var(--text); }
   .msg.assistant { background: transparent; color: var(--text); }
-  .msg .tool-line { color: var(--accent-2); font-size: 11px; margin-top: 6px; font-family: ui-monospace, Menlo, monospace; }
+  .msg .tool-line { color: var(--accent-2); font-size: 11px; margin-top: 5px; font-family: ui-monospace, Menlo, monospace; }
   #chat-input-wrap {
-    padding: 10px; border-top: 1px solid var(--line);
+    padding: 6px; border-top: 1px solid var(--line);
     background: var(--panel-2);
   }
   #chat-input {
-    width: 100%; min-height: 55px; max-height: 200px;
-    background: var(--bg); color: var(--text);
-    border: 1px solid var(--line); border-radius: 6px;
-    padding: 8px 10px; font-size: 13px; resize: vertical;
-    font-family: inherit;
+    width: 100%; min-height: 50px; max-height: 180px;
+    background: #1a1a1a; color: var(--text);
+    border: 1px solid var(--line); border-radius: 2px;
+    padding: 6px 8px; font-size: 12px; resize: vertical;
+    font-family: inherit; user-select: text;
   }
-  #send-row { display: flex; gap: 8px; margin-top: 6px; align-items: center; }
+  #send-row { display: flex; gap: 6px; margin-top: 4px; align-items: center; }
   #send-btn {
-    background: var(--accent); color: white; border: none;
-    padding: 8px 16px; border-radius: 6px; cursor: pointer;
-    font-weight: 600; font-size: 13px;
+    background: linear-gradient(var(--accent), #d94276); color: white; border: 1px solid #111;
+    padding: 4px 14px; border-radius: 2px; cursor: pointer;
+    font-weight: 600; font-size: 11px;
   }
   #send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  .autoplay-toggle { color: var(--dim); font-size: 12px; margin-left: auto; }
-  .thinking { color: var(--dim); font-style: italic; font-size: 12px; }
+  .autoplay-toggle { color: var(--dim); font-size: 11px; margin-left: auto; }
+  .thinking { color: var(--dim); font-style: italic; font-size: 11px; }
 
-  .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 90;
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 150;
     display: flex; align-items: center; justify-content: center; }
   .modal.hidden { display: none; }
   .modal-panel {
     background: var(--panel); border: 1px solid var(--line);
-    border-radius: 10px; padding: 20px; min-width: 320px;
-    display: flex; flex-direction: column; gap: 12px;
+    border-radius: 3px; padding: 14px; min-width: 300px;
+    display: flex; flex-direction: column; gap: 8px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.6);
   }
-  .modal-panel h3 { margin: 0 0 4px 0; }
-  .modal-panel label { font-size: 12px; color: var(--dim); }
-  .modal-panel .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
-  .rec-status { color: var(--record); font-size: 12px; font-weight: 600; }
+  .modal-panel h3 { margin: 0 0 4px 0; font-size: 13px; }
+  .modal-panel label { font-size: 11px; color: var(--text-dim); }
+  .modal-panel .row { display: flex; gap: 6px; justify-content: flex-end; margin-top: 6px; }
+  .rec-status { color: var(--record); font-size: 11px; font-weight: 700; }
   .hidden { display: none !important; }
 
-  /* Mixer modal */
+  /* Mixer window */
+  #mixer-modal { background: rgba(0,0,0,0.35); }
   #mixer-panel {
     width: 92vw; height: 80vh; background: var(--panel);
-    border: 1px solid var(--line); border-radius: 10px;
+    border: 1px solid var(--line); border-radius: 3px;
     display: flex; flex-direction: column; overflow: hidden;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.6);
   }
   #mixer-header {
-    padding: 10px 14px; border-bottom: 1px solid var(--line);
-    display: flex; align-items: center; gap: 12px;
-    background: var(--panel-2);
+    padding: 0 8px; height: 22px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 8px;
+    background: linear-gradient(#5a5a5a, var(--panel-3));
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
   }
+  #mixer-header button { padding: 2px 8px; font-size: 10px; }
   #mixer-strips {
-    flex: 1; display: flex; padding: 12px; gap: 10px;
+    flex: 1; display: flex; padding: 10px; gap: 6px;
     overflow-x: auto; overflow-y: hidden;
-    background: var(--bg);
+    background: var(--workspace);
   }
   .mixer-strip {
     width: 140px; flex-shrink: 0; height: 100%;
@@ -362,86 +560,212 @@
 <body>
 <div id="app">
 
-  <div id="daw">
-    <div id="topbar">
-      <div class="logo">NASTY</div>
-      <div class="group">
-        <button id="play-btn" title="Play">▶</button>
-        <button id="stop-btn" title="Stop">■</button>
-        <button id="loop-btn" title="Loop">↻</button>
-      </div>
-      <div class="sep"></div>
-      <div class="group">
-        <button id="mic-rec-btn" title="Record microphone">🎤 Mic</button>
-        <button id="midi-rec-btn" title="Record MIDI keyboard into current pattern">⌨ MIDI</button>
-      </div>
-      <div class="sep"></div>
-      <div class="group">
-        <label style="font-size:11px;color:var(--dim)">BPM</label>
-        <input id="bpm-input" type="number" min="30" max="300" value="120" />
-      </div>
-      <div class="sep"></div>
-      <div class="group">
-        <button id="mixer-btn">Mixer</button>
-        <button id="save-btn">Save</button>
-        <button id="load-btn">Load</button>
-        <button id="export-btn">Export WAV</button>
-        <button id="clear-btn">Clear</button>
-      </div>
-      <div class="sep"></div>
-      <div class="group">
-        <label style="font-size:11px;color:var(--dim)">MIDI in</label>
-        <select id="midi-select"><option value="">— none —</option></select>
-        <label style="font-size:11px;color:var(--dim)"><input type="checkbox" id="quantize" checked /> quantize</label>
-      </div>
-      <div class="info">
-        <span id="rec-status" class="rec-status hidden"></span>
-        <span id="bars-label">500</span> bars ·
-        <span id="track-count">0</span> tracks
+  <!-- MENU BAR -->
+  <div id="menubar">
+    <div class="brand">NASTY</div>
+    <div class="menu-item" data-menu="file">FILE
+      <div class="menu-drop">
+        <div class="mi" data-cmd="save"><span>Save</span><span class="sh">⌘S</span></div>
+        <div class="mi" data-cmd="load"><span>Load…</span><span class="sh">⌘O</span></div>
+        <div class="mi" data-cmd="export"><span>Export WAV</span><span class="sh">⌘E</span></div>
+        <div class="msep"></div>
+        <div class="mi" data-cmd="clear"><span>New (Clear)</span><span class="sh">⌘N</span></div>
       </div>
     </div>
+    <div class="menu-item" data-menu="edit">EDIT
+      <div class="menu-drop">
+        <div class="mi" data-cmd="undo-stub"><span>Undo</span><span class="sh">⌘Z</span></div>
+        <div class="mi" data-cmd="redo-stub"><span>Redo</span><span class="sh">⇧⌘Z</span></div>
+      </div>
+    </div>
+    <div class="menu-item" data-menu="add">ADD
+      <div class="menu-drop">
+        <div class="mi" data-cmd="add-channel"><span>Channel…</span></div>
+        <div class="mi" data-cmd="add-pattern"><span>Pattern…</span></div>
+        <div class="mi" data-cmd="add-insert"><span>Mixer Insert</span></div>
+      </div>
+    </div>
+    <div class="menu-item" data-menu="patterns">PATTERNS
+      <div class="menu-drop" id="menu-patterns-list"></div>
+    </div>
+    <div class="menu-item" data-menu="view">VIEW
+      <div class="menu-drop">
+        <div class="mi" data-cmd="toggle-playlist"><span>Playlist</span><span class="sh">F5</span></div>
+        <div class="mi" data-cmd="toggle-rack"><span>Channel Rack</span><span class="sh">F6</span></div>
+        <div class="mi" data-cmd="toggle-pr"><span>Piano Roll</span><span class="sh">F7</span></div>
+        <div class="mi" data-cmd="toggle-browser"><span>Browser</span><span class="sh">F8</span></div>
+        <div class="mi" data-cmd="toggle-mixer"><span>Mixer</span><span class="sh">F9</span></div>
+        <div class="msep"></div>
+        <div class="mi" data-cmd="toggle-chat"><span>AI Chat</span><span class="sh">F10</span></div>
+      </div>
+    </div>
+    <div class="menu-item" data-menu="options">OPTIONS
+      <div class="menu-drop">
+        <div class="mi" data-cmd="toggle-quantize"><span>Quantize recording</span></div>
+        <div class="mi" data-cmd="pick-midi"><span>MIDI input…</span></div>
+      </div>
+    </div>
+    <div class="menu-item" data-menu="tools">TOOLS
+      <div class="menu-drop">
+        <div class="mi" data-cmd="mic-rec"><span>Record microphone</span></div>
+        <div class="mi" data-cmd="midi-rec"><span>Record MIDI keyboard</span></div>
+      </div>
+    </div>
+    <div class="menu-item" data-menu="help">HELP
+      <div class="menu-drop">
+        <div class="mi" data-cmd="help-shortcuts"><span>Keyboard shortcuts…</span></div>
+      </div>
+    </div>
+  </div>
 
-    <div id="playlist-wrap">
-      <div id="track-headers"></div>
-      <div id="timeline-scroll">
-        <div id="timeline">
-          <div id="playhead"></div>
+  <!-- TRANSPORT -->
+  <div id="transport">
+    <div class="t-group">
+      <button class="t-btn big" id="play-btn" title="Play (Space)">▶</button>
+      <button class="t-btn big" id="stop-btn" title="Stop">■</button>
+      <button class="t-btn" id="loop-btn" title="Loop">↻</button>
+    </div>
+    <div class="t-sep"></div>
+    <div class="t-group">
+      <div class="patsong" title="Playlist mode is always SONG in Nasty MVP">
+        <div class="ps-btn">PAT</div>
+        <div class="ps-btn active">SONG</div>
+      </div>
+      <button class="t-btn" id="midi-rec-btn" title="Record MIDI">⌨</button>
+      <button class="t-btn" id="mic-rec-btn" title="Record mic">🎤</button>
+      <span class="rec-led" id="rec-led"></span>
+    </div>
+    <div class="t-sep"></div>
+    <div class="lcd" title="Tempo">
+      <input id="bpm-input" type="number" min="30" max="300" value="120" />
+      <div class="sub">BPM</div>
+    </div>
+    <div class="lcd lcd-time" title="Position">
+      <div class="big" id="lcd-time">1:1:00</div>
+      <div class="sub">BAR:BEAT:TICK</div>
+    </div>
+    <div class="t-sep"></div>
+    <div class="t-group">
+      <label style="font-size:10px;color:var(--dim)">MIDI in</label>
+      <select id="midi-select"><option value="">— none —</option></select>
+      <label style="font-size:10px;color:var(--dim);display:flex;align-items:center;gap:3px">
+        <input type="checkbox" id="quantize" checked /> quantize</label>
+    </div>
+    <div class="t-info">
+      <span id="rec-status" class="rec-status hidden"></span><br />
+      <span id="bars-label">500</span> bars · <span id="track-count">0</span> tracks
+    </div>
+  </div>
+
+  <!-- MIDDLE TOOLBAR -->
+  <div id="toolbar">
+    <div class="tb-group">
+      <button class="tb-btn on" id="tb-playlist" data-cmd="toggle-playlist">Playlist<span class="fkey">F5</span></button>
+      <button class="tb-btn on" id="tb-rack" data-cmd="toggle-rack">Rack<span class="fkey">F6</span></button>
+      <button class="tb-btn" id="tb-pr" data-cmd="toggle-pr">Piano Roll<span class="fkey">F7</span></button>
+      <button class="tb-btn on" id="tb-browser" data-cmd="toggle-browser">Browser<span class="fkey">F8</span></button>
+      <button class="tb-btn" id="tb-mixer" data-cmd="toggle-mixer">Mixer<span class="fkey">F9</span></button>
+      <button class="tb-btn on" id="tb-chat" data-cmd="toggle-chat">AI Chat<span class="fkey">F10</span></button>
+    </div>
+    <div class="tb-sep"></div>
+    <div class="tb-group">
+      <label>Pattern:</label>
+      <select id="tb-pattern-select"></select>
+      <button class="tb-btn" id="tb-add-pattern" title="New pattern">+</button>
+    </div>
+    <div class="tb-sep"></div>
+    <div class="tb-group">
+      <label>Snap:</label>
+      <select id="tb-snap">
+        <option value="1">1 bar</option>
+        <option value="0.25" selected>1/4 step</option>
+        <option value="0.125">1/8</option>
+        <option value="0">none</option>
+      </select>
+    </div>
+    <div class="tb-sep"></div>
+    <div class="tb-group">
+      <button class="tb-btn" id="save-btn" title="Save">💾</button>
+      <button class="tb-btn" id="load-btn" title="Load">📂</button>
+      <button class="tb-btn" id="export-btn" title="Export WAV">⤓</button>
+      <button class="tb-btn" id="clear-btn" title="Clear song">✕</button>
+    </div>
+    <!-- Hidden legacy button so JS handlers survive -->
+    <button id="mixer-btn" style="display:none"></button>
+  </div>
+
+  <!-- WORKSPACE -->
+  <div id="workspace">
+
+    <!-- BROWSER DOCK -->
+    <div id="browser-dock">
+      <div class="bh">
+        Browser
+        <div class="bh-tabs">
+          <div class="bt on" data-btab="instruments">Inst</div>
+          <div class="bt" data-btab="patterns">Pat</div>
         </div>
       </div>
+      <div id="browser-tree"></div>
     </div>
 
-    <div id="bottom-panel">
-      <div class="bp-side">
-        <div class="bp-header">
-          Channel Rack
+    <!-- CENTER: Playlist + Channel Rack -->
+    <div id="center-area">
+
+      <div id="playlist-window">
+        <div class="fl-title-bar">
+          <span class="tb-title">◆ Playlist — Arrangement</span>
+          <button class="tb-close" data-cmd="toggle-playlist" title="Hide">×</button>
+        </div>
+        <div id="playlist-body">
+          <div id="picker-panel">
+            <div class="ph">
+              Patterns
+              <button id="add-pattern-btn" title="New pattern">+</button>
+            </div>
+            <div id="pattern-list"></div>
+          </div>
+          <div id="track-headers"></div>
+          <div id="timeline-scroll">
+            <div id="timeline">
+              <div id="playhead"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="channel-rack-window">
+        <div class="fl-title-bar">
+          <span class="tb-title">◆ Channel Rack</span>
+          <button class="tb-close" data-cmd="toggle-rack" title="Hide">×</button>
+        </div>
+        <div class="cr-body" id="channel-rack"></div>
+        <div class="cr-actions">
           <button id="add-channel-btn">+ Channel</button>
         </div>
-        <div class="bp-body" id="channel-rack"></div>
       </div>
-      <div class="bp-side">
-        <div class="bp-header">
-          Patterns
-          <button id="add-pattern-btn">+ Pattern</button>
+
+    </div>
+
+    <!-- CHAT DOCK (right) -->
+    <div id="chat-dock">
+      <div class="ch-header">
+        AI Chat
+        <button class="ch-x" data-cmd="toggle-chat" title="Hide">×</button>
+      </div>
+      <div id="chat-messages"></div>
+      <div id="chat-input-wrap">
+        <textarea id="chat-input" placeholder="Tell Nasty what to make..."></textarea>
+        <div id="send-row">
+          <button id="send-btn">Send</button>
+          <label class="autoplay-toggle">
+            <input type="checkbox" id="autoplay" checked /> auto-play after
+          </label>
         </div>
-        <div class="bp-body" id="pattern-list"></div>
       </div>
     </div>
-  </div>
 
-  <div id="chat">
-    <div id="chat-header">Chat</div>
-    <div id="chat-messages"></div>
-    <div id="chat-input-wrap">
-      <textarea id="chat-input" placeholder="Tell Nasty what to make..."></textarea>
-      <div id="send-row">
-        <button id="send-btn">Send</button>
-        <label class="autoplay-toggle">
-          <input type="checkbox" id="autoplay" checked /> auto-play after
-        </label>
-      </div>
-    </div>
   </div>
-
 </div>
 
 <div id="piano-roll" class="hidden">
@@ -975,6 +1299,7 @@ function animatePlayhead() {
       ? (elapsed % singleLoopDurSec) : elapsed;
     const barsElapsed = (displayElapsed * song.bpm / 60) / 4;
     ph.style.left = (barsElapsed * BAR_WIDTH) + 'px';
+    if (typeof updateTimeLcd === 'function') updateTimeLcd(barsElapsed);
     animationFrame = requestAnimationFrame(tick);
   };
   tick();
@@ -1229,6 +1554,7 @@ function render() {
   renderPlaylist();
   renderChannelRack();
   renderPatternList();
+  if (typeof renderFlShell === 'function') renderFlShell();
   persist();
 }
 
@@ -2590,6 +2916,310 @@ document.getElementById('chat-input').addEventListener('keydown', (e) => {
 });
 
 // ============================================================
+// FL Shell — menu bar, window toggles, browser, time LCD
+// ============================================================
+
+const FL_WINDOWS = {
+  playlist:  { el: () => document.getElementById('playlist-window'),   cls: 'collapsed', tb: 'tb-playlist' },
+  rack:      { el: () => document.getElementById('channel-rack-window'), cls: 'collapsed', tb: 'tb-rack' },
+  browser:   { el: () => document.getElementById('browser-dock'),      cls: 'collapsed', tb: 'tb-browser' },
+  chat:      { el: () => document.getElementById('chat-dock'),         cls: 'collapsed', tb: 'tb-chat' },
+  mixer:     { el: () => document.getElementById('mixer-modal'),       cls: 'hidden',    tb: 'tb-mixer' },
+  pr:        { el: () => document.getElementById('piano-roll'),        cls: 'hidden',    tb: 'tb-pr' },
+};
+
+function isWindowOpen(name) {
+  const w = FL_WINDOWS[name]; if (!w) return false;
+  const el = w.el(); if (!el) return false;
+  return !el.classList.contains(w.cls);
+}
+
+function setWindow(name, open) {
+  const w = FL_WINDOWS[name]; if (!w) return;
+  const el = w.el(); if (!el) return;
+  if (open) el.classList.remove(w.cls);
+  else el.classList.add(w.cls);
+  const tb = document.getElementById(w.tb);
+  if (tb) tb.classList.toggle('on', open);
+}
+
+function toggleWindow(name) {
+  if (name === 'pr' && !isWindowOpen('pr')) {
+    // Piano Roll opens for the current pattern
+    if (typeof openPianoRoll === 'function' && currentPatternId) {
+      openPianoRoll(currentPatternId);
+      const tb = document.getElementById(FL_WINDOWS.pr.tb);
+      if (tb) tb.classList.add('on');
+      return;
+    }
+  }
+  if (name === 'mixer' && !isWindowOpen('mixer')) {
+    if (typeof openMixer === 'function') { openMixer(); document.getElementById(FL_WINDOWS.mixer.tb).classList.add('on'); return; }
+  }
+  setWindow(name, !isWindowOpen(name));
+}
+
+// Command router — used by menu items, title-bar close buttons, and F-keys
+function runCmd(cmd) {
+  switch (cmd) {
+    case 'save':               return document.getElementById('save-btn').click();
+    case 'load':               return document.getElementById('load-btn').click();
+    case 'export':             return document.getElementById('export-btn').click();
+    case 'clear':              return document.getElementById('clear-btn').click();
+    case 'add-channel':        return document.getElementById('add-channel-btn').click();
+    case 'add-pattern':        return document.getElementById('add-pattern-btn').click();
+    case 'add-insert':         return document.getElementById('add-insert-btn').click();
+    case 'mic-rec':            return document.getElementById('mic-rec-btn').click();
+    case 'midi-rec':           return document.getElementById('midi-rec-btn').click();
+    case 'toggle-playlist':    return toggleWindow('playlist');
+    case 'toggle-rack':        return toggleWindow('rack');
+    case 'toggle-browser':     return toggleWindow('browser');
+    case 'toggle-chat':        return toggleWindow('chat');
+    case 'toggle-mixer':       return toggleWindow('mixer');
+    case 'toggle-pr':          return toggleWindow('pr');
+    case 'toggle-quantize': {
+      const q = document.getElementById('quantize'); q.checked = !q.checked; return;
+    }
+    case 'pick-midi':          return document.getElementById('midi-select').focus();
+    case 'help-shortcuts':
+      return alert(
+        'Keyboard shortcuts:\n\n' +
+        'F5  Playlist\nF6  Channel Rack\nF7  Piano Roll\nF8  Browser\nF9  Mixer\nF10 AI Chat\n\n' +
+        'Space  Play/Stop\n⌘S  Save   ⌘O  Load   ⌘E  Export WAV   ⌘N  Clear\n\n' +
+        'Z–M on the laptop keyboard plays the armed channel as a piano.'
+      );
+  }
+  // Pattern selection from PATTERNS menu
+  if (cmd && cmd.startsWith('sel-pat:')) {
+    const id = cmd.slice(8);
+    currentPatternId = id;
+    render();
+    if (isWindowOpen('pr') && typeof openPianoRoll === 'function') openPianoRoll(id);
+  }
+}
+
+// Menu bar wiring
+(function initMenus() {
+  const items = document.querySelectorAll('#menubar .menu-item');
+  items.forEach(item => {
+    item.addEventListener('click', (e) => {
+      const wasOpen = item.classList.contains('open');
+      items.forEach(i => i.classList.remove('open'));
+      if (!wasOpen) item.classList.add('open');
+      e.stopPropagation();
+    });
+  });
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#menubar')) items.forEach(i => i.classList.remove('open'));
+  });
+  document.querySelectorAll('#menubar .menu-drop .mi').forEach(mi => {
+    mi.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const cmd = mi.getAttribute('data-cmd');
+      items.forEach(i => i.classList.remove('open'));
+      if (cmd) runCmd(cmd);
+    });
+  });
+})();
+
+// Toolbar wiring
+document.querySelectorAll('#toolbar [data-cmd], #menubar [data-cmd]').forEach(el => {
+  // menubar handled above; toolbar handled here
+  if (el.closest('#toolbar')) {
+    el.addEventListener('click', () => runCmd(el.getAttribute('data-cmd')));
+  }
+});
+// Title-bar close buttons
+document.querySelectorAll('.tb-close[data-cmd], .ch-x[data-cmd]').forEach(el => {
+  el.addEventListener('click', (e) => { e.stopPropagation(); runCmd(el.getAttribute('data-cmd')); });
+});
+
+// Toolbar pattern selector
+document.getElementById('tb-pattern-select').addEventListener('change', (e) => {
+  currentPatternId = e.target.value;
+  render();
+  if (isWindowOpen('pr') && typeof openPianoRoll === 'function') openPianoRoll(currentPatternId);
+});
+document.getElementById('tb-add-pattern').addEventListener('click', () => runCmd('add-pattern'));
+
+// F-keys + Space
+document.addEventListener('keydown', (e) => {
+  const inField = /input|textarea|select/i.test(e.target.tagName) && !e.target.closest('#pr-active-channel');
+  // F-keys work regardless
+  if (e.key === 'F5') { e.preventDefault(); return runCmd('toggle-playlist'); }
+  if (e.key === 'F6') { e.preventDefault(); return runCmd('toggle-rack'); }
+  if (e.key === 'F7') { e.preventDefault(); return runCmd('toggle-pr'); }
+  if (e.key === 'F8') { e.preventDefault(); return runCmd('toggle-browser'); }
+  if (e.key === 'F9') { e.preventDefault(); return runCmd('toggle-mixer'); }
+  if (e.key === 'F10'){ e.preventDefault(); return runCmd('toggle-chat'); }
+  if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
+    if (e.key === 's') { e.preventDefault(); return runCmd('save'); }
+    if (e.key === 'o') { e.preventDefault(); return runCmd('load'); }
+    if (e.key === 'e') { e.preventDefault(); return runCmd('export'); }
+    if (e.key === 'n') { e.preventDefault(); return runCmd('clear'); }
+  }
+  if (e.key === ' ' && !inField && !e.target.closest('#piano-roll')) {
+    e.preventDefault();
+    if (scheduledSources && scheduledSources.length) stopSong();
+    else playSong();
+  }
+});
+
+// Wrap open/close mixer + piano roll so toolbar/menu state stays in sync
+if (typeof openMixer === 'function') {
+  const _openMixer = openMixer;
+  openMixer = function() { _openMixer(); document.getElementById('tb-mixer').classList.add('on'); };
+}
+if (typeof closeMixer === 'function') {
+  const _closeMixer = closeMixer;
+  closeMixer = function() { _closeMixer(); document.getElementById('tb-mixer').classList.remove('on'); };
+}
+if (typeof openPianoRoll === 'function') {
+  const _openPr = openPianoRoll;
+  openPianoRoll = function(id) { _openPr(id); document.getElementById('tb-pr').classList.add('on'); };
+}
+if (typeof closePianoRoll === 'function') {
+  const _closePr = closePianoRoll;
+  closePianoRoll = function() { _closePr(); document.getElementById('tb-pr').classList.remove('on'); };
+}
+
+// Time LCD (bars:beats:ticks — FL uses 1-indexed bars and beats, 0-95 ticks per beat)
+function updateTimeLcd(barsElapsed) {
+  const el = document.getElementById('lcd-time');
+  if (!el) return;
+  const totalBeats = Math.max(0, barsElapsed * 4);
+  const bar = Math.floor(totalBeats / 4) + 1;
+  const beat = Math.floor(totalBeats % 4) + 1;
+  const tick = Math.floor(((totalBeats % 1) * 96)); // 0-95
+  el.textContent = `${bar}:${beat}:${String(tick).padStart(2,'0')}`;
+}
+
+// Snap select → wires to existing #quantize (any snap > 0 = quantize on)
+document.getElementById('tb-snap').addEventListener('change', (e) => {
+  document.getElementById('quantize').checked = parseFloat(e.target.value) > 0;
+});
+
+// Browser dock — tabs + rendering
+let browserTab = 'instruments';
+document.querySelectorAll('#browser-dock .bh-tabs .bt').forEach(bt => {
+  bt.addEventListener('click', () => {
+    document.querySelectorAll('#browser-dock .bh-tabs .bt').forEach(b => b.classList.remove('on'));
+    bt.classList.add('on');
+    browserTab = bt.getAttribute('data-btab');
+    renderBrowser();
+  });
+});
+
+function renderBrowser() {
+  const tree = document.getElementById('browser-tree');
+  if (!tree) return;
+  tree.innerHTML = '';
+  if (browserTab === 'instruments') {
+    const instFolders = [
+      { name: 'Nasty Synths', instruments: [
+        { name: 'Piano', inst: 'piano' },
+        { name: 'Bass',  inst: 'bass' },
+        { name: 'Lead',  inst: 'lead' },
+        { name: 'Pad',   inst: 'pad' },
+      ]},
+      { name: 'Drums', instruments: [
+        { name: 'Kit — built-in', inst: 'drums' },
+      ]},
+    ];
+    instFolders.forEach(f => {
+      const fEl = document.createElement('div');
+      fEl.className = 'br-folder open';
+      fEl.textContent = f.name;
+      tree.appendChild(fEl);
+      const wrap = document.createElement('div');
+      wrap.className = 'br-children';
+      f.instruments.forEach(inst => {
+        const itEl = document.createElement('div');
+        itEl.className = 'br-item draggable';
+        itEl.textContent = inst.name;
+        itEl.title = `Drag or double-click to add "${inst.name}" as a channel`;
+        itEl.addEventListener('dblclick', () => {
+          const id = 'ch_' + inst.inst + '_' + Date.now().toString(36);
+          for (const c of song.channels) c.armed = false;
+          song.channels.push({
+            id, name: inst.name, instrument: inst.inst, volume: 0.8, effects: [],
+            muted: false, solo: false, armed: true,
+            color: PALETTE[song.channels.length % PALETTE.length],
+            insertId: 'master',
+          });
+          render();
+        });
+        wrap.appendChild(itEl);
+      });
+      tree.appendChild(wrap);
+      fEl.addEventListener('click', () => fEl.classList.toggle('open'));
+    });
+  } else if (browserTab === 'patterns') {
+    const fEl = document.createElement('div');
+    fEl.className = 'br-folder open';
+    fEl.textContent = 'Patterns in project';
+    tree.appendChild(fEl);
+    const wrap = document.createElement('div');
+    wrap.className = 'br-children';
+    song.patterns.forEach(p => {
+      const it = document.createElement('div');
+      it.className = 'br-item';
+      it.innerHTML = `<span class="br-swatch" style="background:${p.color}"></span> ${p.name}`;
+      it.addEventListener('click', () => { currentPatternId = p.id; render(); });
+      wrap.appendChild(it);
+    });
+    tree.appendChild(wrap);
+    fEl.addEventListener('click', () => fEl.classList.toggle('open'));
+  }
+}
+
+// Sync FL shell state on every render()
+function renderFlShell() {
+  // Pattern selector in toolbar
+  const sel = document.getElementById('tb-pattern-select');
+  if (sel) {
+    const prev = sel.value;
+    sel.innerHTML = '';
+    song.patterns.forEach(p => {
+      const o = document.createElement('option');
+      o.value = p.id; o.textContent = p.name;
+      sel.appendChild(o);
+    });
+    sel.value = currentPatternId || prev || (song.patterns[0]?.id ?? '');
+  }
+  // Patterns menu
+  const pmenu = document.getElementById('menu-patterns-list');
+  if (pmenu) {
+    pmenu.innerHTML = '';
+    if (!song.patterns.length) {
+      pmenu.innerHTML = '<div class="mi" style="color:var(--dim)">(none)</div>';
+    } else {
+      song.patterns.forEach(p => {
+        const mi = document.createElement('div');
+        mi.className = 'mi';
+        mi.setAttribute('data-cmd', 'sel-pat:' + p.id);
+        mi.innerHTML =
+          `<span><span class="br-swatch" style="background:${p.color};margin-right:6px"></span>${p.name}</span>` +
+          `<span class="sh">${p.lengthBars} bar${p.lengthBars===1?'':'s'}</span>`;
+        mi.addEventListener('click', (e) => {
+          e.stopPropagation();
+          document.querySelectorAll('#menubar .menu-item').forEach(i => i.classList.remove('open'));
+          runCmd('sel-pat:' + p.id);
+        });
+        pmenu.appendChild(mi);
+      });
+    }
+  }
+  // Rec LED
+  const led = document.getElementById('rec-led');
+  if (led) led.classList.toggle('on', isMicRecording || !!midiRecording);
+  // Browser
+  renderBrowser();
+  // Time LCD default when stopped
+  if (!ctx || !scheduledSources || !scheduledSources.length) updateTimeLcd(0);
+}
+
+// ============================================================
 // Boot
 // ============================================================
 loadFromStorage();
@@ -2598,6 +3228,7 @@ render();
 initMIDI();
 initAudioDrop();
 initPianoRollDrop();
+updateTimeLcd(0);
 </script>
 </body>
 </html>
