@@ -12,13 +12,13 @@ speaks JSON over stdin/stdout. Built on JUCE.
   it to the default audio output device on demand
 - ✅ Piped to Electron: the desktop app's Browser dock shows a "Plugins"
   tab listing every discovered VST3/AU
+- ✅ **MIDI note routing.** Each channel gets a per-plugin
+  `MidiMessageCollector` (JUCE's lock-free MIDI queue). `note_on` /
+  `note_off` / `all_notes_off` from the UI reach the plugin's audio
+  callback and make sound.
 
 ## What doesn't work yet
 
-- ❌ **MIDI note routing.** The engine accepts `note_on` / `note_off`
-  messages but doesn't yet inject them into the plugin's audio callback.
-  A proper impl needs a lock-free MIDI queue per plugin node. This is the
-  next task if you want to actually hear the plugins play.
 - ❌ **Plugin UIs.** Loading Serum's GUI window requires wiring
   `AudioProcessorEditor` into a native window and passing keyboard focus
   correctly. Not started.
@@ -82,6 +82,7 @@ Why a separate process:
 | `unload_plugin`  | `channelId`                                     |
 | `note_on`        | `channelId`, `pitch`, `velocity` (0..1)         |
 | `note_off`       | `channelId`, `pitch`                            |
+| `all_notes_off`  | `channelId`                                     |
 | `set_param`      | `channelId`, `paramIndex`, `value` (0..1)       |
 
 **Engine → Electron** (one JSON object per line):

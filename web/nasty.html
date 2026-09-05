@@ -1673,6 +1673,15 @@ function computeSongDurationSec() {
 function stopAllSources() {
   for (const s of scheduledSources) { try { s.stop(); } catch (e) {} }
   scheduledSources = [];
+  for (const id of pluginNoteTimeouts) clearTimeout(id);
+  pluginNoteTimeouts.clear();
+  if (window.nasty && window.nasty.engine) {
+    for (const c of song.channels) {
+      if (c.instrument === 'plugin') {
+        window.nasty.engine.send({ cmd: 'all_notes_off', channelId: c.id });
+      }
+    }
+  }
 }
 
 function playSong() {
@@ -1755,6 +1764,25 @@ function scheduleSong(actx, masterOut, tStart, sink) {
           const effectiveDur = Math.min(localEnd, clipLenBeats) - localStart;
           if (effectiveDur <= 0) continue;
           const noteT = t + beatsToSec(localStart);
+          if (channel.instrument === 'plugin') {
+            if (window.nasty && window.nasty.engine) {
+              const delayMs = Math.max(0, (noteT - actx.currentTime) * 1000);
+              const durMs = beatsToSec(effectiveDur) * 1000;
+              const onId = setTimeout(() => {
+                window.nasty.engine.send({ cmd: 'note_on', channelId: channel.id,
+                  pitch: note.pitch, velocity: note.velocity });
+                pluginNoteTimeouts.delete(onId);
+              }, delayMs);
+              const offId = setTimeout(() => {
+                window.nasty.engine.send({ cmd: 'note_off', channelId: channel.id,
+                  pitch: note.pitch });
+                pluginNoteTimeouts.delete(offId);
+              }, delayMs + durMs);
+              pluginNoteTimeouts.add(onId);
+              pluginNoteTimeouts.add(offId);
+            }
+            continue;
+          }
           playNote(actx, channelChains[channel.id], channel.instrument,
             note.pitch, note.velocity, noteT, beatsToSec(effectiveDur), sink);
         }
@@ -1787,13 +1815,33 @@ function animatePlayhead() {
   tick();
 }
 
-function previewNote(instrument, pitch, velocity = 0.8, duration = 0.4) {
+function previewNote(channelOrInstrument, pitch, velocity = 0.8, duration = 0.4) {
+  // Accept either a channel object (new) or a bare instrument string (legacy).
+  const ch = (channelOrInstrument && typeof channelOrInstrument === 'object')
+    ? channelOrInstrument : null;
+  const instrument = ch ? ch.instrument : channelOrInstrument;
+
+  // Plugin channels play through the native audio engine (desktop only).
+  if (ch && ch.instrument === 'plugin' && window.nasty && window.nasty.engine) {
+    window.nasty.engine.send({ cmd: 'note_on', channelId: ch.id, pitch, velocity });
+    const id = setTimeout(() => {
+      window.nasty.engine.send({ cmd: 'note_off', channelId: ch.id, pitch });
+      pluginNoteTimeouts.delete(id);
+    }, duration * 1000);
+    pluginNoteTimeouts.add(id);
+    return;
+  }
+
   initAudio();
   if (ctx.state === 'suspended') ctx.resume();
   const gain = ctx.createGain(); gain.gain.value = 0.8;
   gain.connect(masterGain);
   playNote(ctx, gain, instrument, pitch, velocity, ctx.currentTime + 0.01, duration, null);
 }
+
+// Pending setTimeout IDs for note_on/note_off dispatched to the native engine.
+// Cleared on stop so hanging notes don't fire after the transport stops.
+const pluginNoteTimeouts = new Set();
 
 // ============================================================
 // Mic recording (audio clip on a playlist track)
@@ -2243,7 +2291,7 @@ function renderChannelRack() {
       if (!ch) return;
       toggleStepNote(pattern, ch, idx);
       // Preview the sound so it feels responsive
-      if (!cell.classList.contains('on')) previewNote(ch.instrument, stepPitchFor(ch), 0.7, 0.15);
+      if (!cell.classList.contains('on')) previewNote(ch, stepPitchFor(ch), 0.7, 0.15);
       render();
     });
   });
@@ -2761,7 +2809,7 @@ function renderPianoRoll() {
     const octave = Math.floor(pitch / 12) - 1;
     const names = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
     key.textContent = pc === 0 ? `${names[pc]}${octave}` : names[pc];
-    key.addEventListener('mousedown', () => { if (activeCh) previewNote(activeCh.instrument, pitch); });
+    key.addEventListener('mousedown', () => { if (activeCh) previewNote(activeCh, pitch); });
     keysEl.appendChild(key);
   }
 
@@ -2851,7 +2899,7 @@ function onPrGridMouseDown(e) {
   const pitch = PR_PITCH_MAX - Math.floor(y / PR_KEY_HEIGHT);
   const note = { channelId: activeCh.id, pitch, startBeat, durationBeats: 0.5, velocity: 0.8 };
   p.notes.push(note);
-  previewNote(activeCh.instrument, pitch);
+  previewNote(activeCh, pitch);
   prCreateDrag = { note, startX: e.clientX };
   document.addEventListener('mousemove', onPrCreateMove);
   document.addEventListener('mouseup', onPrCreateUp);
@@ -3248,7 +3296,7 @@ function onMidiMessage(e) {
   const ch = getActiveInputChannel();
   if (type === 0x90 && data2 > 0) {
     const velocity = data2 / 127;
-    if (ch) previewNote(ch.instrument, data1, velocity, 0.5);
+    if (ch) previewNote(ch, data1, velocity, 0.5);
     if (midiRecording && ch) {
       const t = ctx.currentTime - midiRecording.startTime;
       midiRecording.active[data1] = { pitch: data1, velocity, tStart: t, channelId: ch.id };
@@ -3351,7 +3399,7 @@ document.addEventListener('keydown', (e) => {
   const pitch = TYPING_BASE_PITCH + TYPING_MAP[lk] + typingOctave * 12;
   initAudio();
   if (ctx.state === 'suspended') ctx.resume();
-  previewNote(ch.instrument, pitch, 0.8, 2);
+  previewNote(ch, pitch, 0.8, 2);
   typingActive[lk] = { pitch, channelId: ch.id, tStart: ctx.currentTime };
   if (midiRecording) {
     const t = ctx.currentTime - midiRecording.startTime;

@@ -35,6 +35,7 @@ public:
     // MIDI note events routed to a channel's plugin.
     void noteOn (const juce::String& channelId, int pitch, float velocity);
     void noteOff(const juce::String& channelId, int pitch);
+    void allNotesOff(const juce::String& channelId);
 
     // Parameter automation.
     void setParam(const juce::String& channelId, int paramIndex, float value01);
@@ -46,7 +47,8 @@ private:
     juce::AudioProcessorGraph      graph;
 
     struct ChannelSlot {
-        juce::AudioProcessorGraph::NodeID nodeId;
+        juce::AudioProcessorGraph::NodeID pluginNodeId;
+        juce::AudioProcessorGraph::NodeID injectorNodeId;
         int midiChannel = 1;
     };
 

@@ -5,6 +5,45 @@ namespace nasty {
 
 using Graph = juce::AudioProcessorGraph;
 
+// MIDI-only processor sitting in front of each plugin. The UI thread enqueues
+// note events into its collector; the audio thread drains them into the
+// MidiBuffer that flows to the plugin. Lock-free by construction — that's
+// MidiMessageCollector's whole job.
+namespace {
+class MidiInjector : public juce::AudioProcessor {
+public:
+    juce::MidiMessageCollector collector;
+
+    MidiInjector() : juce::AudioProcessor(BusesProperties()) {}
+
+    const juce::String getName() const override    { return "MidiInjector"; }
+    void prepareToPlay(double sr, int) override    { collector.reset(sr); }
+    void releaseResources() override               {}
+    bool acceptsMidi() const override              { return true; }
+    bool producesMidi() const override             { return true; }
+    bool isMidiEffect() const override             { return true; }
+    double getTailLengthSeconds() const override   { return 0.0; }
+
+    void processBlock(juce::AudioBuffer<float>& buf, juce::MidiBuffer& midi) override {
+        collector.removeNextBlockOfMessages(midi, buf.getNumSamples());
+    }
+    void processBlock(juce::AudioBuffer<double>& buf, juce::MidiBuffer& midi) override {
+        collector.removeNextBlockOfMessages(midi, buf.getNumSamples());
+    }
+    using AudioProcessor::processBlock;
+
+    juce::AudioProcessorEditor* createEditor() override    { return nullptr; }
+    bool hasEditor() const override                        { return false; }
+    int getNumPrograms() override                          { return 1; }
+    int getCurrentProgram() override                       { return 0; }
+    void setCurrentProgram(int) override                   {}
+    const juce::String getProgramName(int) override        { return {}; }
+    void changeProgramName(int, const juce::String&) override {}
+    void getStateInformation(juce::MemoryBlock&) override  {}
+    void setStateInformation(const void*, int) override    {}
+};
+} // namespace
+
 PluginHost::PluginHost() {
     juce::addDefaultFormatsToManager(formatManager);
 
@@ -93,19 +132,21 @@ juce::String PluginHost::loadPlugin(const juce::String& channelId, const juce::S
 
     unloadPlugin(channelId); // replace if exists
 
-    auto node = graph.addNode(std::move(instance));
+    auto injectorNode = graph.addNode(std::make_unique<MidiInjector>());
+    auto pluginNode   = graph.addNode(std::move(instance));
 
-    // Connect the plugin to the output. Assume stereo.
+    // Audio: plugin → output (assume stereo).
     for (int ch = 0; ch < 2; ++ch) {
-        graph.addConnection({{node->nodeID, ch}, {graph.getNodeForId(Graph::NodeID(2))->nodeID, ch}});
+        graph.addConnection({{pluginNode->nodeID, ch},
+                             {graph.getNodeForId(Graph::NodeID(2))->nodeID, ch}});
     }
-    // MIDI: route the graph's midi input into this node
-    graph.addConnection({{Graph::NodeID(3), Graph::midiChannelIndex},
-                         {node->nodeID,      Graph::midiChannelIndex}});
+    // MIDI: injector → plugin.
+    graph.addConnection({{injectorNode->nodeID, Graph::midiChannelIndex},
+                         {pluginNode->nodeID,   Graph::midiChannelIndex}});
 
     {
         std::lock_guard<std::mutex> lock(mutex);
-        channels[channelId] = { node->nodeID, 1 };
+        channels[channelId] = { pluginNode->nodeID, injectorNode->nodeID, 1 };
     }
     return {};
 }
@@ -114,25 +155,54 @@ void PluginHost::unloadPlugin(const juce::String& channelId) {
     std::lock_guard<std::mutex> lock(mutex);
     auto it = channels.find(channelId);
     if (it == channels.end()) return;
-    graph.removeNode(it->second.nodeId);
+    graph.removeNode(it->second.pluginNodeId);
+    graph.removeNode(it->second.injectorNodeId);
     channels.erase(it);
 }
 
 void PluginHost::noteOn(const juce::String& channelId, int pitch, float velocity) {
-    (void)channelId; (void)pitch; (void)velocity;
-    // TODO: buffer MIDI events and inject them in the audio callback. Doing
-    // it outside processBlock requires a lock-free MIDI queue per plugin node.
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = channels.find(channelId);
+    if (it == channels.end()) return;
+    auto node = graph.getNodeForId(it->second.injectorNodeId);
+    if (!node) return;
+    if (auto* inj = dynamic_cast<MidiInjector*>(node->getProcessor())) {
+        inj->collector.addMessageToQueue(
+            juce::MidiMessage::noteOn(it->second.midiChannel, pitch, velocity));
+    }
 }
 
 void PluginHost::noteOff(const juce::String& channelId, int pitch) {
-    (void)channelId; (void)pitch;
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = channels.find(channelId);
+    if (it == channels.end()) return;
+    auto node = graph.getNodeForId(it->second.injectorNodeId);
+    if (!node) return;
+    if (auto* inj = dynamic_cast<MidiInjector*>(node->getProcessor())) {
+        inj->collector.addMessageToQueue(
+            juce::MidiMessage::noteOff(it->second.midiChannel, pitch));
+    }
+}
+
+void PluginHost::allNotesOff(const juce::String& channelId) {
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = channels.find(channelId);
+    if (it == channels.end()) return;
+    auto node = graph.getNodeForId(it->second.injectorNodeId);
+    if (!node) return;
+    if (auto* inj = dynamic_cast<MidiInjector*>(node->getProcessor())) {
+        inj->collector.addMessageToQueue(
+            juce::MidiMessage::allNotesOff(it->second.midiChannel));
+        inj->collector.addMessageToQueue(
+            juce::MidiMessage::allSoundOff(it->second.midiChannel));
+    }
 }
 
 void PluginHost::setParam(const juce::String& channelId, int paramIndex, float value01) {
     std::lock_guard<std::mutex> lock(mutex);
     auto it = channels.find(channelId);
     if (it == channels.end()) return;
-    if (auto node = graph.getNodeForId(it->second.nodeId)) {
+    if (auto node = graph.getNodeForId(it->second.pluginNodeId)) {
         auto& params = node->getProcessor()->getParameters();
         if (paramIndex >= 0 && paramIndex < params.size()) {
             params[paramIndex]->setValueNotifyingHost(value01);

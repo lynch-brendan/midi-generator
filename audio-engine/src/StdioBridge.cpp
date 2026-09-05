@@ -75,6 +75,11 @@ juce::var StdioBridge::handleCommand(const juce::var& msg) {
         return {};
     }
 
+    if (cmd == "all_notes_off") {
+        host.allNotesOff(msg["channelId"].toString());
+        return {};
+    }
+
     if (cmd == "set_param") {
         host.setParam(msg["channelId"].toString(),
                       (int) msg["paramIndex"], (float) msg["value"]);
