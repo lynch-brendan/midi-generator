@@ -31,7 +31,14 @@ target_sources(nasty-audio-engine PRIVATE
     src/main.cpp
     src/PluginHost.cpp
     src/StdioBridge.cpp
+    $<$<PLATFORM_ID:Darwin>:src/MacHelpers.mm>
 )
+
+if(APPLE)
+    target_link_libraries(nasty-audio-engine PRIVATE
+        "-framework Cocoa"
+    )
+endif()
 
 target_compile_definitions(nasty-audio-engine PRIVATE
     JUCE_PLUGINHOST_VST3=1

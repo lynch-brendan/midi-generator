@@ -1,6 +1,10 @@
 #include "PluginHost.h"
 #include <iostream>
 
+#if __APPLE__
+namespace nasty { void makeWindowNonActivating(void* nativeViewHandle); }
+#endif
+
 namespace nasty {
 
 using Graph = juce::AudioProcessorGraph;
@@ -43,6 +47,37 @@ public:
     void setStateInformation(const void*, int) override    {}
 };
 } // namespace
+
+// A native window that owns a plugin's AudioProcessorEditor. Deletes itself
+// asynchronously when the user clicks the close button so the host can
+// forget the map entry on the next message-loop tick (avoiding
+// use-after-free from inside closeButtonPressed).
+class PluginHost::PluginWindow : public juce::DocumentWindow {
+public:
+    PluginWindow(const juce::String& title, juce::AudioProcessorEditor* editor,
+                 std::function<void()> onClose)
+        : DocumentWindow(title, juce::Colour(0xff2b2f36),
+                         juce::DocumentWindow::minimiseButton | juce::DocumentWindow::closeButton),
+          closeCallback(std::move(onClose)) {
+        setUsingNativeTitleBar(true);
+        setContentOwned(editor, /*resizeToFit*/ true);
+        setResizable(editor->isResizable(), false);
+        centreWithSize(getWidth(), getHeight());
+        // Float above the DAW window so it stays visible while the user types
+        // notes into Nasty (which needs keyboard focus to send MIDI).
+        setAlwaysOnTop(true);
+        setVisible(true);
+        toFront(true);
+    }
+
+    void closeButtonPressed() override {
+        if (closeCallback) juce::MessageManager::callAsync(closeCallback);
+    }
+
+private:
+    std::function<void()> closeCallback;
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginWindow)
+};
 
 PluginHost::PluginHost() {
     juce::addDefaultFormatsToManager(formatManager);
@@ -152,6 +187,10 @@ juce::String PluginHost::loadPlugin(const juce::String& channelId, const juce::S
 }
 
 void PluginHost::unloadPlugin(const juce::String& channelId) {
+    // Close the editor window first (on message thread) so its held editor
+    // pointer doesn't dangle when we drop the plugin node below.
+    hidePluginUI(channelId);
+
     std::lock_guard<std::mutex> lock(mutex);
     auto it = channels.find(channelId);
     if (it == channels.end()) return;
@@ -196,6 +235,61 @@ void PluginHost::allNotesOff(const juce::String& channelId) {
         inj->collector.addMessageToQueue(
             juce::MidiMessage::allSoundOff(it->second.midiChannel));
     }
+}
+
+void PluginHost::showPluginUI(const juce::String& channelId) {
+    juce::MessageManager::callAsync([this, channelId]() {
+        std::cerr << "[PluginHost] show_plugin_ui for channel=" << channelId << std::endl;
+        juce::AudioProcessor* proc = nullptr;
+        juce::String title;
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            auto it = channels.find(channelId);
+            if (it == channels.end()) {
+                std::cerr << "[PluginHost] channel not found in map" << std::endl;
+                return;
+            }
+            if (auto node = graph.getNodeForId(it->second.pluginNodeId)) {
+                proc = node->getProcessor();
+                if (proc) title = proc->getName();
+            }
+        }
+        if (!proc) { std::cerr << "[PluginHost] no processor" << std::endl; return; }
+        if (!proc->hasEditor()) { std::cerr << "[PluginHost] plugin has no editor" << std::endl; return; }
+
+        // Bring existing window to front if already open.
+        auto existing = pluginWindows.find(channelId);
+        if (existing != pluginWindows.end() && existing->second) {
+            existing->second->setVisible(true);
+            existing->second->toFront(true);
+            return;
+        }
+
+        auto* editor = proc->createEditorAndMakeActive();
+        if (!editor) return;
+
+        auto win = std::make_unique<PluginWindow>(
+            title, editor,
+            [this, channelId]() { hidePluginUI(channelId); });
+
+#if __APPLE__
+        // Make the plugin window a floating panel that never becomes key —
+        // Nasty keeps keyboard focus while the plugin UI stays visible and
+        // clickable. This is what modern DAWs (Bitwig etc.) do for
+        // out-of-process plugin hosting.
+        if (auto* peer = win->getPeer()) {
+            makeWindowNonActivating(peer->getNativeHandle());
+        }
+#endif
+
+        pluginWindows[channelId] = std::move(win);
+    });
+}
+
+void PluginHost::hidePluginUI(const juce::String& channelId) {
+    juce::MessageManager::callAsync([this, channelId]() {
+        pluginWindows.erase(channelId);
+    });
 }
 
 void PluginHost::setParam(const juce::String& channelId, int paramIndex, float value01) {

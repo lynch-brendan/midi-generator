@@ -37,6 +37,11 @@ public:
     void noteOff(const juce::String& channelId, int pitch);
     void allNotesOff(const juce::String& channelId);
 
+    // Show / hide the plugin's native editor window. Safe to call from any
+    // thread — dispatched to the JUCE message thread internally.
+    void showPluginUI(const juce::String& channelId);
+    void hidePluginUI(const juce::String& channelId);
+
     // Parameter automation.
     void setParam(const juce::String& channelId, int paramIndex, float value01);
 
@@ -55,6 +60,10 @@ private:
     mutable std::mutex mutex;
     std::map<juce::String, ChannelSlot> channels; // by channelId
     bool audioRunning = false;
+
+    // Plugin editor windows are message-thread only — no lock needed.
+    class PluginWindow;
+    std::map<juce::String, std::unique_ptr<PluginWindow>> pluginWindows;
 };
 
 } // namespace nasty

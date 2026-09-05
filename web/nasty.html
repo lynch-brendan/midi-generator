@@ -1034,12 +1034,12 @@
     </div>
     <div class="t-sep"></div>
     <div class="t-group">
-      <div class="patsong" title="Playlist mode is always SONG in Nasty MVP">
-        <div class="ps-btn">PAT</div>
-        <div class="ps-btn active">SONG</div>
+      <div class="patsong" title="PAT: loop the current pattern. SONG: play the whole playlist.">
+        <div class="ps-btn" id="ps-pat" data-mode="pat">PAT</div>
+        <div class="ps-btn active" id="ps-song" data-mode="song">SONG</div>
       </div>
-      <button class="t-btn" id="midi-rec-btn" title="Record MIDI">⌨</button>
-      <button class="t-btn" id="mic-rec-btn" title="Record mic">🎤</button>
+      <button class="t-btn big" id="rec-btn" title="Arm recording — hit Play to record MIDI notes into the current pattern">●</button>
+      <button class="t-btn" id="mic-rec-btn" title="Record mic to timeline">🎤</button>
       <span class="rec-led" id="rec-led"></span>
     </div>
     <div class="t-sep"></div>
@@ -1265,7 +1265,8 @@ const PR_PITCH_MAX = 108;
 const STORAGE_KEY = 'nasty.song.fl.v1';
 const PALETTE = ['#ff5c93','#6b7cff','#33c58a','#ffb020','#a95cff','#ff7c47','#42c8e0','#e05cff','#ffdd57','#5cff8f'];
 
-let song = { bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] } };
+let song = { bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] }, transportMode: 'song' };
+let recArmed = false;
 let chatHistory = [];
 let selectedClipId = null;
 let currentPatternId = null;
@@ -1638,6 +1639,18 @@ function channelsToPlay() {
 }
 
 function tracksToPlay() {
+  // In PAT mode, ignore the playlist entirely — synthesize a single virtual
+  // track holding one clip of the current pattern. Playback + recording both
+  // route through the normal scheduler this way.
+  if (song.transportMode === 'pat') {
+    const pat = song.patterns.find(p => p.id === currentPatternId);
+    if (!pat) return [];
+    return [{
+      id: 'pat-preview', muted: false, solo: false,
+      clips: [{ id: 'pat-preview-clip', type: 'pattern',
+                patternId: pat.id, startBar: 0, lengthBars: pat.lengthBars }],
+    }];
+  }
   const anySolo = song.tracks.some(t => t.solo);
   return song.tracks.filter(t => {
     if (t.muted) return false;
@@ -1647,6 +1660,12 @@ function tracksToPlay() {
 }
 
 function computeSongDurationSec() {
+  // PAT mode: duration = the current pattern's length.
+  if (song.transportMode === 'pat') {
+    const pat = song.patterns.find(p => p.id === currentPatternId);
+    if (!pat) return 0;
+    return beatsToSec(pat.lengthBars * 4);
+  }
   let maxEndBeats = 0;
   const patternById = new Map(song.patterns.map(p => [p.id, p]));
   for (const track of song.tracks) {
@@ -1695,13 +1714,17 @@ function playSong() {
     document.getElementById('playhead').style.display = 'none';
     return;
   }
-  const N = loopEnabled ? Math.min(100, Math.max(2, Math.ceil(600 / singleDur))) : 1;
+  // Force loop in PAT mode — patterns are meant to loop while you jam on top.
+  const shouldLoop = loopEnabled || song.transportMode === 'pat';
+  const N = shouldLoop ? Math.min(100, Math.max(2, Math.ceil(600 / singleDur))) : 1;
   for (let i = 0; i < N; i++) {
     scheduleSong(ctx, masterGain, playStartTime + i * singleDur, scheduledSources);
   }
   songDurationSec = singleDur * N;
-  document.getElementById('playhead').style.display = 'block';
-  animatePlayhead();
+  // In PAT mode we're looping the pattern, not scrubbing the playlist — hide
+  // the playlist playhead so it doesn't confusingly march across the timeline.
+  document.getElementById('playhead').style.display = song.transportMode === 'pat' ? 'none' : 'block';
+  if (song.transportMode !== 'pat') animatePlayhead();
 }
 
 function scheduleSong(actx, masterOut, tStart, sink) {
@@ -2238,6 +2261,7 @@ function renderChannelRack() {
         ${insertOpts}
       </select>
       <span class="cbtns">
+        ${ch.instrument === 'plugin' ? `<button data-a="gui" data-ch="${ch.id}" title="Open plugin window">GUI</button>` : ''}
         <button class="${ch.muted?'on-mute':''}" data-a="mute" data-ch="${ch.id}">M</button>
         <button class="${ch.solo?'on-solo':''}" data-a="solo" data-ch="${ch.id}">S</button>
         <button class="${ch.armed?'on-arm':''}" data-a="arm" data-ch="${ch.id}" title="Arm for MIDI record">●</button>
@@ -2269,9 +2293,19 @@ function renderChannelRack() {
     }
     row.appendChild(steps);
 
-    // Selection = click on the name/left area (but not on inputs/buttons)
+    // Selection on click. Manual double-click detection since we re-render the
+    // row on single-click, which breaks native `dblclick` (target is gone
+    // between the two clicks).
     left.addEventListener('click', (e) => {
       if (e.target.closest('button') || e.target.closest('select') || e.target.closest('input')) return;
+      const now = Date.now();
+      const isDouble = (now - (ch.__lastClick || 0)) < 350;
+      ch.__lastClick = now;
+      if (isDouble && ch.instrument === 'plugin' && window.nasty && window.nasty.engine) {
+        console.log('[nasty] dblclick plugin channel', ch.id, 'sending show_plugin_ui');
+        window.nasty.engine.send({ cmd: 'show_plugin_ui', channelId: ch.id });
+        return;
+      }
       for (const c of song.channels) if (c !== ch) c.armed = false;
       ch.armed = true;
       render();
@@ -2507,8 +2541,17 @@ function onChannelBtn(e) {
     for (const c of song.channels) if (c !== ch) c.armed = false;
     ch.armed = !ch.armed;
   }
+  else if (a === 'gui') {
+    if (window.nasty && window.nasty.engine) {
+      window.nasty.engine.send({ cmd: 'show_plugin_ui', channelId: ch.id });
+    }
+    return; // no re-render needed
+  }
   else if (a === 'del') {
     if (confirm('Delete channel "' + ch.name + '"?')) {
+      if (ch.instrument === 'plugin' && window.nasty && window.nasty.engine) {
+        window.nasty.engine.send({ cmd: 'unload_plugin', channelId: ch.id });
+      }
       song.channels = song.channels.filter(c => c !== ch);
       for (const p of song.patterns) p.notes = p.notes.filter(n => n.channelId !== ch.id);
     }
@@ -3296,12 +3339,21 @@ function onMidiMessage(e) {
   const ch = getActiveInputChannel();
   if (type === 0x90 && data2 > 0) {
     const velocity = data2 / 127;
-    if (ch) previewNote(ch, data1, velocity, 0.5);
+    if (ch) {
+      if (ch.instrument === 'plugin' && window.nasty && window.nasty.engine) {
+        window.nasty.engine.send({ cmd: 'note_on', channelId: ch.id, pitch: data1, velocity });
+      } else {
+        previewNote(ch, data1, velocity, 10);
+      }
+    }
     if (midiRecording && ch) {
       const t = ctx.currentTime - midiRecording.startTime;
       midiRecording.active[data1] = { pitch: data1, velocity, tStart: t, channelId: ch.id };
     }
   } else if (type === 0x80 || (type === 0x90 && data2 === 0)) {
+    if (ch && ch.instrument === 'plugin' && window.nasty && window.nasty.engine) {
+      window.nasty.engine.send({ cmd: 'note_off', channelId: ch.id, pitch: data1 });
+    }
     if (midiRecording && midiRecording.active[data1]) {
       const start = midiRecording.active[data1];
       const t = ctx.currentTime - midiRecording.startTime;
@@ -3332,7 +3384,8 @@ function startMidiRecording() {
     const bt = t0 + b * secPerBeat;
     playClick(ctx, masterGain, bt, b % 4 === 0);
   }
-  document.getElementById('midi-rec-btn').classList.add('active');
+  // Also start playback so held loops/plugins are heard while recording.
+  setTimeout(() => { if (midiRecording) playSong(); }, countInBeats * secPerBeat * 1000);
   const status = document.getElementById('rec-status');
   status.classList.remove('hidden');
   status.textContent = 'REC MIDI → ' + pat.name + ' (count-in…)';
@@ -3343,7 +3396,6 @@ function stopMidiRecording() {
   if (!midiRecording) return;
   const rec = midiRecording;
   midiRecording = null;
-  document.getElementById('midi-rec-btn').classList.remove('active');
   document.getElementById('rec-status').classList.add('hidden');
   const nowT = ctx.currentTime - rec.startTime;
   for (const p in rec.active) {
@@ -3399,7 +3451,15 @@ document.addEventListener('keydown', (e) => {
   const pitch = TYPING_BASE_PITCH + TYPING_MAP[lk] + typingOctave * 12;
   initAudio();
   if (ctx.state === 'suspended') ctx.resume();
-  previewNote(ch, pitch, 0.8, 2);
+  if (ch.instrument === 'plugin') {
+    // Real note-on/note-off — hold-to-sustain like FL Studio.
+    if (window.nasty && window.nasty.engine) {
+      window.nasty.engine.send({ cmd: 'note_on', channelId: ch.id, pitch, velocity: 0.8 });
+    }
+  } else {
+    // Built-in synths use fixed envelope; give it a long tail so held keys don't cut off short.
+    previewNote(ch, pitch, 0.8, 10);
+  }
   typingActive[lk] = { pitch, channelId: ch.id, tStart: ctx.currentTime };
   if (midiRecording) {
     const t = ctx.currentTime - midiRecording.startTime;
@@ -3411,6 +3471,10 @@ document.addEventListener('keyup', (e) => {
   const st = typingActive[lk];
   if (!st) return;
   delete typingActive[lk];
+  const ch = song.channels.find(c => c.id === st.channelId);
+  if (ch && ch.instrument === 'plugin' && window.nasty && window.nasty.engine) {
+    window.nasty.engine.send({ cmd: 'note_off', channelId: ch.id, pitch: st.pitch });
+  }
   if (midiRecording && midiRecording.active[st.pitch]) {
     const start = midiRecording.active[st.pitch];
     const t = ctx.currentTime - midiRecording.startTime;
@@ -3427,8 +3491,11 @@ document.addEventListener('keyup', (e) => {
 // Wire up
 // ============================================================
 document.getElementById('play-btn').addEventListener('click', () => {
-  if (!song.tracks.some(t => t.clips.length)) return;
-  playSong();
+  const hasSongContent = song.tracks.some(t => t.clips.length);
+  const hasPattern = song.transportMode === 'pat' && currentPatternId;
+  if (!recArmed && !hasSongContent && !hasPattern) return;
+  if (recArmed) startMidiRecording();
+  else playSong();
 });
 document.getElementById('stop-btn').addEventListener('click', () => {
   if (isMicRecording) stopMicRecording();
@@ -3441,12 +3508,28 @@ document.getElementById('loop-btn').addEventListener('click', () => {
 document.getElementById('mic-rec-btn').addEventListener('click', () => {
   if (isMicRecording) stopMicRecording(); else startMicRecording();
 });
-document.getElementById('midi-rec-btn').addEventListener('click', () => {
-  if (midiRecording) stopMidiRecording(); else startMidiRecording();
+document.getElementById('rec-btn').addEventListener('click', () => {
+  recArmed = !recArmed;
+  const b = document.getElementById('rec-btn');
+  b.classList.toggle('recording', recArmed);
+  b.style.background = recArmed ? 'linear-gradient(var(--record), #b02830)' : '';
+  b.style.color = recArmed ? 'white' : '';
+});
+// PAT / SONG mode toggle
+document.querySelectorAll('.patsong .ps-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const mode = btn.dataset.mode;
+    if (!mode || song.transportMode === mode) return;
+    song.transportMode = mode;
+    document.querySelectorAll('.patsong .ps-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.mode === mode);
+    });
+    persist();
+  });
 });
 document.getElementById('clear-btn').addEventListener('click', () => {
   if (!confirm('Clear the song? (channels, patterns, and playlist all reset)')) return;
-  song = { bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] } };
+  song = { bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] }, transportMode: 'song' };
   chatHistory = [];
   audioBuffers.clear();
   currentPatternId = null;
@@ -3589,7 +3672,7 @@ function runCmd(cmd) {
     case 'add-pattern':        return document.getElementById('add-pattern-btn').click();
     case 'add-insert':         return document.getElementById('add-insert-btn').click();
     case 'mic-rec':            return document.getElementById('mic-rec-btn').click();
-    case 'midi-rec':           return document.getElementById('midi-rec-btn').click();
+    case 'midi-rec':           return startMidiRecording();
     case 'toggle-playlist':    return toggleWindow('playlist');
     case 'toggle-rack':        return toggleWindow('rack');
     case 'toggle-browser':     return toggleWindow('browser');
@@ -3851,6 +3934,10 @@ let enginePluginsList = null;
 let enginePluginsError = null;
 let engineScanning = null;
 
+// Channel IDs where we should auto-pop the plugin UI once the engine reports
+// it's loaded. Set for user-initiated adds; NOT set on song-restore re-loads.
+const autoShowOnLoad = new Set();
+
 function addPluginChannel(pluginDesc) {
   const id = 'ch_plugin_' + Date.now().toString(36);
   for (const c of song.channels) c.armed = false;
@@ -3867,13 +3954,33 @@ function addPluginChannel(pluginDesc) {
     insertId: 'master',
   };
   song.channels.push(ch);
-  // Tell the engine to load the plugin into this channel
+  autoShowOnLoad.add(id);
   if (window.nasty && window.nasty.engine) {
     window.nasty.engine.send({
       cmd: 'load_plugin', channelId: id, pluginId: pluginDesc.id,
     });
   }
   render();
+}
+
+// Re-hydrate every plugin channel in the current song into the engine.
+// Called on engine ready (fresh launch) so double-clicking a channel from a
+// restored song works without the user re-loading manually.
+// Skips known unstable plugins (like FL Studio as a plugin) so one bad
+// plugin can't crash the engine at boot.
+const UNSAFE_HYDRATE_PATTERNS = [/FL Studio/i, /Fruity Loops/i];
+function hydratePluginChannels() {
+  if (!(window.nasty && window.nasty.engine)) return;
+  for (const c of song.channels) {
+    if (c.instrument !== 'plugin' || !c.pluginId) continue;
+    if (UNSAFE_HYDRATE_PATTERNS.some(re => re.test(c.name || c.pluginId))) {
+      console.log('[nasty] skipping auto-hydrate of', c.name, '- open manually');
+      continue;
+    }
+    window.nasty.engine.send({
+      cmd: 'load_plugin', channelId: c.id, pluginId: c.pluginId,
+    });
+  }
 }
 
 // Subscribe to audio-engine events (desktop only)
@@ -3886,12 +3993,19 @@ if (window.nasty && window.nasty.engine) {
       engineScanning = null;
       // Fetch plugin list once scan finishes
       window.nasty.engine.send({ cmd: 'list_plugins' });
+      // Re-hydrate plugins from the saved song so double-click / notes work.
+      hydratePluginChannels();
     } else if (msg.event === 'plugin_list') {
       enginePluginsList = msg.plugins || [];
       enginePluginsError = null;
       if (browserTab === 'plugins') renderBrowser();
     } else if (msg.event === 'plugin_loaded') {
-      // could show a "loaded" toast here later
+      // Only auto-pop the plugin window if the user explicitly added it in
+      // this session — not on song-restore re-loads (which would spam windows).
+      if (msg.channelId && autoShowOnLoad.has(msg.channelId)) {
+        autoShowOnLoad.delete(msg.channelId);
+        window.nasty.engine.send({ cmd: 'show_plugin_ui', channelId: msg.channelId });
+      }
     } else if (msg.event === 'error') {
       enginePluginsError = msg.error || 'engine error';
       if (browserTab === 'plugins') renderBrowser();
@@ -3941,6 +4055,10 @@ function renderFlShell() {
   // Rec LED
   const led = document.getElementById('rec-led');
   if (led) led.classList.toggle('on', isMicRecording || !!midiRecording);
+  // PAT / SONG mode buttons
+  document.querySelectorAll('.patsong .ps-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.mode === (song.transportMode || 'song'));
+  });
   // Browser
   renderBrowser();
   // Time LCD default when stopped

@@ -118,6 +118,13 @@ function createWindow() {
 
   mainWindow.loadFile(findNastyHtml());
   mainWindow.once('ready-to-show', () => mainWindow.show());
+  // Surface renderer errors in the terminal so silent crashes are visible.
+  mainWindow.webContents.on('render-process-gone', (_e, d) => console.error('[nasty] renderer gone:', d));
+  mainWindow.webContents.on('console-message', (_e, level, msg, line, src) => {
+    if (level >= 2) console.error('[renderer]', src + ':' + line, msg);
+  });
+  // Show even if ready-to-show never fires (renderer crash before then).
+  setTimeout(() => { if (mainWindow && !mainWindow.isVisible()) mainWindow.show(); }, 2000);
 
   // External links open in the OS browser, not inside Nasty
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {

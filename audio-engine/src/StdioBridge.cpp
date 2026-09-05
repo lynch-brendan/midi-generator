@@ -80,6 +80,16 @@ juce::var StdioBridge::handleCommand(const juce::var& msg) {
         return {};
     }
 
+    if (cmd == "show_plugin_ui") {
+        host.showPluginUI(msg["channelId"].toString());
+        return {};
+    }
+
+    if (cmd == "hide_plugin_ui") {
+        host.hidePluginUI(msg["channelId"].toString());
+        return {};
+    }
+
     if (cmd == "set_param") {
         host.setParam(msg["channelId"].toString(),
                       (int) msg["paramIndex"], (float) msg["value"]);

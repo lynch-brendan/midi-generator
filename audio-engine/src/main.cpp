@@ -15,8 +15,17 @@
 
 #include <iostream>
 
+#if __APPLE__
+namespace nasty { void setSubprocessAsAgentApp(); }
+#endif
+
 int main(int /*argc*/, char** /*argv*/) {
     juce::ScopedJuceInitialiser_GUI juceInit;
+
+#if __APPLE__
+    // Behave as a background helper: can own windows, never steals focus.
+    nasty::setSubprocessAsAgentApp();
+#endif
 
     // Unbuffered stdout so Electron sees lines immediately.
     std::setvbuf(stdout, nullptr, _IOLBF, 0);
