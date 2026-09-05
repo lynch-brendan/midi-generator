@@ -4,6 +4,15 @@ const path = require('path');
 const fs = require('fs');
 const readline = require('readline');
 
+// Prevent multiple Nasty windows from stacking up when `npm start` is re-run
+// while another instance is still around. Second launch just focuses the
+// existing window instead of spawning a fresh (and often blank) one.
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+  process.exit(0);
+}
+
 let mainWindow;
 let audioEngineProc = null;
 let engineReady = false;
@@ -224,6 +233,16 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+});
+
+// If a second `npm start` fires while Nasty is already running, focus the
+// existing window instead of opening a duplicate.
+app.on('second-instance', () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  }
 });
 
 app.on('window-all-closed', () => {
