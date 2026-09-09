@@ -9,6 +9,9 @@
 #include <memory>
 #include <mutex>
 
+#include "Transport.h"
+#include "Metronome.h"
+
 namespace nasty {
 
 class PluginHost : private juce::AudioProcessorPlayer,
@@ -16,6 +19,15 @@ class PluginHost : private juce::AudioProcessorPlayer,
 public:
     PluginHost();
     ~PluginHost() override;
+
+    // The engine's single time source. Public read/write API on the Transport
+    // itself is thread-safe (atomic).
+    Transport& getTransport() noexcept { return transport; }
+
+    // Enable / disable the engine-hosted metronome. Sample-accurate against
+    // the Transport — clicks land on beat boundaries in the same audio
+    // callback that fires pattern notes. Cannot drift.
+    void setMetronomeEnabled(bool v);
 
     // ChangeListener — fires when the audio device changes (sleep/wake,
     // device unplug/plug). We re-initialize the device so audio doesn't stay
@@ -108,6 +120,25 @@ public:
     void noteOff(const juce::String& channelId, int pitch);
     void allNotesOff(const juce::String& channelId);
 
+    // Fire allNotesOff on every registered channel. Used by transport stop
+    // so notes held mid-pattern don't get stuck when playback halts before
+    // their noteOff was injected.
+    void panicAllChannels();
+
+    // Per-channel pattern edits. Notes replay every loop iteration; atSample
+    // is relative to the loop origin. Idempotent by noteId — setting the
+    // same noteId replaces the existing entry. Audio-thread safe: writes
+    // use a SpinLock that the audio-thread walker tryLocks (skipping the
+    // buffer on contention, which for UI-edit rates is negligible).
+    void setPatternNote(const juce::String& channelId,
+                        const juce::String& noteId,
+                        int pitch, float velocity,
+                        std::int64_t atSample,
+                        std::int64_t durationSamples);
+    void clearPatternNote(const juce::String& channelId,
+                          const juce::String& noteId);
+    void clearPattern(const juce::String& channelId);
+
     // Show / hide the plugin's native editor window. Safe to call from any
     // thread — dispatched to the JUCE message thread internally.
     void showPluginUI(const juce::String& channelId);
@@ -159,16 +190,40 @@ private:
     // Called after any effect chain mutation. Must be called under `mutex`.
     void rewireChannelUnlocked(ChannelSlot& slot);
 
+    // Factory: add a MidiInjector to the graph with its transport wired up.
+    // Every code path that creates a channel (loadPlugin, addGmChannel,
+    // addDrumChannel) goes through here so pattern playback works uniformly.
+    juce::AudioProcessorGraph::Node::Ptr addInjectorNode();
+
     // Plugin editor windows are message-thread only — no lock needed.
     class PluginWindow;
     std::map<juce::String, std::unique_ptr<PluginWindow>> pluginWindows;
     // Effect editor windows keyed as "<channelId>::<slotId>".
     std::map<juce::String, std::unique_ptr<PluginWindow>> effectWindows;
 
-    // Fixed-tempo play head shared by the graph so tempo-syncing plugins
-    // (Serato slicers, arps, sync'd delays, LFOs) see valid host transport
-    // info. Reports 120 BPM / 4-4 / stopped until we wire the real transport.
+    // Play head shared by the graph so tempo-syncing plugins (arps, sync'd
+    // delays, LFOs, slicers) see valid host transport info. Reads live values
+    // straight off the Transport.
     std::unique_ptr<juce::AudioPlayHead> playHead;
+
+    // Single source of truth for time. Advanced by the audio callback below.
+    Transport transport;
+
+    // Engine-hosted metronome. Added to the graph as a node routed straight
+    // to the master output. Enabled/disabled via setMetronomeEnabled().
+    juce::AudioProcessorGraph::Node::Ptr metronomeNode;
+
+    // AudioIODeviceCallback overrides — wrap the AudioProcessorPlayer base so
+    // we can advance the Transport around each buffer, and publish the real
+    // device sample rate to the Transport when the device opens.
+    void audioDeviceIOCallbackWithContext(const float* const* inputChannelData,
+                                          int numInputChannels,
+                                          float* const* outputChannelData,
+                                          int numOutputChannels,
+                                          int numSamples,
+                                          const juce::AudioIODeviceCallbackContext& context) override;
+    void audioDeviceAboutToStart(juce::AudioIODevice* device) override;
+    void audioDeviceStopped() override;
 };
 
 } // namespace nasty

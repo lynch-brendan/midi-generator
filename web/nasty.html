@@ -1212,7 +1212,11 @@
       <label style="font-size:10px;color:var(--dim)">MIDI in</label>
       <select id="midi-select"><option value="">— none —</option></select>
       <label style="font-size:10px;color:var(--dim);display:flex;align-items:center;gap:3px">
-        <input type="checkbox" id="quantize" checked /> quantize</label>
+        <input type="checkbox" id="quantize" /> quantize</label>
+      <label style="font-size:10px;color:var(--dim);display:flex;align-items:center;gap:3px">
+        <input type="checkbox" id="metronome" checked /> metronome</label>
+      <label style="font-size:10px;color:var(--dim);display:flex;align-items:center;gap:3px">
+        <input type="checkbox" id="count-in" checked /> count-in</label>
     </div>
     <div class="t-info">
       <span id="rec-status" class="rec-status hidden"></span><br />
@@ -1757,7 +1761,7 @@ function ensureDefaults() {
   }
   if (!song.patterns.length) {
     song.patterns.push({
-      id: 'pat_1', name: 'Pattern 1', lengthBars: 2, notes: [],
+      id: 'pat_1', name: 'Pattern 1', lengthBars: 1, notes: [],
       color: PALETTE[0],
     });
     currentPatternId = 'pat_1';
@@ -1779,10 +1783,119 @@ function ensureDefaults() {
 let ctx = null;
 let masterGain = null;
 let scheduledSources = [];
+// Metronome click oscillators tracked separately so toggling the checkbox
+// mid-play can silence them without touching the rest of playback.
+let metronomeSources = [];
 let playStartTime = 0;
 let songDurationSec = 0;
 let singleLoopDurSec = 0;
 let animationFrame = null;
+
+// ============================================================
+// Engine transport bridge.
+//
+// The native audio engine owns the sample clock and the pattern data. JS
+// pushes edits down; the engine's audio callback walks the pattern and
+// injects MIDI at exact sample offsets. Solves the "add a note while
+// playing = playhead jumps / notes get lost" problem that the old
+// setTimeout-based scheduler had: edits are idempotent
+// pattern_set_note / pattern_clear_note commands the audio thread picks
+// up on the very next buffer, no cancel-and-reschedule needed.
+//
+// Non-plugin channels (legacy WebAudio built-in synths like `piano`,
+// `bass`, `lead`) still schedule through JS in scheduleSong(). This
+// module only handles engine-hosted channels (instrument === 'plugin').
+// ============================================================
+const engineTransport = {
+  sampleRate: 48000,          // updated on first transport_position event
+  currentSample: 0,           // last position received from engine
+  lastEventPerfMs: 0,         // performance.now() when currentSample was captured
+  isPlaying: false,
+  loopSamples: 0,
+  // Live playhead position in seconds, extrapolated forward from the last
+  // engine update using wall-clock delta. Between the 60 Hz position events
+  // this keeps the visual playhead rolling smoothly instead of stepping.
+  elapsedSecondsLive() {
+    const sr = this.sampleRate || 48000;
+    const base = this.currentSample / sr;
+    if (!this.isPlaying || !this.lastEventPerfMs) return base;
+    // Cap the extrapolation. Engine emits position at 60 Hz, so anything
+    // beyond ~30 ms means an event got dropped or the JS thread stalled.
+    // Without a cap, the playhead visually wraps early (looks like "jerk
+    // back a quarter inch before the end of the bar").
+    const dtMs = Math.min(performance.now() - this.lastEventPerfMs, 30);
+    return base + dtMs / 1000;
+  },
+  available() {
+    return !!(window.nasty && window.nasty.engine);
+  },
+  send(msg) {
+    if (this.available()) window.nasty.engine.send(msg);
+  },
+  // Content-derived stable ID: same channel + pitch + start beat = same
+  // engine note. Idempotent under repeated toggles; changing pitch or
+  // position naturally becomes clear-old + set-new because the ID changes.
+  noteIdOf(note) {
+    return `${note.channelId}::${note.pitch}::${Number(note.startBeat).toFixed(4)}`;
+  },
+  beatsToSamples(beats) {
+    const sr = this.sampleRate || 48000;
+    return Math.round(beats * (60 / song.bpm) * sr);
+  },
+  setNote(note) {
+    this.send({
+      cmd: 'pattern_set_note',
+      channelId: note.channelId,
+      noteId: this.noteIdOf(note),
+      pitch: note.pitch,
+      velocity: note.velocity ?? 0.8,
+      atSample: this.beatsToSamples(note.startBeat),
+      durationSamples: this.beatsToSamples(note.durationBeats),
+    });
+  },
+  clearNote(note) {
+    this.send({
+      cmd: 'pattern_clear_note',
+      channelId: note.channelId,
+      noteId: this.noteIdOf(note),
+    });
+  },
+  clearAllPluginPatterns() {
+    for (const ch of song.channels) {
+      if (ch.instrument === 'plugin') {
+        this.send({ cmd: 'pattern_clear', channelId: ch.id });
+      }
+    }
+  },
+  // Push the whole current pattern into the engine for every plugin channel.
+  // Called on transport start so the engine has a clean, complete view.
+  pushPattern(pattern) {
+    if (!pattern) return;
+    this.clearAllPluginPatterns();
+    const pluginChIds = new Set(
+      song.channels.filter(c => c.instrument === 'plugin').map(c => c.id));
+    for (const note of pattern.notes) {
+      if (pluginChIds.has(note.channelId)) this.setNote(note);
+    }
+  },
+  setLoopBeats(beats) {
+    const samples = this.beatsToSamples(beats);
+    this.loopSamples = samples;
+    this.send({ cmd: 'transport_set_loop_length', samples });
+  },
+  play() {
+    this.send({ cmd: 'transport_play' });
+  },
+  stop() {
+    this.send({ cmd: 'transport_stop' });
+  },
+  seek(sample) {
+    this.send({ cmd: 'transport_seek', sample });
+  },
+  setMetronomeEnabled(v) {
+    this.send({ cmd: 'metronome_set_enabled', enabled: !!v });
+  },
+};
 
 function initAudio() {
   if (ctx) return;
@@ -2004,12 +2117,17 @@ function computeSongDurationSec() {
   return beatsToSec(maxEndBeats);
 }
 
-function stopAllSources() {
+function stopAllSources({ includeEngineChannels = true } = {}) {
   for (const s of scheduledSources) { try { s.stop(); } catch (e) {} }
   scheduledSources = [];
+  for (const s of metronomeSources) { try { s.stop(); } catch (e) {} }
+  metronomeSources = [];
   for (const id of pluginNoteTimeouts) clearTimeout(id);
   pluginNoteTimeouts.clear();
-  if (window.nasty && window.nasty.engine) {
+  // Skip the engine all_notes_off when a refresh is caused by a WebAudio-only
+  // edit — the engine's pattern walker is still cleanly playing plugin
+  // channels and we don't want to clobber held notes.
+  if (includeEngineChannels && window.nasty && window.nasty.engine) {
     for (const c of song.channels) {
       if (c.instrument === 'plugin') {
         window.nasty.engine.send({ cmd: 'all_notes_off', channelId: c.id });
@@ -2019,23 +2137,23 @@ function stopAllSources() {
 }
 
 function playSong() {
-  initAudio();
-  if (ctx.state === 'suspended') ctx.resume();
-  stopAllSources();
-  playStartTime = ctx.currentTime + 0.1;
-  const singleDur = computeSongDurationSec();
-  singleLoopDurSec = singleDur;
-  if (singleDur <= 0) {
+  if (!engineTransport.available()) return;
+  if (song.transportMode !== 'pat') return; // SONG-mode arrangement TBD
+  const pat = song.patterns.find(p => p.id === currentPatternId);
+  if (!pat) {
     document.getElementById('playhead').style.display = 'none';
     return;
   }
-  // Force loop in PAT mode — patterns are meant to loop while you jam on top.
-  const shouldLoop = loopEnabled || song.transportMode === 'pat';
-  const N = shouldLoop ? Math.min(100, Math.max(2, Math.ceil(600 / singleDur))) : 1;
-  for (let i = 0; i < N; i++) {
-    scheduleSong(ctx, masterGain, playStartTime + i * singleDur, scheduledSources);
-  }
-  songDurationSec = singleDur * N;
+  // The engine now owns clock, pattern, playback, AND the metronome. Play
+  // is just: push the pattern, seek to 0, enable metronome per the toggle,
+  // start the transport.
+  engineTransport.pushPattern(pat);
+  engineTransport.setLoopBeats(pat.lengthBars * 4);
+  engineTransport.setMetronomeEnabled(!!document.getElementById('metronome')?.checked);
+  engineTransport.seek(0);
+  engineTransport.play();
+  singleLoopDurSec = pat.lengthBars * 4 * (60 / song.bpm);
+  songDurationSec = singleLoopDurSec;
   // In PAT mode we're looping the pattern, not scrubbing the playlist — hide
   // the playlist playhead so it doesn't confusingly march across the timeline.
   document.getElementById('playhead').style.display = song.transportMode === 'pat' ? 'none' : 'block';
@@ -2106,6 +2224,9 @@ function scheduleSong(actx, masterOut, tStart, sink, notBefore) {
           const noteT = t + beatsToSec(localStart);
           if (notBefore != null && noteT < notBefore) continue; // skip past notes on live re-schedule
           if (channel.instrument === 'plugin') {
+            // PAT mode: the engine's pattern walker drives plugin channels.
+            // Skip scheduling here to avoid double-triggering notes.
+            if (song.transportMode === 'pat') continue;
             if (window.nasty && window.nasty.engine) {
               const delayMs = Math.max(0, (noteT - actx.currentTime) * 1000);
               const durMs = beatsToSec(effectiveDur) * 1000;
@@ -2133,6 +2254,10 @@ function scheduleSong(actx, masterOut, tStart, sink, notBefore) {
 }
 
 function stopSong() {
+  // Halt the engine's pattern walker first so any held notes get their
+  // all-notes-off immediately, then tear down the WebAudio side.
+  engineTransport.stop();
+  engineTransport.setMetronomeEnabled(false);
   stopAllSources();
   document.getElementById('playhead').style.display = 'none';
   if (animationFrame) { cancelAnimationFrame(animationFrame); animationFrame = null; }
@@ -2147,24 +2272,34 @@ function animatePlayhead() {
   const ph = document.getElementById('playhead');
   const tick = () => {
     if (!ctx) return;
-    const elapsed = ctx.currentTime - playStartTime;
+    // In PAT mode the engine's transport is authoritative — read the
+    // audio-clock position (extrapolated per-frame for smoothness) instead
+    // of guessing off ctx.currentTime. In SONG mode we fall back to the
+    // WebAudio clock since the engine isn't driving playback there.
+    const engineDriven = song.transportMode === 'pat' && engineTransport.isPlaying;
+    const elapsed = engineDriven
+      ? engineTransport.elapsedSecondsLive()
+      : (ctx.currentTime - playStartTime);
     if (elapsed < 0) { animationFrame = requestAnimationFrame(tick); return; }
-    if (elapsed > songDurationSec + 0.3 && !midiRecording) { stopSong(); return; }
+    if (elapsed > songDurationSec + 0.3 && !midiRecording && !engineDriven) { stopSong(); return; }
     // Query rack-playhead fresh every tick — the channel rack re-renders
     // whenever a note is added, which replaces the playhead node. Grabbing
     // it once at the top would leave us updating a stale/detached element.
     const rackPh = document.getElementById('rack-playhead');
     const isPat = song.transportMode === 'pat';
+    const isRecording = !!midiRecording;
     // In PAT mode, wrap on the current pattern's length so the clock +
-    // rack playhead loop with it. In SONG mode, use songDurationSec / any
-    // global loop.
+    // rack playhead loop with it — EXCEPT during recording, where playback
+    // is linear (no loop-back) so the pattern can grow past its old end.
+    // In SONG mode, use songDurationSec / any global loop.
     let loopSec = singleLoopDurSec;
     if (isPat) {
       const pat = song.patterns.find(p => p.id === currentPatternId);
       const bars = (pat && pat.lengthBars) ? pat.lengthBars : 1;
       loopSec = beatsToSec(bars * 4);
     }
-    const displayElapsed = loopSec > 0 ? (elapsed % loopSec) : elapsed;
+    const shouldWrap = loopSec > 0 && !(isPat && isRecording);
+    const displayElapsed = shouldWrap ? (elapsed % loopSec) : elapsed;
     const barsElapsed = (displayElapsed * song.bpm / 60) / 4;
     // Playlist playhead only in SONG mode.
     if (!isPat) ph.style.left = (barsElapsed * BAR_WIDTH) + 'px';
@@ -2173,19 +2308,29 @@ function animatePlayhead() {
     // (8px) = 348px, then travels across step_width * total_steps.
     if (rackPh) {
       if (isPat) {
-        rackPh.style.display = 'block';
         const STEP_PX = 24;              // 22px cell + 2px margin
         const LEFT_START = 348;
         const pat = song.patterns.find(p => p.id === currentPatternId);
-        const bars = (pat && pat.lengthBars) ? pat.lengthBars : 1;
+        // While recording use the frozen "at start of take" length so the
+        // playhead sweep is deterministic. During playback use current
+        // pat.lengthBars.
+        const bars = isRecording && midiRecording?.initialLengthBars
+          ? midiRecording.initialLengthBars
+          : ((pat && pat.lengthBars) ? pat.lengthBars : 1);
         const totalPx = bars * 16 * STEP_PX;
         const totalBeats = bars * 4;
         const frac = totalBeats > 0 ? (displayElapsed * song.bpm / 60) / totalBeats : 0;
-        // GPU-accelerated transform (translate3d) instead of `left` — the
-        // browser can move the layer without re-laying-out the parent, and
-        // frames stay smooth even when the rack DOM is mutating.
-        const x = LEFT_START + frac * totalPx;
-        rackPh.style.transform = `translate3d(${x}px, 0, 0)`;
+        // FL behavior: once past the last recorded bar, hide the line.
+        // During linear record this also stops the visual from marching
+        // past the boundary; it stays hidden even as notes extend the
+        // pattern (denominator is frozen at record start).
+        if (frac >= 1) {
+          rackPh.style.display = 'none';
+        } else {
+          rackPh.style.display = 'block';
+          const x = LEFT_START + frac * totalPx;
+          rackPh.style.transform = `translate3d(${x}px, 0, 0)`;
+        }
       } else {
         rackPh.style.display = 'none';
       }
@@ -2634,19 +2779,35 @@ function findStepNote(pattern, channel, stepIdx) {
 }
 function toggleStepNote(pattern, channel, stepIdx) {
   const existing = findStepNote(pattern, channel, stepIdx);
+  let addedNote = null;
+  let removedNote = null;
   if (existing) {
+    removedNote = existing;
     pattern.notes = pattern.notes.filter(n => n !== existing);
   } else {
-    pattern.notes.push({
+    addedNote = {
       channelId: channel.id,
       pitch: stepPitchFor(channel),
       startBeat: stepIdx * STEP_BEATS,
       durationBeats: STEP_BEATS,
       velocity: 0.8,
-    });
+    };
+    pattern.notes.push(addedNote);
   }
   recomputePatternLength(pattern);
-  refreshLoopIfPlaying();
+  // Engine-hosted channel: push the single change straight into the audio
+  // engine's pattern data. The audio callback picks it up on the very next
+  // buffer — no cancel-and-rebuild of scheduled events, no playhead twitch.
+  if (channel.instrument === 'plugin' && song.transportMode === 'pat' && engineTransport.available()) {
+    if (addedNote)   engineTransport.setNote(addedNote);
+    if (removedNote) engineTransport.clearNote(removedNote);
+    // Loop length may have grown when the note extended past the current
+    // pattern end. Re-publish so the engine loops at the new boundary.
+    engineTransport.setLoopBeats(pattern.lengthBars * 4);
+  } else {
+    // WebAudio path: legacy cancel-and-reschedule for non-engine channels.
+    refreshLoopIfPlaying();
+  }
 }
 
 // Live re-schedule during looping. Debounced so rapid step clicks don't
@@ -2661,7 +2822,11 @@ function refreshLoopIfPlaying() {
   _refreshDeadline = now + 150;
   const singleDur = singleLoopDurSec;
   if (singleDur <= 0) return;
-  stopAllSources();
+  // In PAT mode the engine drives plugin channels via its own pattern data,
+  // so a refresh must not send all_notes_off to them — that would clobber a
+  // note the engine is holding. WebAudio channels still get rescheduled.
+  const engineDriven = song.transportMode === 'pat' && engineTransport.available();
+  stopAllSources({ includeEngineChannels: !engineDriven });
   const shouldLoop = loopEnabled || song.transportMode === 'pat';
   const N = shouldLoop ? Math.min(100, Math.max(2, Math.ceil(600 / singleDur))) : 1;
   const notBefore = ctx.currentTime + 0.02;
@@ -2689,7 +2854,7 @@ function renderChannelRack() {
     const row = document.createElement('div');
     row.className = 'channel-row' + (ch.armed ? ' armed' : '');
     row.dataset.chId = ch.id;
-    row.title = 'Click name to select — steps program the current pattern';
+    row.title = 'Click to select — keyboard input routes here and steps program the current pattern';
 
     // Left cluster: name + controls. Effects now live on the Mixer, not on
     // the channel rack — one place to think about them, like FL.
@@ -2706,7 +2871,6 @@ function renderChannelRack() {
         ${ch.instrument === 'plugin' ? `<button data-a="gui" data-ch="${ch.id}" title="Open plugin window">GUI</button>` : ''}
         <button class="${ch.muted?'on-mute':''}" data-a="mute" data-ch="${ch.id}">M</button>
         <button class="${ch.solo?'on-solo':''}" data-a="solo" data-ch="${ch.id}">S</button>
-        <button class="${ch.armed?'on-arm':''}" data-a="arm" data-ch="${ch.id}" title="Arm for MIDI record">●</button>
         <button data-a="del" data-ch="${ch.id}" title="Delete channel">✕</button>
       </span>
     `;
@@ -3632,10 +3796,6 @@ function onChannelBtn(e) {
   if (!ch) return;
   if (a === 'mute') ch.muted = !ch.muted;
   else if (a === 'solo') ch.solo = !ch.solo;
-  else if (a === 'arm') {
-    for (const c of song.channels) if (c !== ch) c.armed = false;
-    ch.armed = !ch.armed;
-  }
   else if (a === 'gui') {
     if (window.nasty && window.nasty.engine) {
       window.nasty.engine.send({ cmd: 'show_plugin_ui', channelId: ch.id });
@@ -4460,12 +4620,9 @@ function onMidiMessage(e) {
     if (midiRecording && midiRecording.active[data1]) {
       const start = midiRecording.active[data1];
       const t = ctx.currentTime - midiRecording.startTime;
-      midiRecording.notes.push({
-        pitch: start.pitch, velocity: start.velocity,
-        channelId: start.channelId,
-        tStart: start.tStart, tEnd: t,
-      });
+      commitRecordedNote(midiRecording, start.channelId, start.pitch, start.velocity, start.tStart, t);
       delete midiRecording.active[data1];
+      render();
     }
   }
 }
@@ -4475,24 +4632,84 @@ function startMidiRecording() {
   if (!ch) { alert('Open a pattern and pick a channel in "Draw on", or arm a channel (● in the Channel Rack).'); return; }
   const pat = song.patterns.find(p => p.id === currentPatternId);
   if (!pat) { alert('Select or create a pattern first.'); return; }
-  initAudio();
-  if (ctx.state === 'suspended') ctx.resume();
   const secPerBeat = 60 / song.bpm;
-  const countInBeats = 4;
-  const t0 = ctx.currentTime + 0.2;
-  const recStart = t0 + countInBeats * secPerBeat;
-  midiRecording = { channelId: ch.id, patternId: pat.id, startTime: recStart, notes: [], active: {} };
-  const totalBeats = countInBeats + pat.lengthBars * 4 * 4;
-  for (let b = 0; b < totalBeats; b++) {
-    const bt = t0 + b * secPerBeat;
-    playClick(ctx, masterGain, bt, b % 4 === 0);
-  }
-  // Also start playback so held loops/plugins are heard while recording.
-  setTimeout(() => { if (midiRecording) playSong(); }, countInBeats * secPerBeat * 1000);
+  const countInEnabled = document.getElementById('count-in')?.checked;
+  const metronomeEnabled = document.getElementById('metronome')?.checked;
+  const countInBeats = countInEnabled ? 4 : 0;
+  const sr = engineTransport.sampleRate || 48000;
+  const countInSamples = Math.round(countInBeats * secPerBeat * sr);
+  const loopSec = pat.lengthBars * 4 * secPerBeat;
+  midiRecording = {
+    channelId: ch.id, patternId: pat.id, startTime: 0,
+    notes: [], active: {}, loopSec,
+    // Freeze the visual pattern length at recording start so the playhead
+    // sweep is deterministic (see animatePlayhead).
+    initialLengthBars: pat.lengthBars,
+    pendingTimeouts: [],
+  };
+  // Engine handles everything: push pattern, set linear loop, seek back by
+  // the count-in duration, and start. The engine metronome fires clicks at
+  // each beat boundary — including the negative count-in beats — while the
+  // pattern walker naturally skips because iterations at negative offsets
+  // don't overlap the audio buffer.
+  engineTransport.pushPattern(pat);
+  engineTransport.send({ cmd: 'transport_set_loop_length', samples: 1e12 });
+  engineTransport.setMetronomeEnabled(metronomeEnabled || countInBeats > 0);
+  engineTransport.seek(-countInSamples);
+  engineTransport.play();
+  animatePlayhead();
   const status = document.getElementById('rec-status');
   status.classList.remove('hidden');
-  status.textContent = 'REC MIDI → ' + pat.name + ' (count-in…)';
-  setTimeout(() => { if (midiRecording) status.textContent = 'REC MIDI → ' + pat.name; }, (countInBeats * secPerBeat + 0.2) * 1000);
+  status.textContent = countInBeats > 0
+    ? ('REC MIDI → ' + pat.name + ' (count-in…)')
+    : ('REC MIDI → ' + pat.name);
+  if (countInBeats > 0) {
+    midiRecording.pendingTimeouts.push(
+      setTimeout(() => {
+        if (!midiRecording) return;
+        status.textContent = 'REC MIDI → ' + pat.name;
+        // If the metronome was only on for the count-in, kill it now.
+        if (!metronomeEnabled) engineTransport.setMetronomeEnabled(false);
+      }, (countInBeats * secPerBeat + 0.05) * 1000));
+  }
+}
+
+// Commit one completed recorded note live — as soon as the user releases
+// the key. Linear-record model: the note lands at the exact time it was
+// played (no loop-wrap), so if the user keeps playing past the pattern's
+// current end, the pattern grows to fit. Existing notes continue to play
+// back at their original positions on the next take.
+function commitRecordedNote(rec, channelId, pitch, velocity, tStart, tEnd) {
+  if (!rec) return;
+  if (tStart < 0 || tEnd <= tStart) return;
+  const durSec = tEnd - tStart;
+  const pat = song.patterns.find(p => p.id === rec.patternId);
+  if (!pat) return;
+  const bpm = song.bpm;
+  const q = document.getElementById('quantize')?.checked;
+  let startBeat = tStart * bpm / 60;
+  let durBeats  = durSec * bpm / 60;
+  if (q) {
+    startBeat = Math.round(startBeat * 4) / 4;
+    durBeats  = Math.max(0.25, Math.round(durBeats * 4) / 4);
+  }
+  const note = {
+    channelId: channelId || rec.channelId,
+    pitch, startBeat, durationBeats: durBeats,
+    velocity: velocity ?? 0.8,
+  };
+  pat.notes.push(note);
+  recomputePatternLength(pat);
+  // Engine-hosted channel: sync into the engine's pattern. Do NOT touch
+  // the engine loop length while recording — playSong left it at "infinity"
+  // so the pattern plays linearly. On next play the fresh loop is set to
+  // the (extended) pattern length. Resetting it here would restart the
+  // loop mid-recording, which is what "the looping keeps happening"
+  // bug was.
+  const ch = song.channels.find(c => c.id === note.channelId);
+  if (ch && ch.instrument === 'plugin' && song.transportMode === 'pat' && engineTransport.available()) {
+    engineTransport.setNote(note);
+  }
 }
 
 function stopMidiRecording() {
@@ -4500,28 +4717,14 @@ function stopMidiRecording() {
   const rec = midiRecording;
   midiRecording = null;
   document.getElementById('rec-status').classList.add('hidden');
-  const nowT = ctx.currentTime - rec.startTime;
+  for (const id of (rec.pendingTimeouts || [])) clearTimeout(id);
+  // Flush any keys still held down when the user hit stop — engine clock is
+  // authoritative for the final noteOff timestamp.
+  const nowT = engineTransport.isPlaying ? engineTransport.elapsedSecondsLive() : 0;
   for (const p in rec.active) {
     const s = rec.active[p];
-    rec.notes.push({ pitch: s.pitch, velocity: s.velocity, tStart: s.tStart, tEnd: nowT });
+    commitRecordedNote(rec, s.channelId, s.pitch, s.velocity, s.tStart, nowT);
   }
-  if (!rec.notes.length) return;
-  const pat = song.patterns.find(p => p.id === rec.patternId);
-  if (!pat) return;
-  const q = document.getElementById('quantize').checked;
-  const bpm = song.bpm;
-  for (const n of rec.notes) {
-    if (n.tStart < 0 || n.tEnd <= n.tStart) continue;
-    let startBeat = n.tStart * bpm / 60;
-    let dur = (n.tEnd - n.tStart) * bpm / 60;
-    if (q) { startBeat = Math.round(startBeat * 4) / 4; dur = Math.max(0.25, Math.round(dur * 4) / 4); }
-    pat.notes.push({
-      channelId: n.channelId || rec.channelId, pitch: n.pitch,
-      startBeat, durationBeats: dur, velocity: n.velocity,
-    });
-  }
-  const maxEnd = pat.notes.reduce((m,n) => Math.max(m, n.startBeat + n.durationBeats), 0);
-  if (maxEnd / 4 > pat.lengthBars) pat.lengthBars = Math.ceil(maxEnd / 4);
   render();
 }
 
@@ -4566,7 +4769,14 @@ document.addEventListener('keydown', (e) => {
   }
   typingActive[lk] = { pitch, channelId: ch.id, tStart: ctx.currentTime, handle };
   if (midiRecording) {
-    const t = ctx.currentTime - midiRecording.startTime;
+    // Use the engine's own transport clock for recording timestamps —
+    // otherwise IPC/start-up drift between WebAudio time and engine time
+    // (a few ms) accumulates as a shift between where you played the note
+    // and where it plays back. Fall back to ctx during count-in (engine
+    // isn't playing yet), so negative t values get filtered by the commit.
+    const t = engineTransport.isPlaying
+      ? engineTransport.elapsedSecondsLive()
+      : (ctx.currentTime - midiRecording.startTime);
     midiRecording.active[pitch] = { pitch, velocity: 0.8, tStart: t, channelId: ch.id };
   }
 });
@@ -4583,13 +4793,14 @@ document.addEventListener('keyup', (e) => {
   }
   if (midiRecording && midiRecording.active[st.pitch]) {
     const start = midiRecording.active[st.pitch];
-    const t = ctx.currentTime - midiRecording.startTime;
-    midiRecording.notes.push({
-      pitch: start.pitch, velocity: start.velocity,
-      channelId: start.channelId,
-      tStart: start.tStart, tEnd: t,
-    });
+    // Same clock the keydown used — engine time when playing, ctx during
+    // count-in — so noteOn and noteOff sit in the same frame of reference.
+    const t = engineTransport.isPlaying
+      ? engineTransport.elapsedSecondsLive()
+      : (ctx.currentTime - midiRecording.startTime);
+    commitRecordedNote(midiRecording, start.channelId, start.pitch, start.velocity, start.tStart, t);
     delete midiRecording.active[st.pitch];
+    render();
   }
 });
 
@@ -4620,6 +4831,11 @@ document.getElementById('rec-btn').addEventListener('click', () => {
   b.classList.toggle('recording', recArmed);
   b.style.background = recArmed ? 'linear-gradient(var(--record), #b02830)' : '';
   b.style.color = recArmed ? 'white' : '';
+});
+// Metronome checkbox — flips the engine's enable flag. Instant toggle
+// (no scheduled clicks to cancel — engine synthesises on the audio thread).
+document.getElementById('metronome').addEventListener('change', (e) => {
+  engineTransport.setMetronomeEnabled(!!e.target.checked);
 });
 // PAT / SONG mode toggle
 document.querySelectorAll('.patsong .ps-btn').forEach(btn => {
@@ -5409,7 +5625,23 @@ if (window.nasty && window.nasty.engine) {
       engineScanning = null;
       window.nasty.engine.send({ cmd: 'list_plugins' });
       window.nasty.engine.send({ cmd: 'list_audio_devices' });
+      // Ask for the current transport state so we know the sample rate
+      // before the user hits play (needed to translate beats → samples).
+      window.nasty.engine.send({ cmd: 'transport_get' });
       hydratePluginChannels();
+    } else if (msg.event === 'transport_position') {
+      // The engine emits these at ~60 Hz while playing. Store the latest
+      // sample AND the wall-clock instant we received it so the playhead
+      // renderer can extrapolate between events for sub-frame smoothness.
+      engineTransport.currentSample     = msg.currentSample;
+      engineTransport.sampleRate        = msg.sampleRate;
+      engineTransport.isPlaying         = msg.isPlaying;
+      engineTransport.lastEventPerfMs   = performance.now();
+    } else if (msg.event === 'transport_state') {
+      engineTransport.currentSample = msg.currentSample;
+      engineTransport.sampleRate    = msg.sampleRate;
+      engineTransport.isPlaying     = msg.isPlaying;
+      engineTransport.loopSamples   = msg.loopSamples;
     } else if (msg.event === 'plugin_list') {
       enginePluginsList = msg.plugins || [];
       enginePluginsError = null;

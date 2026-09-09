@@ -16,14 +16,55 @@ namespace nasty {
 
 using Graph = juce::AudioProcessorGraph;
 
-// MIDI-only processor sitting in front of each plugin. The UI thread enqueues
-// note events into its collector; the audio thread drains them into the
-// MidiBuffer that flows to the plugin. Lock-free by construction — that's
-// MidiMessageCollector's whole job.
+// A note in a per-channel pattern. atSample is relative to the loop origin,
+// so playback of the same pattern in every loop iteration just adds the
+// iteration's base offset. All fields UI-owned.
+struct PatternNote {
+    int          pitch;              // MIDI note 0-127
+    float        velocity;           // 0.0-1.0
+    std::int64_t atSample;           // position within [0, loopLengthSamples)
+    std::int64_t durationSamples;    // note length; noteOff = atSample + this
+};
+
+// MIDI-only processor sitting in front of each plugin. Serves two producers:
+//   1. UI-triggered notes (preview/keyboard/held) via MidiMessageCollector.
+//      Lock-free by construction — that's the collector's whole job.
+//   2. Pattern playback — the audio callback walks a per-channel note list
+//      and injects noteOn/noteOff at exact sample offsets inside the buffer.
+//      Pattern edits are UI-thread; audio thread uses SpinLock::tryEnter so
+//      it never blocks. Missing one buffer's pattern injection is inaudible.
 namespace {
 class MidiInjector : public juce::AudioProcessor {
 public:
     juce::MidiMessageCollector collector;
+
+    // Non-owning pointer to the engine's Transport. Read on the audio thread
+    // to decide which loop iteration + sample offsets the pattern maps to.
+    const Transport* transport = nullptr;
+
+    // MIDI channel used for pattern-injected notes (1..16). Matches the
+    // channel used for UI-triggered noteOn calls.
+    int patternMidiChannel = 1;
+
+    // Pattern data. UI thread writes under fullLock; audio thread reads under
+    // tryLock and skips this buffer if it can't get in.
+    juce::SpinLock patternLock;
+    std::map<juce::String, PatternNote> patternNotes;
+
+    // UI-facing pattern editing API. Idempotent by noteId — replacing a
+    // noteId's entry updates it in place.
+    void uiSetNote(const juce::String& noteId, const PatternNote& note) {
+        const juce::SpinLock::ScopedLockType lock(patternLock);
+        patternNotes[noteId] = note;
+    }
+    void uiClearNote(const juce::String& noteId) {
+        const juce::SpinLock::ScopedLockType lock(patternLock);
+        patternNotes.erase(noteId);
+    }
+    void uiClearAll() {
+        const juce::SpinLock::ScopedLockType lock(patternLock);
+        patternNotes.clear();
+    }
 
     MidiInjector() : juce::AudioProcessor(BusesProperties()) {}
 
@@ -36,10 +77,14 @@ public:
     double getTailLengthSeconds() const override   { return 0.0; }
 
     void processBlock(juce::AudioBuffer<float>& buf, juce::MidiBuffer& midi) override {
-        collector.removeNextBlockOfMessages(midi, buf.getNumSamples());
+        const int numSamples = buf.getNumSamples();
+        collector.removeNextBlockOfMessages(midi, numSamples);
+        injectPattern(midi, numSamples);
     }
     void processBlock(juce::AudioBuffer<double>& buf, juce::MidiBuffer& midi) override {
-        collector.removeNextBlockOfMessages(midi, buf.getNumSamples());
+        const int numSamples = buf.getNumSamples();
+        collector.removeNextBlockOfMessages(midi, numSamples);
+        injectPattern(midi, numSamples);
     }
     using AudioProcessor::processBlock;
 
@@ -52,6 +97,50 @@ public:
     void changeProgramName(int, const juce::String&) override {}
     void getStateInformation(juce::MemoryBlock&) override  {}
     void setStateInformation(const void*, int) override    {}
+
+private:
+    // Walk the pattern and inject any noteOn/noteOff falling in this buffer.
+    // Called on the audio thread, real-time safe. Try-locks the pattern; on
+    // contention (rare — UI writes are user-clicks-per-second at most) skips
+    // this buffer's pattern events. The MidiMessageCollector path above
+    // still drains normally so live-played notes aren't affected.
+    void injectPattern(juce::MidiBuffer& midi, int numSamples) {
+        if (transport == nullptr) return;
+        if (!transport->getIsPlaying()) return;
+        const std::int64_t loopLen = transport->getLoopLengthSamples();
+        if (loopLen <= 0) return;
+
+        const std::int64_t bufferStart = transport->getBufferStartSample();
+        const std::int64_t bufferEnd   = bufferStart + numSamples;
+
+        const juce::SpinLock::ScopedTryLockType tryLock(patternLock);
+        if (!tryLock.isLocked()) return;
+
+        // bufferStart lives somewhere in [iterStart, iterStart + loopLen).
+        // Walk the current, previous, and next iterations so we catch:
+        //   * noteOffs from notes started in the previous iteration
+        //   * standard note onsets in the current iteration
+        //   * note onsets whose absolute time sits in the buffer tail after
+        //     a loop boundary crossing
+        const std::int64_t iterStart = (bufferStart / loopLen) * loopLen;
+        for (int iterOffset = -1; iterOffset <= 1; ++iterOffset) {
+            const std::int64_t base = iterStart + (std::int64_t) iterOffset * loopLen;
+            for (const auto& [_, note] : patternNotes) {
+                const std::int64_t onAbs  = base + note.atSample;
+                const std::int64_t offAbs = onAbs + note.durationSamples;
+                if (onAbs >= bufferStart && onAbs < bufferEnd) {
+                    midi.addEvent(juce::MidiMessage::noteOn(
+                        patternMidiChannel, note.pitch, note.velocity),
+                        (int) (onAbs - bufferStart));
+                }
+                if (offAbs >= bufferStart && offAbs < bufferEnd) {
+                    midi.addEvent(juce::MidiMessage::noteOff(
+                        patternMidiChannel, note.pitch),
+                        (int) (offAbs - bufferStart));
+                }
+            }
+        }
+    }
 };
 
 // Stereo passthrough processor used for mixer insert BUSES. Multiple source
@@ -105,25 +194,35 @@ public:
     void setStateInformation(const void*, int) override    {}
 };
 
-// Minimal play head so tempo-syncing plugins have a valid host tempo to read.
-// Without this, VST3s read 0/uninitialised BPM and behave weirdly (Serato
-// Sample slicers freeze at ~1 BPM). AU wrappers often fall back to 120 which
-// masks the bug, but VST3 does not — hence the format-dependent symptom.
+// Play head backed by the Transport. Plugins call getPosition() from the
+// audio thread every buffer to sync arps, delays, LFOs. We read atomic values
+// straight off the Transport — no lock, no allocation, safe from the audio
+// thread. VST3 in particular needs a real tempo (a 0/uninitialised BPM makes
+// Serato Sample and other slicers freeze); AU tends to fall back to 120.
 class NastyPlayHead : public juce::AudioPlayHead {
 public:
+    explicit NastyPlayHead(const Transport& t) : transport(t) {}
     juce::Optional<PositionInfo> getPosition() const override {
+        const auto sample   = transport.getCurrentSample();
+        const auto sr       = transport.getSampleRate();
+        const auto bpm      = transport.getTempoBpm();
+        const double seconds = sr > 0.0 ? (double) sample / sr : 0.0;
+        const double ppq     = seconds * (bpm / 60.0);
+
         PositionInfo info;
-        info.setBpm(120.0);
+        info.setBpm(bpm);
         info.setTimeSignature(TimeSignature{4, 4});
-        info.setIsPlaying(false);
+        info.setIsPlaying(transport.getIsPlaying());
         info.setIsRecording(false);
-        info.setIsLooping(false);
-        info.setTimeInSamples(0);
-        info.setTimeInSeconds(0.0);
-        info.setPpqPosition(0.0);
-        info.setPpqPositionOfLastBarStart(0.0);
+        info.setIsLooping(transport.getLoopLengthSamples() > 0);
+        info.setTimeInSamples(sample);
+        info.setTimeInSeconds(seconds);
+        info.setPpqPosition(ppq);
+        info.setPpqPositionOfLastBarStart(std::floor(ppq / 4.0) * 4.0);
         return info;
     }
+private:
+    const Transport& transport;
 };
 } // namespace
 
@@ -161,23 +260,77 @@ private:
 PluginHost::PluginHost() {
     juce::addDefaultFormatsToManager(formatManager);
 
-    // Publish a fixed 120 BPM play head so tempo-syncing plugins have valid
+    // Publish a Transport-backed play head so tempo-syncing plugins have live
     // host transport info. AudioProcessorGraph forwards it to child nodes.
-    playHead = std::make_unique<NastyPlayHead>();
+    playHead = std::make_unique<NastyPlayHead>(transport);
     graph.setPlayHead(playHead.get());
 
     // Add I/O nodes to the graph (input unused for MVP, output routes to speakers).
     graph.addNode(std::make_unique<Graph::AudioGraphIOProcessor>(
         Graph::AudioGraphIOProcessor::audioInputNode));
-    graph.addNode(std::make_unique<Graph::AudioGraphIOProcessor>(
+    auto outNode = graph.addNode(std::make_unique<Graph::AudioGraphIOProcessor>(
         Graph::AudioGraphIOProcessor::audioOutputNode));
     graph.addNode(std::make_unique<Graph::AudioGraphIOProcessor>(
         Graph::AudioGraphIOProcessor::midiInputNode));
     graph.addNode(std::make_unique<Graph::AudioGraphIOProcessor>(
         Graph::AudioGraphIOProcessor::midiOutputNode));
+
+    // Engine-hosted metronome, added to the graph up front. It reads the
+    // Transport directly in its audio callback, so its clicks are locked
+    // sample-accurate to whatever the pattern walker is playing.
+    metronomeNode = graph.addNode(std::make_unique<Metronome>(transport));
+    for (int ch = 0; ch < 2; ++ch) {
+        graph.addConnection({ { metronomeNode->nodeID, ch },
+                              { outNode->nodeID,       ch } });
+    }
 }
 
 PluginHost::~PluginHost() { stopAudio(); }
+
+// Audio callback wrapper — advances Transport around the graph render.
+// Called by JUCE on the audio thread at buffer rate. Real-time safe: no
+// allocations, no locks, only atomic loads/stores on the Transport.
+void PluginHost::audioDeviceIOCallbackWithContext(const float* const* inputChannelData,
+                                                  int numInputChannels,
+                                                  float* const* outputChannelData,
+                                                  int numOutputChannels,
+                                                  int numSamples,
+                                                  const juce::AudioIODeviceCallbackContext& context) {
+    transport.beginBuffer(numSamples);
+    juce::AudioProcessorPlayer::audioDeviceIOCallbackWithContext(
+        inputChannelData, numInputChannels,
+        outputChannelData, numOutputChannels,
+        numSamples, context);
+    transport.endBuffer();
+}
+
+void PluginHost::audioDeviceAboutToStart(juce::AudioIODevice* device) {
+    if (device != nullptr) {
+        transport.setSampleRate(device->getCurrentSampleRate());
+    }
+    juce::AudioProcessorPlayer::audioDeviceAboutToStart(device);
+}
+
+void PluginHost::audioDeviceStopped() {
+    juce::AudioProcessorPlayer::audioDeviceStopped();
+}
+
+void PluginHost::setMetronomeEnabled(bool v) {
+    if (!metronomeNode) return;
+    if (auto* m = dynamic_cast<Metronome*>(metronomeNode->getProcessor())) {
+        m->setEnabled(v);
+    }
+}
+
+// Add a MidiInjector to the graph and wire its transport pointer. Every
+// channel creation path funnels through here — pattern playback works the
+// same for plugin channels, GM channels, and drum-sample channels.
+juce::AudioProcessorGraph::Node::Ptr PluginHost::addInjectorNode() {
+    auto injector = std::make_unique<MidiInjector>();
+    injector->transport = &transport;
+    injector->patternMidiChannel = 1;
+    return graph.addNode(std::move(injector));
+}
 
 void PluginHost::scanDefaultPaths(const ScanProgress& onProgress) {
     // deadMansFile: if a plugin crashes mid-scan, its path gets written here
@@ -353,7 +506,7 @@ juce::String PluginHost::loadPlugin(const juce::String& channelId,
 
     unloadPlugin(channelId); // replace if exists
 
-    auto injectorNode = graph.addNode(std::make_unique<MidiInjector>());
+    auto injectorNode = addInjectorNode();
     auto pluginNode   = graph.addNode(std::move(instance));
 
     // MIDI: injector → plugin.
@@ -383,7 +536,7 @@ juce::String PluginHost::addGmChannel(const juce::String& channelId,
 
     unloadPlugin(channelId); // replace if exists
 
-    auto injectorNode = graph.addNode(std::make_unique<MidiInjector>());
+    auto injectorNode = addInjectorNode();
     auto gmNode       = graph.addNode(std::move(gm));
 
     // MIDI: injector → gm.
@@ -414,7 +567,7 @@ juce::String PluginHost::addDrumChannel(const juce::String& channelId,
 
     unloadPlugin(channelId);
 
-    auto injectorNode = graph.addNode(std::make_unique<MidiInjector>());
+    auto injectorNode = addInjectorNode();
     auto drumNode     = graph.addNode(std::move(drum));
 
     // MIDI: injector → drum.
@@ -773,6 +926,58 @@ void PluginHost::allNotesOff(const juce::String& channelId) {
             juce::MidiMessage::allNotesOff(it->second.midiChannel));
         inj->collector.addMessageToQueue(
             juce::MidiMessage::allSoundOff(it->second.midiChannel));
+    }
+}
+
+void PluginHost::panicAllChannels() {
+    std::lock_guard<std::mutex> lock(mutex);
+    for (auto& [chId, slot] : channels) {
+        auto node = graph.getNodeForId(slot.injectorNodeId);
+        if (!node) continue;
+        if (auto* inj = dynamic_cast<MidiInjector*>(node->getProcessor())) {
+            inj->collector.addMessageToQueue(
+                juce::MidiMessage::allNotesOff(slot.midiChannel));
+            inj->collector.addMessageToQueue(
+                juce::MidiMessage::allSoundOff(slot.midiChannel));
+        }
+    }
+}
+
+void PluginHost::setPatternNote(const juce::String& channelId,
+                                const juce::String& noteId,
+                                int pitch, float velocity,
+                                std::int64_t atSample,
+                                std::int64_t durationSamples) {
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = channels.find(channelId);
+    if (it == channels.end()) return;
+    auto node = graph.getNodeForId(it->second.injectorNodeId);
+    if (!node) return;
+    if (auto* inj = dynamic_cast<MidiInjector*>(node->getProcessor())) {
+        inj->uiSetNote(noteId, PatternNote{ pitch, velocity, atSample, durationSamples });
+    }
+}
+
+void PluginHost::clearPatternNote(const juce::String& channelId,
+                                  const juce::String& noteId) {
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = channels.find(channelId);
+    if (it == channels.end()) return;
+    auto node = graph.getNodeForId(it->second.injectorNodeId);
+    if (!node) return;
+    if (auto* inj = dynamic_cast<MidiInjector*>(node->getProcessor())) {
+        inj->uiClearNote(noteId);
+    }
+}
+
+void PluginHost::clearPattern(const juce::String& channelId) {
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = channels.find(channelId);
+    if (it == channels.end()) return;
+    auto node = graph.getNodeForId(it->second.injectorNodeId);
+    if (!node) return;
+    if (auto* inj = dynamic_cast<MidiInjector*>(node->getProcessor())) {
+        inj->uiClearAll();
     }
 }
 

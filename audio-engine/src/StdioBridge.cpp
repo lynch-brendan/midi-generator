@@ -7,6 +7,32 @@ namespace nasty {
 StdioBridge::StdioBridge(PluginHost& h) : host(h) {}
 StdioBridge::~StdioBridge() { stop(); }
 
+void StdioBridge::PositionBroadcaster::timerCallback() {
+    auto& tr = bridge.host.getTransport();
+    // Emit while playing; also emit on the tick after stop so the UI sees a
+    // final "resting" position instead of a stale intermediate value.
+    static thread_local bool lastPlaying = false;
+    const bool playing = tr.getIsPlaying();
+    if (playing || lastPlaying) {
+        bridge.sendEvent({
+            {"event",         juce::var("transport_position")},
+            {"currentSample", juce::var((double) tr.getCurrentSample())},
+            {"sampleRate",    juce::var(tr.getSampleRate())},
+            {"isPlaying",     juce::var(playing)},
+        });
+    }
+    lastPlaying = playing;
+}
+
+void StdioBridge::startPositionBroadcaster(int hz) {
+    if (!broadcaster) broadcaster = std::make_unique<PositionBroadcaster>(*this);
+    broadcaster->startTimerHz(hz);
+}
+
+void StdioBridge::stopPositionBroadcaster() {
+    if (broadcaster) broadcaster->stopTimer();
+}
+
 void StdioBridge::sendEvent(std::initializer_list<KV> pairs) {
     auto* o = new juce::DynamicObject();
     for (const auto& kv : pairs) o->setProperty(kv.key, kv.value);
@@ -216,6 +242,75 @@ juce::var StdioBridge::handleCommand(const juce::var& msg) {
         host.setChannelTarget(msg["channelId"].toString(),
                               msg["targetChannelId"].toString());
         return {};
+    }
+
+    if (cmd == "transport_play") {
+        host.getTransport().play();
+        return {};
+    }
+
+    if (cmd == "transport_stop") {
+        host.getTransport().stop();
+        // Flush any notes the pattern walker had already injected but whose
+        // note-off hadn't fired yet. Without this, stopping in the middle of
+        // a held pattern note leaves the plugin stuck.
+        host.panicAllChannels();
+        return {};
+    }
+
+    if (cmd == "transport_seek") {
+        host.getTransport().seek((juce::int64) (double) msg["sample"]);
+        return {};
+    }
+
+    if (cmd == "transport_set_tempo") {
+        host.getTransport().setTempo((double) msg["bpm"]);
+        return {};
+    }
+
+    if (cmd == "transport_set_loop_length") {
+        host.getTransport().setLoopLengthSamples(
+            (juce::int64) (double) msg["samples"]);
+        return {};
+    }
+
+    if (cmd == "metronome_set_enabled") {
+        host.setMetronomeEnabled((bool) msg["enabled"]);
+        return {};
+    }
+
+    if (cmd == "pattern_set_note") {
+        host.setPatternNote(
+            msg["channelId"].toString(),
+            msg["noteId"].toString(),
+            (int) msg["pitch"],
+            (float) (double) msg["velocity"],
+            (juce::int64) (double) msg["atSample"],
+            (juce::int64) (double) msg["durationSamples"]);
+        return {};
+    }
+
+    if (cmd == "pattern_clear_note") {
+        host.clearPatternNote(msg["channelId"].toString(),
+                              msg["noteId"].toString());
+        return {};
+    }
+
+    if (cmd == "pattern_clear") {
+        host.clearPattern(msg["channelId"].toString());
+        return {};
+    }
+
+    if (cmd == "transport_get") {
+        auto& tr = host.getTransport();
+        auto* o = new juce::DynamicObject();
+        o->setProperty("event",         "transport_state");
+        o->setProperty("currentSample", (double) tr.getCurrentSample());
+        o->setProperty("isPlaying",     tr.getIsPlaying());
+        o->setProperty("tempo",         tr.getTempoBpm());
+        o->setProperty("loopSamples",   (double) tr.getLoopLengthSamples());
+        o->setProperty("sampleRate",    tr.getSampleRate());
+        return juce::var(o);
     }
 
     if (cmd == "list_audio_devices") {
