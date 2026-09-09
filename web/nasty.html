@@ -326,20 +326,23 @@
 
   /* Channel Rack — floating, draggable, resizable window over the workspace */
   #channel-rack-window {
-    position: absolute;
-    top: 40px; left: 60px;
+    /* Fixed = viewport-anchored, so the rack can be dragged anywhere on
+       screen (over the browser dock, over the chat, over the toolbar) — not
+       trapped inside #center-area. */
+    position: fixed;
+    top: 100px; left: 260px;
     width: 920px; height: 380px;
     min-width: 480px; min-height: 200px;
     background: var(--panel);
     display: flex; flex-direction: column; overflow: hidden;
-    z-index: 30;
+    z-index: 60;
     border: 1px solid var(--line);
     border-radius: 2px;
     box-shadow: 0 8px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.06);
   }
   #channel-rack-window.collapsed { display: none; }
   #channel-rack-window .fl-title-bar { cursor: move; user-select: none; }
-  #channel-rack-window .cr-body { flex: 1; overflow: auto; min-height: 0; padding: 4px; }
+  #channel-rack-window .cr-body { flex: 1; overflow: auto; min-height: 0; padding: 4px; position: relative; }
   #channel-rack-window .cr-actions {
     padding: 4px 8px; background: var(--panel-2); border-top: 1px solid var(--line);
     display: flex; gap: 6px;
@@ -353,6 +356,14 @@
                               rgba(255,255,255,0.25) 60% 68%, transparent 68% 74%,
                               rgba(255,255,255,0.25) 74% 82%, transparent 82%);
   }
+  /* Edge resize handles — 5px on each side, invisible but cursor changes. */
+  #channel-rack-window .fl-edge {
+    position: absolute; z-index: 4;
+  }
+  #channel-rack-window .fl-edge.right  { top: 0; bottom: 0; right: 0; width: 5px; cursor: ew-resize; }
+  #channel-rack-window .fl-edge.left   { top: 0; bottom: 0; left: 0;  width: 5px; cursor: ew-resize; }
+  #channel-rack-window .fl-edge.bottom { left: 0; right: 0; bottom: 0; height: 5px; cursor: ns-resize; }
+  #channel-rack-window .fl-edge.top    { left: 0; right: 0; top: 0;    height: 5px; cursor: ns-resize; }
   #channel-rack-window.maximized {
     top: 40px !important; left: 40px !important;
     width: calc(100% - 80px) !important; height: calc(100% - 80px) !important;
@@ -395,18 +406,6 @@
     margin-right: 2px; vertical-align: middle;
   }
   .pattern-row .chs { display: flex; gap: 2px; margin-right: 4px; }
-  .fx-inline {
-    font-size: 10px; color: var(--dim); margin-left: 6px;
-  }
-  .fx-inline .fxchip {
-    display: inline-block; padding: 1px 4px; background: #1a1a1a;
-    border-radius: 2px; margin-right: 2px; color: var(--accent);
-  }
-  .fx-inline .fx-add {
-    display: inline-block; padding: 1px 4px; font-size: 10px;
-    background: transparent; border: 1px dashed var(--line-2); border-radius: 2px;
-    cursor: pointer;
-  }
 
   /* Step sequencer — FL-style chiclets, sticky left cluster, shared scroll */
   #channel-rack { padding-bottom: 0; }
@@ -436,13 +435,26 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .channel-row .ch-left .cvol { width: 48px; }
-  .channel-row .ch-left .ch-insert {
-    font-size: 9px; padding: 1px 3px; max-width: 62px;
+  .channel-row .ch-left .chnum {
+    display: inline-block; min-width: 22px; padding: 2px 5px;
+    background: #1a1d22; border: 1px solid #333; border-radius: 2px;
+    color: var(--accent); font-size: 11px; font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    text-align: center; cursor: ns-resize; user-select: none;
+  }
+  .channel-row .ch-left .chnum:hover {
+    color: #fff; border-color: var(--accent); background: #24272e;
   }
   .channel-row .ch-steps {
     display: flex; align-items: center;
     gap: 0; padding: 0 8px;
     height: 32px;
+  }
+  #rack-playhead {
+    position: absolute; top: 0; bottom: 0; width: 2px; left: 0;
+    background: var(--record); pointer-events: none; z-index: 3;
+    display: none; box-shadow: 0 0 4px var(--record);
+    will-change: transform;
   }
   .step-cell {
     width: 22px; height: 26px; flex-shrink: 0;
@@ -595,53 +607,198 @@
     font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
   }
   #mixer-header button { padding: 2px 8px; font-size: 10px; }
+  /* Mixer body — FL-shaped two-pane: strips left, slots right. */
+  #mixer-body {
+    flex: 1; display: flex; min-height: 0; background: var(--workspace);
+  }
   #mixer-strips {
-    flex: 1; display: flex; padding: 10px; gap: 6px;
+    flex: 1; display: flex; padding: 10px; gap: 4px;
     overflow-x: auto; overflow-y: hidden;
-    background: var(--workspace);
   }
   .mixer-strip {
-    width: 140px; flex-shrink: 0; height: 100%;
+    width: 62px; flex-shrink: 0; height: 100%;
     background: var(--panel-2); border: 1px solid var(--line);
-    border-radius: 8px; padding: 10px;
+    border-radius: 4px; padding: 6px 4px;
     display: flex; flex-direction: column; gap: 6px;
+    cursor: pointer; user-select: none; position: relative;
   }
   .mixer-strip.master { border-color: var(--accent); }
+  .mixer-strip.selected { border-color: var(--record); box-shadow: 0 0 0 1px var(--record) inset; }
   .mixer-strip .mname {
-    text-align: center; font-weight: 600; font-size: 12px;
-    padding: 4px; background: var(--bg); border-radius: 4px;
-    cursor: text;
+    text-align: center; font-weight: 600; font-size: 10px;
+    padding: 3px 2px; background: var(--bg); border-radius: 3px;
+    cursor: text; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .mixer-strip .mfx {
-    flex: 1; overflow-y: auto; min-height: 0;
-    display: flex; flex-direction: column; gap: 3px;
+  .mixer-strip .mstate {
+    display: flex; justify-content: center; gap: 3px; font-size: 9px;
   }
-  .mixer-strip .fxrow {
-    background: var(--bg); border-radius: 4px; padding: 4px 6px; font-size: 10px;
+  .mixer-strip .mstate .led {
+    width: 8px; height: 8px; border-radius: 50%; background: #1a1d22;
+    border: 1px solid #333;
   }
-  .mixer-strip .fxrow .fxhead {
-    display: flex; justify-content: space-between; align-items: center;
-    color: var(--accent); font-weight: 600;
+  .mixer-strip .mstate .led.on { background: #33d17a; box-shadow: 0 0 4px #33d17a; }
+  .mixer-strip .fxcount {
+    text-align: center; font-size: 9px; color: var(--dim);
+    padding: 2px; letter-spacing: 0.5px;
   }
-  .mixer-strip .fxrow .fxhead button { padding: 1px 4px; font-size: 9px; }
-  .mixer-strip .fxrow .knob { display: flex; gap: 4px; margin-top: 2px; align-items: center; }
-  .mixer-strip .fxrow .knob label { width: 40px; color: var(--dim); font-size: 10px; }
-  .mixer-strip .fxrow .knob input { flex: 1; margin: 0; padding: 0; }
-  .mixer-strip .addfx { width: 100%; font-size: 10px; }
-  .mixer-strip .send {
-    font-size: 10px; color: var(--dim); display: flex; align-items: center; gap: 4px;
-  }
-  .mixer-strip .send select { flex: 1; font-size: 10px; padding: 2px 4px; }
   .mixer-strip .faderwrap {
-    display: flex; align-items: center; justify-content: center; gap: 8px;
-    padding: 8px 0;
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    padding: 4px 0; min-height: 0;
   }
   .mixer-strip .fader {
     -webkit-appearance: slider-vertical; appearance: slider-vertical;
-    width: 22px; height: 120px;
+    width: 20px; height: 100%;
   }
-  .mixer-strip .db { font-size: 10px; color: var(--dim); width: 30px; text-align: right; }
-  .mixer-strip .del { font-size: 10px; padding: 2px 6px; align-self: center; }
+  .mixer-strip .db {
+    font-size: 9px; color: var(--dim); text-align: center;
+  }
+  .mixer-strip .colordot {
+    width: 8px; height: 3px; border-radius: 2px;
+    margin: 0 auto;
+  }
+  .mixer-strip .stripnum {
+    text-align: center; font-size: 9px; color: var(--dim);
+    font-variant-numeric: tabular-nums;
+    padding: 1px 0;
+  }
+
+  /* Slot panel — right side, FL-style effect chain for the selected strip. */
+  #mixer-slots-panel {
+    width: 260px; flex-shrink: 0; border-left: 1px solid var(--line);
+    background: var(--panel); display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  #mixer-slots-header {
+    padding: 6px 10px; border-bottom: 1px solid var(--line);
+    background: linear-gradient(var(--panel-2), var(--panel-3));
+    font-size: 11px; font-weight: 700; letter-spacing: 0.5px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  #mixer-slots-header .mshdr-name { color: var(--accent); }
+  #mixer-slots-list {
+    flex: 1; overflow-y: auto; padding: 4px 6px;
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .mslot {
+    display: flex; align-items: center; gap: 6px;
+    padding: 5px 8px; background: var(--panel-2); border: 1px solid transparent;
+    border-radius: 3px; font-size: 11px; min-height: 22px;
+    cursor: pointer;
+  }
+  .mslot:hover { background: var(--panel-3); }
+  .mslot.drop-over { border-color: var(--accent); background: var(--panel-3); }
+  .mslot .mslot-idx {
+    width: 14px; color: var(--dim); font-size: 10px; font-variant-numeric: tabular-nums;
+  }
+  .mslot .mslot-led {
+    width: 10px; height: 10px; border-radius: 50%; background: #1a1d22;
+    border: 1px solid #333; flex-shrink: 0;
+  }
+  .mslot.on .mslot-led { background: #33d17a; box-shadow: 0 0 4px #33d17a; }
+  .mslot.bypassed .mslot-led { background: #444; box-shadow: none; }
+  .mslot .mslot-name {
+    flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--text);
+  }
+  .mslot.empty .mslot-name { color: var(--dim); font-style: italic; }
+  .mslot.bypassed .mslot-name { color: var(--dim); text-decoration: line-through; }
+  .mslot .mslot-x {
+    color: var(--dim); font-size: 10px; padding: 0 4px;
+    opacity: 0; transition: opacity 0.1s;
+  }
+  .mslot:hover .mslot-x { opacity: 1; }
+  .mslot .mslot-x:hover { color: var(--record); }
+
+  #mixer-slots-hint {
+    padding: 8px 10px; font-size: 10px; color: var(--dim);
+    border-top: 1px solid var(--line); line-height: 1.4;
+  }
+
+  /* Floating slot picker — click a slot to pick a plugin, no drag needed.
+     Sized wide + dense like FL's "More plugins" cascade so the whole library
+     is visible at a glance. */
+  #slot-picker {
+    position: fixed; z-index: 300;
+    width: 560px; max-height: 500px;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 3px; box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  #slot-picker.hidden { display: none; }
+  #slot-picker-search {
+    padding: 4px 6px; border-bottom: 1px solid var(--line);
+    background: var(--panel-2);
+  }
+  #slot-picker-search input {
+    width: 100%; padding: 3px 5px; font-size: 10px;
+    background: var(--bg); border: 1px solid var(--line); color: var(--text);
+    border-radius: 2px;
+  }
+  #slot-picker-list {
+    flex: 1; overflow-y: auto; padding: 4px 6px;
+    columns: 3 160px; column-gap: 12px; column-fill: balance;
+  }
+  .sp-cat-group {
+    break-inside: avoid; -webkit-column-break-inside: avoid;
+    page-break-inside: avoid; margin-bottom: 6px; display: block;
+  }
+  .sp-cat {
+    padding: 2px 4px; font-size: 9px; color: var(--dim);
+    text-transform: uppercase; letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--line);
+    margin: 4px 0 2px 0;
+  }
+  .sp-item {
+    padding: 2px 6px; font-size: 10px; cursor: pointer;
+    color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .sp-item:hover { background: var(--panel-3); color: var(--accent); }
+  .sp-item .sp-mfr { display: none; } /* manufacturer hidden in dense mode */
+
+  /* Basics: friendly single-word buttons at the top so first-time users
+     don't have to hunt through 400 plugin names. Full library still below. */
+  .sp-essentials {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px;
+    padding: 4px; border-bottom: 1px solid var(--line);
+    column-span: all; -webkit-column-span: all;
+  }
+  .sp-ess-btn {
+    padding: 3px 4px; text-align: center; font-size: 9px; font-weight: 600;
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 2px; cursor: pointer; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .sp-ess-btn:hover { background: var(--accent); color: #000; border-color: var(--accent); }
+  .sp-ess-btn.disabled { opacity: 0.35; cursor: not-allowed; }
+  .sp-ess-btn.disabled:hover { background: var(--panel-2); color: var(--text); border-color: var(--line); }
+  #slot-picker-empty {
+    padding: 12px; font-size: 11px; color: var(--dim); text-align: center;
+  }
+
+  /* Instrument picker — same look as the slot picker (dense FL cascade),
+     but the content is GM sounds + VST/AU instruments instead of effects. */
+  #inst-picker {
+    position: fixed; z-index: 300;
+    width: 560px; max-height: 500px;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 3px; box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  #inst-picker.hidden { display: none; }
+  #inst-picker-search { padding: 4px 6px; border-bottom: 1px solid var(--line); background: var(--panel-2); }
+  #inst-picker-search input {
+    width: 100%; padding: 3px 5px; font-size: 10px;
+    background: var(--bg); border: 1px solid var(--line); color: var(--text);
+    border-radius: 2px;
+  }
+  #inst-picker-basics { }
+  #inst-picker-list {
+    flex: 1; overflow-y: auto; padding: 4px 6px;
+    columns: 3 160px; column-gap: 12px; column-fill: balance;
+  }
+  /* Reuse the .sp-* item styles from the slot picker so both pickers look
+     identical — matches FL's "one picker, two flavors" feel. */
 
   /* ====================================================================
      FL aesthetic overrides — muted blue-grey palette, subtle 3D buttons,
@@ -905,7 +1062,6 @@
     border-color: var(--accent);
   }
   .channel-row.armed { border-color: var(--arm); box-shadow: 0 0 0 1px var(--arm); }
-  .fx-inline .fxchip { background: #1e2229; color: #ffb8d0; }
 
   /* Chat dock */
   #chat-dock { background: var(--panel); border-left: 1px solid var(--line); }
@@ -1092,6 +1248,14 @@
     </div>
     <div class="tb-sep"></div>
     <div class="tb-group">
+      <label>Out:</label>
+      <select id="tb-audio-out" title="Audio output device" style="min-width:140px">
+        <option>Loading devices…</option>
+      </select>
+      <span id="tb-audio-rate" style="font-size:10px;color:var(--dim);margin-left:4px"></span>
+    </div>
+    <div class="tb-sep"></div>
+    <div class="tb-group">
       <button class="tb-btn" id="save-btn" title="Save">💾</button>
       <button class="tb-btn" id="load-btn" title="Load">📂</button>
       <button class="tb-btn" id="export-btn" title="Export WAV">⤓</button>
@@ -1110,7 +1274,9 @@
         Browser
         <div class="bh-tabs">
           <div class="bt on" data-btab="instruments">Inst</div>
-          <div class="bt" data-btab="plugins" title="VST/AU plugins on your system (desktop only)">Plugins</div>
+          <div class="bt" data-btab="gm" title="128 built-in instruments — piano, strings, brass, drums, everything">Sounds</div>
+          <div class="bt" data-btab="plugins" title="VST/AU plugins — bundled synths + your system plugins">Plugins</div>
+          <div class="bt" data-btab="free" title="Additional free synths — install with one click">Free</div>
           <div class="bt" data-btab="patterns">Pat</div>
         </div>
       </div>
@@ -1148,11 +1314,17 @@
           <button class="tb-max" id="cr-max" title="Maximize">▢</button>
           <button class="tb-close" data-cmd="toggle-rack" title="Hide">×</button>
         </div>
-        <div class="cr-body" id="channel-rack"></div>
+        <div class="cr-body" id="channel-rack">
+          <div id="rack-playhead"></div>
+        </div>
         <div class="cr-actions">
           <button id="add-channel-btn">+ Channel</button>
         </div>
         <div class="fl-resize" id="cr-resize" title="Resize"></div>
+        <div class="fl-edge right"  data-edge="right"></div>
+        <div class="fl-edge left"   data-edge="left"></div>
+        <div class="fl-edge bottom" data-edge="bottom"></div>
+        <div class="fl-edge top"    data-edge="top"></div>
       </div>
 
     </div>
@@ -1184,7 +1356,7 @@
       <div class="pr-title" id="pr-title">Piano Roll</div>
       <div class="pr-info" id="pr-info"></div>
       <div class="spacer"></div>
-      <label>Draw on:</label>
+      <label>Editing:</label>
       <select id="pr-active-channel"></select>
       <span style="font-size:11px;color:var(--dim);margin-left:10px" title="Z X C V B N M , . = white keys · S D G H J L ; = black keys · Q W E R T Y U I O = upper octave · [ / ] shift octave">⌨ type Z-M = piano · [/] octave</span>
       <button id="pr-close">Close</button>
@@ -1200,12 +1372,46 @@
   <div id="mixer-panel">
     <div id="mixer-header">
       <div style="font-weight:600">Mixer</div>
-      <button id="add-insert-btn">+ Insert</button>
       <div style="flex:1"></div>
       <button id="mixer-close">Close</button>
     </div>
-    <div id="mixer-strips"></div>
+    <div id="mixer-body">
+      <div id="mixer-strips"></div>
+      <div id="mixer-slots-panel">
+        <div id="mixer-slots-header">
+          <span>Effects: <span class="mshdr-name" id="mixer-slots-title">—</span></span>
+        </div>
+        <div id="mixer-slots-list"></div>
+        <div id="mixer-slots-hint">
+          Empty slot → click to add. Filled slot → click to open. LED bypasses, × removes.
+        </div>
+      </div>
+    </div>
   </div>
+</div>
+
+<!-- Warning modal when the audio device is stuck at a music-unfriendly rate. -->
+<div id="audio-rate-modal" class="modal hidden" style="z-index:400">
+  <div class="modal-panel" style="max-width:380px">
+    <p id="audio-rate-body" style="line-height:1.5;font-size:13px;margin:0"></p>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button id="audio-rate-dismiss">OK</button>
+    </div>
+  </div>
+</div>
+
+<!-- Floating popover to pick an effect plugin from a slot without dragging. -->
+<div id="slot-picker" class="hidden">
+  <div id="slot-picker-search"><input type="text" id="slot-picker-input" placeholder="Search plugins…" /></div>
+  <div id="slot-picker-basics"></div>
+  <div id="slot-picker-list"></div>
+</div>
+
+<!-- Floating popover to pick an instrument when adding a new channel. -->
+<div id="inst-picker" class="hidden">
+  <div id="inst-picker-search"><input type="text" id="inst-picker-input" placeholder="Search instruments…" /></div>
+  <div id="inst-picker-basics"></div>
+  <div id="inst-picker-list"></div>
 </div>
 
 <div id="add-channel-modal" class="modal hidden">
@@ -1241,8 +1447,8 @@
     <h3>New pattern</h3>
     <label>Name</label>
     <input id="new-pattern-name" type="text" value="Pattern" />
-    <label>Length (bars)</label>
-    <input id="new-pattern-length" type="number" value="2" min="1" max="64" />
+    <!-- Length grows automatically with the notes you add — no fixed size. -->
+    <input id="new-pattern-length" type="hidden" value="1" />
     <div class="row">
       <button id="new-pattern-cancel">Cancel</button>
       <button id="new-pattern-ok" style="background:var(--accent);border-color:var(--accent);color:white">Add</button>
@@ -1278,18 +1484,106 @@ const audioBuffers = new Map(); // clipId -> AudioBuffer
 // ============================================================
 // Persistence
 // ============================================================
+// Cache of the most recent plugin-state snapshot from the engine, keyed by
+// channelId → base64 blob. Refreshed on every persist() so the next save
+// picks up whatever the user has done inside plugins since last save.
+let latestPluginStates = {};
+// Same idea for effect plugin states: { channelId: { slotId: base64 } }.
+let latestEffectStates = {};
+let persistPendingPluginSnapshot = false;
+let persistPendingEffectSnapshot = false;
+
+function writeSongToStorage() {
+  try {
+    const stripped = JSON.parse(JSON.stringify(song));
+    for (const t of stripped.tracks) t.clips = t.clips.filter(c => c.type !== 'audio');
+    const attachEffectStates = (owner) => {
+      const key = owner.id === 'master' ? 'master_bus' : owner.id;
+      const perSlot = latestEffectStates[key];
+      if (perSlot && (owner.effects || []).some(e => e && e.type === 'plugin')) {
+        owner.effectStates = {};
+        for (const e of owner.effects) {
+          if (e && e.type === 'plugin' && perSlot[e.slotId]) {
+            owner.effectStates[e.slotId] = perSlot[e.slotId];
+          }
+        }
+      }
+    };
+    for (const c of stripped.channels) {
+      if (c.instrument === 'plugin' && latestPluginStates[c.id]) {
+        c.pluginState = latestPluginStates[c.id];
+      }
+      attachEffectStates(c);
+    }
+    for (const b of (stripped.mixer.busses || [])) attachEffectStates(b);
+    const masterIns = (stripped.mixer.inserts || []).find(i => i.id === 'master');
+    if (masterIns) attachEffectStates(masterIns);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      song: stripped, currentPatternId,
+    }));
+  } catch (e) {}
+}
+
+function anyPluginChannelExists() {
+  return song.channels.some(c => c.instrument === 'plugin' && c.pluginId);
+}
+function anyPluginEffectExists() {
+  const chHas = song.channels.some(c =>
+    (c.effects || []).some(e => e && e.type === 'plugin'));
+  if (chHas) return true;
+  const busHas = (song.mixer.busses || []).some(b =>
+    (b.effects || []).some(e => e && e.type === 'plugin'));
+  if (busHas) return true;
+  const master = (song.mixer.inserts || []).find(i => i.id === 'master');
+  return !!(master && (master.effects || []).some(e => e && e.type === 'plugin'));
+}
+
 function persist() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    try {
-      const stripped = JSON.parse(JSON.stringify(song));
-      for (const t of stripped.tracks) t.clips = t.clips.filter(c => c.type !== 'audio');
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        song: stripped, currentPatternId,
-      }));
-    } catch (e) {}
+    if (!(window.nasty && window.nasty.engine)) {
+      writeSongToStorage();
+      return;
+    }
+    persistPendingPluginSnapshot = anyPluginChannelExists();
+    persistPendingEffectSnapshot = anyPluginEffectExists();
+    if (persistPendingPluginSnapshot) {
+      window.nasty.engine.send({ cmd: 'snapshot_plugin_states' });
+    }
+    if (persistPendingEffectSnapshot) {
+      window.nasty.engine.send({ cmd: 'snapshot_effect_states' });
+    }
+    if (!persistPendingPluginSnapshot && !persistPendingEffectSnapshot) {
+      writeSongToStorage();
+    }
   }, 200);
 }
+
+function maybeWriteAfterSnapshots() {
+  if (persistPendingPluginSnapshot || persistPendingEffectSnapshot) return;
+  writeSongToStorage();
+}
+
+// Persist() only fires on Nasty-side state changes. When the user tweaks
+// a knob inside Serato or picks a preset in Surge XT Effects, that's not a
+// Nasty change — so we also poll every few seconds while plugin instruments
+// OR effects exist to capture inner state changes.
+setInterval(() => {
+  if (anyPluginChannelExists() || anyPluginEffectExists()) {
+    persist();
+  }
+}, 3000);
+
+// One last snapshot before the window unloads (Cmd+Q, close, refresh).
+window.addEventListener('beforeunload', () => {
+  if (!(window.nasty && window.nasty.engine)) return;
+  if (anyPluginChannelExists()) {
+    window.nasty.engine.send({ cmd: 'snapshot_plugin_states' });
+  }
+  if (anyPluginEffectExists()) {
+    window.nasty.engine.send({ cmd: 'snapshot_effect_states' });
+  }
+});
 function loadFromStorage() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -1308,7 +1602,7 @@ function ensureShape(s) {
   s.channels = s.channels || [];
   s.patterns = s.patterns || [];
   s.tracks = s.tracks || [];
-  s.mixer = s.mixer || { inserts: [] };
+  s.mixer = s.mixer || { inserts: [], busses: [] };
   s.mixer.inserts = s.mixer.inserts || [];
   if (!s.mixer.inserts.find(i => i.id === 'master')) {
     s.mixer.inserts.unshift({ id: 'master', name: 'Master', volume: 0.8, effects: [], sendToId: null });
@@ -1318,9 +1612,55 @@ function ensureShape(s) {
     ins.effects = ins.effects || [];
     if (ins.id !== 'master' && !ins.sendToId) ins.sendToId = 'master';
   });
+  // FL-style empty insert buses. Channels route to them via the numbered
+  // badge on the channel row. Each bus has its own effect chain and sends to
+  // master by default. Twenty is plenty for most sessions; more can be added
+  // via a follow-up if he wants.
+  s.mixer.busses = s.mixer.busses || [];
+  if (s.mixer.busses.length === 0) {
+    for (let i = 1; i <= 20; i++) {
+      s.mixer.busses.push({ id: 'bus_' + i, num: i, name: 'Insert ' + i, effects: [] });
+    }
+  }
+  s.mixer.busses.forEach(b => { b.effects = b.effects || []; });
   s.channels.forEach((c, i) => {
     c.volume = c.volume ?? 0.8;
-    c.effects = c.effects || [];
+    // Effects belonged to channels in older builds. Now they only live on
+    // mixer inserts (FL model). Migrate any leftover channel effects into
+    // the channel's target insert so audio still flows through them, then
+    // drop the channel-side effects array.
+    const legacy = (c.effects || []).filter(e => e && e.type === 'plugin');
+    if (legacy.length) {
+      const targetNum = c.targetInsertNum || 0;
+      if (targetNum > 0 && s.mixer.busses) {
+        const bus = s.mixer.busses.find(b => b.num === targetNum);
+        if (bus) {
+          bus.effects = bus.effects || [];
+          for (const fx of legacy) {
+            if (!bus.effects.find(e => e.slotId === fx.slotId)) bus.effects.push(fx);
+          }
+        }
+      }
+    }
+    c.effects = [];
+    // Mixer routing: 0 = master, 1..20 = insert bus. Persisted per channel.
+    c.targetInsertNum = c.targetInsertNum ?? 0;
+    // Migrate legacy drum channels (WebAudio 'drums' or engine GM drum bank)
+    // to the new sample-based drum player so pitch changes actually pitch
+    // the sample instead of switching to a different GM drum piece.
+    const legacyDrumMap = {
+      36: 'Kick.wav', 38: 'Snare.wav', 39: 'Clap.wav', 42: 'HiHat.wav', 46: 'HiHat.wav',
+    };
+    if (c.instrument === 'drums'
+        || (c.instrument === 'plugin' && c.pluginId === 'gm-128')) {
+      const sample = legacyDrumMap[c.drumPitch] || 'Kick.wav';
+      c.instrument = 'plugin';
+      c.pluginId = 'drum:' + sample;
+      c.drumSample = sample;
+      c.drumRootNote = 60;
+      c.drumPitch = null; // no longer meaningful — the pitch IS the pitch
+      delete c.gmProgram;
+    }
     c.muted = !!c.muted;
     c.solo = !!c.solo;
     c.armed = !!c.armed;
@@ -1331,9 +1671,9 @@ function ensureShape(s) {
     if (c.instrument === 'drums' && c.drumPitch == null) c.drumPitch = 36;
   });
   s.patterns.forEach((p, i) => {
-    p.lengthBars = p.lengthBars || 2;
     p.notes = p.notes || [];
     p.color = p.color || PALETTE[i % PALETTE.length];
+    recomputePatternLength(p); // fit-to-notes on load
   });
   s.tracks.forEach(t => {
     t.muted = !!t.muted;
@@ -1352,24 +1692,34 @@ function ensureDefaults() {
       song.mixer.inserts.push({ id: 'ins_' + i, name: 'Insert ' + i, volume: 0.8, effects: [], sendToId: 'master' });
     }
   }
+  // 20 empty FL-style insert bus strips — where all effect chains live. If
+  // this is a fresh song (post-Cmd+N), the mixer.busses array is empty and
+  // needs seeding, otherwise the Mixer window would only show Master.
+  song.mixer.busses = song.mixer.busses || [];
+  if (song.mixer.busses.length === 0) {
+    for (let i = 1; i <= 20; i++) {
+      song.mixer.busses.push({ id: 'bus_' + i, num: i, name: 'Insert ' + i, effects: [] });
+    }
+  }
   if (!song.channels.length) {
+    // Default song = 4 sample-based drum channels. Each auto-routes to its
+    // own mixer insert (Channel 1 → Insert 1, etc.) like FL — the badge in
+    // the rack shows the insert number, and the corresponding mixer strip
+    // holds any effects on that channel.
     const defs = [
-      { id: 'ch_kick',    name: 'Kick',     inst: 'drums', drumPitch: 36 },
-      { id: 'ch_snare',   name: 'Snare',    inst: 'drums', drumPitch: 38 },
-      { id: 'ch_clap',    name: 'Clap',     inst: 'drums', drumPitch: 39 },
-      { id: 'ch_hh',      name: 'Hi-Hat',   inst: 'drums', drumPitch: 42 },
-      { id: 'ch_hho',     name: 'Open Hat', inst: 'drums', drumPitch: 46 },
-      { id: 'ch_bass',    name: 'Bass',     inst: 'bass' },
-      { id: 'ch_lead',    name: 'Lead',     inst: 'lead' },
-      { id: 'ch_piano',   name: 'Piano',    inst: 'piano' },
-      { id: 'ch_pad',     name: 'Pad',      inst: 'pad' },
+      { id: 'ch_kick',  name: 'Kick',  sample: 'Kick.wav'  },
+      { id: 'ch_clap',  name: 'Clap',  sample: 'Clap.wav'  },
+      { id: 'ch_hh',    name: 'HiHat', sample: 'HiHat.wav' },
+      { id: 'ch_snare', name: 'Snare', sample: 'Snare.wav' },
     ];
     defs.forEach((d, i) => {
       song.channels.push({
-        id: d.id, name: d.name, instrument: d.inst,
-        drumPitch: d.drumPitch ?? null,
+        id: d.id, name: d.name,
+        instrument: 'plugin', pluginId: 'drum:' + d.sample,
+        drumSample: d.sample, drumRootNote: 60,
         volume: 0.8, effects: [], muted: false, solo: false, armed: false,
         color: PALETTE[i % PALETTE.length], insertId: 'master',
+        targetInsertNum: i + 1,
       });
     });
   } else {
@@ -1458,47 +1808,12 @@ function makeImpulse(actx, decay) {
   return buf;
 }
 
-function applyFxTo(actx, prevNode, effect) {
-  const p = effect.params || {};
-  if (effect.type === 'compressor') {
-    const c = actx.createDynamicsCompressor();
-    c.threshold.value = p.threshold ?? -20;
-    c.ratio.value = p.ratio ?? 4;
-    c.attack.value = p.attack ?? 0.005;
-    c.release.value = p.release ?? 0.1;
-    prevNode.connect(c); return c;
-  } else if (effect.type === 'delay') {
-    const time = clamp(p.time ?? 0.25, 0.01, 1);
-    const feedback = clamp(p.feedback ?? 0.35, 0, 0.85);
-    const wetAmt = clamp(p.wet ?? 0.4, 0, 1);
-    const d = actx.createDelay(2); d.delayTime.value = time;
-    const fb = actx.createGain(); fb.gain.value = feedback;
-    const wet = actx.createGain(); wet.gain.value = wetAmt;
-    const dry = actx.createGain(); dry.gain.value = 1.0;
-    const merge = actx.createGain();
-    prevNode.connect(dry); dry.connect(merge);
-    prevNode.connect(d); d.connect(fb); fb.connect(d); d.connect(wet); wet.connect(merge);
-    return merge;
-  } else if (effect.type === 'reverb') {
-    const decay = clamp(p.decay ?? 2.0, 0.2, 5);
-    const wetAmt = clamp(p.wet ?? 0.3, 0, 1);
-    const conv = actx.createConvolver(); conv.buffer = makeImpulse(actx, decay);
-    const wet = actx.createGain(); wet.gain.value = wetAmt;
-    const dry = actx.createGain(); dry.gain.value = 1.0;
-    const merge = actx.createGain();
-    prevNode.connect(dry); dry.connect(merge);
-    prevNode.connect(conv); conv.connect(wet); wet.connect(merge);
-    return merge;
-  }
-  return prevNode;
-}
-
 function buildChannelChain(actx, dest, channel) {
+  // Effects are hosted in the C++ audio engine (real VST/AU chain on the
+  // channel), so WebAudio just wires straight through the volume gain.
   const input = actx.createGain();
   input.gain.value = channel.volume ?? 0.8;
-  let node = input;
-  for (const fx of (channel.effects || [])) node = applyFxTo(actx, node, fx);
-  node.connect(dest);
+  input.connect(dest);
   return input;
 }
 
@@ -1724,19 +2039,21 @@ function playSong() {
   // In PAT mode we're looping the pattern, not scrubbing the playlist — hide
   // the playlist playhead so it doesn't confusingly march across the timeline.
   document.getElementById('playhead').style.display = song.transportMode === 'pat' ? 'none' : 'block';
-  if (song.transportMode !== 'pat') animatePlayhead();
+  // Always animate — the tick loop drives both the playlist playhead
+  // (SONG mode) and the transport BAR:BEAT:TICK clock + channel-rack
+  // playhead (PAT mode).
+  animatePlayhead();
 }
 
-function scheduleSong(actx, masterOut, tStart, sink) {
-  // Build insert chains: input gain → fx → volume gain (output).
+function scheduleSong(actx, masterOut, tStart, sink, notBefore) {
+  // Insert chains: input gain → volume gain. Effects live in the C++ engine
+  // (per-channel VST/AU chains), not WebAudio.
   const insertIn = {}, insertOut = {};
   for (const ins of song.mixer.inserts) {
     const input = actx.createGain();
-    let node = input;
-    for (const fx of (ins.effects || [])) node = applyFxTo(actx, node, fx);
     const vol = actx.createGain();
     vol.gain.value = ins.volume ?? 0.8;
-    node.connect(vol);
+    input.connect(vol);
     insertIn[ins.id] = input;
     insertOut[ins.id] = vol;
   }
@@ -1787,6 +2104,7 @@ function scheduleSong(actx, masterOut, tStart, sink) {
           const effectiveDur = Math.min(localEnd, clipLenBeats) - localStart;
           if (effectiveDur <= 0) continue;
           const noteT = t + beatsToSec(localStart);
+          if (notBefore != null && noteT < notBefore) continue; // skip past notes on live re-schedule
           if (channel.instrument === 'plugin') {
             if (window.nasty && window.nasty.engine) {
               const delayMs = Math.max(0, (noteT - actx.currentTime) * 1000);
@@ -1817,8 +2135,12 @@ function scheduleSong(actx, masterOut, tStart, sink) {
 function stopSong() {
   stopAllSources();
   document.getElementById('playhead').style.display = 'none';
-  if (animationFrame) cancelAnimationFrame(animationFrame);
+  if (animationFrame) { cancelAnimationFrame(animationFrame); animationFrame = null; }
   if (midiRecording) stopMidiRecording();
+  // Reset visual transports to bar 1 so the next play starts clean.
+  const rackPh = document.getElementById('rack-playhead');
+  if (rackPh) rackPh.style.display = 'none';
+  if (typeof updateTimeLcd === 'function') updateTimeLcd(0);
 }
 
 function animatePlayhead() {
@@ -1828,10 +2150,46 @@ function animatePlayhead() {
     const elapsed = ctx.currentTime - playStartTime;
     if (elapsed < 0) { animationFrame = requestAnimationFrame(tick); return; }
     if (elapsed > songDurationSec + 0.3 && !midiRecording) { stopSong(); return; }
-    const displayElapsed = (loopEnabled && singleLoopDurSec > 0)
-      ? (elapsed % singleLoopDurSec) : elapsed;
+    // Query rack-playhead fresh every tick — the channel rack re-renders
+    // whenever a note is added, which replaces the playhead node. Grabbing
+    // it once at the top would leave us updating a stale/detached element.
+    const rackPh = document.getElementById('rack-playhead');
+    const isPat = song.transportMode === 'pat';
+    // In PAT mode, wrap on the current pattern's length so the clock +
+    // rack playhead loop with it. In SONG mode, use songDurationSec / any
+    // global loop.
+    let loopSec = singleLoopDurSec;
+    if (isPat) {
+      const pat = song.patterns.find(p => p.id === currentPatternId);
+      const bars = (pat && pat.lengthBars) ? pat.lengthBars : 1;
+      loopSec = beatsToSec(bars * 4);
+    }
+    const displayElapsed = loopSec > 0 ? (elapsed % loopSec) : elapsed;
     const barsElapsed = (displayElapsed * song.bpm / 60) / 4;
-    ph.style.left = (barsElapsed * BAR_WIDTH) + 'px';
+    // Playlist playhead only in SONG mode.
+    if (!isPat) ph.style.left = (barsElapsed * BAR_WIDTH) + 'px';
+    // Channel-rack playhead in PAT mode. Positioned within the step grid:
+    // starts at the end of the sticky left cluster (340px) + steps padding
+    // (8px) = 348px, then travels across step_width * total_steps.
+    if (rackPh) {
+      if (isPat) {
+        rackPh.style.display = 'block';
+        const STEP_PX = 24;              // 22px cell + 2px margin
+        const LEFT_START = 348;
+        const pat = song.patterns.find(p => p.id === currentPatternId);
+        const bars = (pat && pat.lengthBars) ? pat.lengthBars : 1;
+        const totalPx = bars * 16 * STEP_PX;
+        const totalBeats = bars * 4;
+        const frac = totalBeats > 0 ? (displayElapsed * song.bpm / 60) / totalBeats : 0;
+        // GPU-accelerated transform (translate3d) instead of `left` — the
+        // browser can move the layer without re-laying-out the parent, and
+        // frames stay smooth even when the rack DOM is mutating.
+        const x = LEFT_START + frac * totalPx;
+        rackPh.style.transform = `translate3d(${x}px, 0, 0)`;
+      } else {
+        rackPh.style.display = 'none';
+      }
+    }
     if (typeof updateTimeLcd === 'function') updateTimeLcd(barsElapsed);
     animationFrame = requestAnimationFrame(tick);
   };
@@ -1846,6 +2204,7 @@ function previewNote(channelOrInstrument, pitch, velocity = 0.8, duration = 0.4)
 
   // Plugin channels play through the native audio engine (desktop only).
   if (ch && ch.instrument === 'plugin' && window.nasty && window.nasty.engine) {
+    console.error('[previewNote] sending note_on ch=', ch.id, 'pitch=', pitch);
     window.nasty.engine.send({ cmd: 'note_on', channelId: ch.id, pitch, velocity });
     const id = setTimeout(() => {
       window.nasty.engine.send({ cmd: 'note_off', channelId: ch.id, pitch });
@@ -1860,6 +2219,64 @@ function previewNote(channelOrInstrument, pitch, velocity = 0.8, duration = 0.4)
   const gain = ctx.createGain(); gain.gain.value = 0.8;
   gain.connect(masterGain);
   playNote(ctx, gain, instrument, pitch, velocity, ctx.currentTime + 0.01, duration, null);
+}
+
+// Hold-to-sustain voice for built-in synths (non-drum, non-plugin channels).
+// Mirrors playNote's per-instrument voice choice but leaves the envelope
+// holding at peak; stopSustainedNote() applies the release ramp on keyup.
+function startSustainedNote(ch, pitch, velocity = 0.8) {
+  const instrument = ch.instrument;
+  if (instrument === 'drums' || instrument === 'plugin') return null;
+  initAudio();
+  if (ctx.state === 'suspended') ctx.resume();
+
+  const outGain = ctx.createGain(); outGain.gain.value = 0.8;
+  outGain.connect(masterGain);
+
+  const osc = ctx.createOscillator();
+  const voiceGain = ctx.createGain();
+  let osc2 = null;
+  let attack = 0.005, release = 0.1, sustainLevel = 0.3;
+  if (instrument === 'piano') {
+    osc.type = 'triangle'; attack = 0.003; release = 0.25; sustainLevel = 0.35;
+  } else if (instrument === 'bass') {
+    osc.type = 'sine'; attack = 0.005; release = 0.1; sustainLevel = 0.55;
+    osc2 = ctx.createOscillator(); osc2.type = 'triangle';
+    osc2.frequency.value = pitchToFreq(pitch);
+  } else if (instrument === 'lead') {
+    osc.type = 'sawtooth'; attack = 0.01; release = 0.15; sustainLevel = 0.28;
+  } else if (instrument === 'pad') {
+    osc.type = 'sine'; attack = 0.3; release = 0.6; sustainLevel = 0.25;
+    osc2 = ctx.createOscillator(); osc2.type = 'triangle';
+    osc2.frequency.value = pitchToFreq(pitch) * 1.005;
+  }
+  osc.frequency.value = pitchToFreq(pitch);
+  const peak = Math.max(0.001, velocity * sustainLevel);
+  const t = ctx.currentTime;
+  voiceGain.gain.setValueAtTime(0.0001, t);
+  voiceGain.gain.exponentialRampToValueAtTime(peak, t + attack);
+  osc.connect(voiceGain);
+  if (osc2) {
+    const g2 = ctx.createGain(); g2.gain.value = 0.5;
+    osc2.connect(g2); g2.connect(voiceGain);
+    osc2.start(t);
+  }
+  voiceGain.connect(outGain);
+  osc.start(t);
+
+  return { osc, osc2, voiceGain, release };
+}
+
+function stopSustainedNote(handle) {
+  if (!handle) return;
+  const { osc, osc2, voiceGain, release } = handle;
+  const now = ctx.currentTime;
+  const cur = Math.max(0.001, voiceGain.gain.value);
+  voiceGain.gain.cancelScheduledValues(now);
+  voiceGain.gain.setValueAtTime(cur, now);
+  voiceGain.gain.exponentialRampToValueAtTime(0.0001, now + release);
+  try { osc.stop(now + release + 0.05); } catch (_) {}
+  if (osc2) { try { osc2.stop(now + release + 0.05); } catch (_) {} }
 }
 
 // Pending setTimeout IDs for note_on/note_off dispatched to the native engine.
@@ -1991,18 +2408,10 @@ function applyToolCalls(calls) {
       } else if (name === 'set_channel_volume') {
         const c = song.channels.find(c => c.id === input.channel_id);
         if (c) { c.volume = input.volume; summaries.push(`vol ${c.name} → ${input.volume}`); }
-      } else if (name === 'apply_effect') {
-        const c = song.channels.find(c => c.id === input.channel_id);
-        if (c) {
-          const existing = c.effects.find(e => e.type === input.effect);
-          if (existing) existing.params = { ...(existing.params||{}), ...(input.params||{}) };
-          else c.effects.push({ type: input.effect, params: input.params || {} });
-          summaries.push(`fx: ${input.effect} → ${c.name}`);
-        }
-      } else if (name === 'remove_effect') {
-        const c = song.channels.find(c => c.id === input.channel_id);
-        if (c) { c.effects = c.effects.filter(e => e.type !== input.effect);
-          summaries.push(`− fx ${input.effect} from ${c.name}`); }
+      // (removed) legacy apply_effect / remove_effect tools referenced the
+      // old 3-effect WebAudio system. Effects now live in the mixer via
+      // Surge XT Effects / AU plugins — Claude can add them via the mixer,
+      // not with these ad-hoc tools.
       } else if (name === 'create_pattern') {
         if (!song.patterns.find(p => p.id === input.id)) {
           const idx = song.patterns.length;
@@ -2190,11 +2599,29 @@ function renderPlaylist() {
   }
 }
 
+// Auto-grow a pattern's length to the smallest whole bar that fits every
+// note. Minimum 1 bar. Called after any note mutation so the pattern
+// "grows as you build it" — no fixed 2-bar default like a normal DAW.
+function recomputePatternLength(p) {
+  if (!p) return;
+  const beats = 4; // 4 beats per bar
+  let maxEnd = 0;
+  for (const n of (p.notes || [])) {
+    const end = (n.startBeat || 0) + (n.durationBeats || 0);
+    if (end > maxEnd) maxEnd = end;
+  }
+  p.lengthBars = Math.max(1, Math.ceil(maxEnd / beats));
+}
+
 // Step sequencer helpers
 const STEP_BEATS = 0.25; // 1/16 note = 0.25 beats
 function stepPitchFor(channel) {
+  // Sample-based drum channels: play the sample at its root note (C5=60) so
+  // the step triggers the natural pitch. Legacy channels fall through.
+  if (channel.drumRootNote != null) return channel.drumRootNote;
+  if (channel.drumPitch != null) return channel.drumPitch;
   if (channel.instrument === 'drums') return channel.drumPitch ?? 36;
-  return 60; // C5 default for melodic step-sequencer taps
+  return 60;
 }
 function findStepNote(pattern, channel, stepIdx) {
   const pitch = stepPitchFor(channel);
@@ -2218,48 +2645,63 @@ function toggleStepNote(pattern, channel, stepIdx) {
       velocity: 0.8,
     });
   }
+  recomputePatternLength(pattern);
+  refreshLoopIfPlaying();
+}
+
+// Live re-schedule during looping. Debounced so rapid step clicks don't
+// stall the playhead — the reschedule loop touches N iterations × M notes
+// and running it on every click was dropping animation frames.
+let _refreshDeadline = 0;
+function refreshLoopIfPlaying() {
+  if (song.transportMode !== 'pat') return;
+  if (!animationFrame || !ctx) return;
+  const now = performance.now();
+  if (now < _refreshDeadline) return;
+  _refreshDeadline = now + 150;
+  const singleDur = singleLoopDurSec;
+  if (singleDur <= 0) return;
+  stopAllSources();
+  const shouldLoop = loopEnabled || song.transportMode === 'pat';
+  const N = shouldLoop ? Math.min(100, Math.max(2, Math.ceil(600 / singleDur))) : 1;
+  const notBefore = ctx.currentTime + 0.02;
+  for (let i = 0; i < N; i++) {
+    scheduleSong(ctx, masterGain, playStartTime + i * singleDur, scheduledSources, notBefore);
+  }
+  songDurationSec = singleDur * N;
 }
 
 function renderChannelRack() {
   const rack = document.getElementById('channel-rack');
-  rack.innerHTML = '';
+  // Preserve the playhead div across re-renders so it doesn't get wiped
+  // when we clear the rack innerHTML on every update.
+  rack.innerHTML = '<div id="rack-playhead"></div>';
   if (!song.channels.length) {
     rack.innerHTML = '<div style="color:var(--dim);padding:12px;font-size:12px">No channels. Click + Channel.</div>';
     return;
   }
   const pattern = song.patterns.find(p => p.id === currentPatternId);
-  const stepCount = pattern ? pattern.lengthBars * 16 : 16;
+  // Always show a comfortable canvas — even a 1-bar pattern gets 4 bars of
+  // step cells visible so the user can keep extending to the right.
+  const stepCount = pattern ? Math.max(pattern.lengthBars * 16, 64) : 64;
 
   for (const ch of song.channels) {
     const row = document.createElement('div');
     row.className = 'channel-row' + (ch.armed ? ' armed' : '');
     row.dataset.chId = ch.id;
     row.title = 'Click name to select — steps program the current pattern';
-    const fxHtml = (ch.effects || []).map(fx =>
-      `<span class="fxchip" data-ch="${ch.id}" data-fx="${fx.type}" title="Click to remove">${fx.type}</span>`
-    ).join('');
-    const insertOpts = song.mixer.inserts.map(ins =>
-      `<option value="${ins.id}" ${ins.id === ch.insertId ? 'selected' : ''}>${escapeHtml(ins.name)}</option>`
-    ).join('');
 
-    // Left cluster: name + controls
+    // Left cluster: name + controls. Effects now live on the Mixer, not on
+    // the channel rack — one place to think about them, like FL.
+    const targetNum = ch.targetInsertNum || 0;
+    const targetLabel = targetNum === 0 ? 'M' : String(targetNum);
     const left = document.createElement('div');
     left.className = 'ch-left';
     left.innerHTML = `
+      <span class="chnum" title="Route: ${targetNum === 0 ? 'Master' : 'Insert ' + targetNum} — drag to change, click to open in mixer">${targetLabel}</span>
       <span class="swatch" style="background:${ch.color}"></span>
       <span class="cname" title="${escapeHtml(ch.instrument)}${ch.drumPitch != null ? ' · pitch ' + ch.drumPitch : ''}">${escapeHtml(ch.name)}</span>
       <input class="cvol" type="range" min="0" max="1" step="0.01" value="${ch.volume}" data-ch="${ch.id}" title="volume" />
-      <span class="fx-inline">${fxHtml}
-        <select class="fx-add-sel" data-ch="${ch.id}">
-          <option value="">+ fx</option>
-          <option value="reverb">reverb</option>
-          <option value="delay">delay</option>
-          <option value="compressor">comp</option>
-        </select>
-      </span>
-      <select class="ch-insert" data-ch="${ch.id}" title="route to mixer insert">
-        ${insertOpts}
-      </select>
       <span class="cbtns">
         ${ch.instrument === 'plugin' ? `<button data-a="gui" data-ch="${ch.id}" title="Open plugin window">GUI</button>` : ''}
         <button class="${ch.muted?'on-mute':''}" data-a="mute" data-ch="${ch.id}">M</button>
@@ -2268,6 +2710,7 @@ function renderChannelRack() {
         <button data-a="del" data-ch="${ch.id}" title="Delete channel">✕</button>
       </span>
     `;
+    wireChannelNumRouting(left.querySelector('.chnum'), ch);
     row.appendChild(left);
 
     // Step grid
@@ -2324,21 +2767,18 @@ function renderChannelRack() {
       const ch = song.channels.find(c => c.id === chId);
       if (!ch) return;
       toggleStepNote(pattern, ch, idx);
-      // Preview the sound so it feels responsive
-      if (!cell.classList.contains('on')) previewNote(ch, stepPitchFor(ch), 0.7, 0.15);
-      render();
+      // Update ONLY the clicked cell + persist. A full render() on every
+      // click stalls the animation frame and jitters the playhead — we
+      // don't need to redraw anything else, just this one class flip.
+      const isOn = !!findStepNote(pattern, ch, idx);
+      cell.classList.toggle('on', isOn);
+      if (isOn) cell.style.setProperty('--cell-color', ch.color);
+      persist();
     });
   });
 
   rack.querySelectorAll('.cvol').forEach(i => i.addEventListener('input', onChannelVol));
   rack.querySelectorAll('.cbtns button').forEach(b => b.addEventListener('click', onChannelBtn));
-  rack.querySelectorAll('.fx-add-sel').forEach(s => s.addEventListener('change', onChannelAddFx));
-  rack.querySelectorAll('.fxchip').forEach(c => c.addEventListener('click', onChannelRemoveFx));
-  rack.querySelectorAll('.ch-insert').forEach(s => s.addEventListener('change', (e) => {
-    const cid = e.currentTarget.dataset.ch;
-    const ch = song.channels.find(c => c.id === cid);
-    if (ch) { ch.insertId = e.currentTarget.value; persist(); }
-  }));
 }
 
 function renderPatternList() {
@@ -2388,121 +2828,776 @@ function volToDb(v) {
   return (20 * Math.log10(v)).toFixed(1);
 }
 
+// FL-style mixer. One strip per channel plus a Master strip.  Click a strip
+// to select — its 10 effect slots show in the right panel. Drag a plugin
+// from Browser → Effects into a slot to insert it in the channel's audio
+// chain (instrument → eff1 → eff2 → ... → master).
+const MIXER_SLOT_COUNT = 10;
+let selectedStripId = null;
+
+function pluginEffectsCount(ch) {
+  return (ch.effects || []).filter(e => e && e.type === 'plugin').length;
+}
+
 function renderMixer() {
   const strips = document.getElementById('mixer-strips');
   strips.innerHTML = '';
-  for (const ins of song.mixer.inserts) {
-    const strip = document.createElement('div');
-    strip.className = 'mixer-strip' + (ins.id === 'master' ? ' master' : '');
-    const fxHtml = (ins.effects || []).map(fx => renderInsertFx(ins, fx)).join('');
-    const isMaster = ins.id === 'master';
-    const sendOpts = isMaster ? '' : song.mixer.inserts
-      .filter(i => i.id !== ins.id)
-      .map(i => `<option value="${i.id}" ${i.id === ins.sendToId ? 'selected' : ''}>${escapeHtml(i.name)}</option>`)
-      .join('');
-    strip.innerHTML = `
-      <div class="mname" contenteditable="${!isMaster}" data-ins="${ins.id}">${escapeHtml(ins.name)}</div>
-      <div class="mfx">${fxHtml}</div>
-      <select class="addfx" data-ins="${ins.id}">
-        <option value="">+ fx</option>
-        <option value="reverb">reverb</option>
-        <option value="delay">delay</option>
-        <option value="compressor">compressor</option>
-      </select>
-      <div class="faderwrap">
-        <input class="fader" type="range" min="0" max="1.5" step="0.01" value="${ins.volume}" data-ins="${ins.id}" />
-        <div class="db">${volToDb(ins.volume)} dB</div>
-      </div>
-      ${isMaster ? '' : `<div class="send">→ <select data-ins="${ins.id}" class="sendto">${sendOpts}</select></div>`}
-      ${isMaster ? '' : `<button class="del" data-ins="${ins.id}">✕ delete</button>`}
-    `;
-    strips.appendChild(strip);
+
+  // Master strip first — hosts nothing yet, but keeps FL's visual anchor.
+  const master = song.mixer.inserts.find(i => i.id === 'master') || {
+    id: 'master', name: 'Master', volume: 0.8, effects: [],
+  };
+  strips.appendChild(buildStrip({
+    id: 'master', name: 'Master', volume: master.volume,
+    color: null, kind: 'master', fxCount: 0,
+    muted: false, solo: false,
+  }));
+
+  // Insert bus strips (Insert 1..20). This is where all effects live.
+  // Rack channels route into them via the number badge. Effects on an
+  // insert apply to every channel routed to it — FL model.
+  //
+  // Show the color-dot of any channel currently routed to each insert, so
+  // the mixer reads at a glance ("this insert has Clap in it").
+  const channelsByInsert = new Map();
+  for (const c of song.channels) {
+    const n = c.targetInsertNum || 0;
+    if (!n) continue;
+    const arr = channelsByInsert.get(n) || [];
+    arr.push(c);
+    channelsByInsert.set(n, arr);
   }
-  strips.querySelectorAll('.fader').forEach(f => f.addEventListener('input', onInsertFader));
-  strips.querySelectorAll('.addfx').forEach(s => s.addEventListener('change', onInsertAddFx));
-  strips.querySelectorAll('.fxrow .fx-remove').forEach(b => b.addEventListener('click', onInsertRemoveFx));
-  strips.querySelectorAll('.fxrow .fx-knob').forEach(k => k.addEventListener('input', onInsertFxKnob));
-  strips.querySelectorAll('.sendto').forEach(s => s.addEventListener('change', onInsertSendTo));
-  strips.querySelectorAll('.del').forEach(b => b.addEventListener('click', onInsertDelete));
-  strips.querySelectorAll('.mname').forEach(n => n.addEventListener('blur', onInsertRename));
+  for (const b of (song.mixer.busses || [])) {
+    const routed = channelsByInsert.get(b.num) || [];
+    const color = routed[0] ? routed[0].color : null;
+    const label = routed.length ? routed.map(c => c.name).join(' + ') : b.name;
+    strips.appendChild(buildStrip({
+      id: b.id, name: label, volume: 1.0,
+      color, kind: 'bus', fxCount: pluginEffectsCount(b),
+      muted: false, solo: false, num: b.num,
+    }));
+  }
+
+  // Auto-select first available strip if nothing selected.
+  const stripExists = (id) => id === 'master'
+    || (song.mixer.busses || []).find(b => b.id === id);
+  if (!selectedStripId || !stripExists(selectedStripId)) {
+    selectedStripId = 'master';
+  }
+  strips.querySelectorAll('.mixer-strip').forEach(s => {
+    s.classList.toggle('selected', s.dataset.id === selectedStripId);
+  });
+
+  renderMixerSlots();
 }
 
-function renderInsertFx(ins, fx) {
-  const p = fx.params || {};
-  let knobs = '';
-  const kn = (name, val, min, max, step) =>
-    `<div class="knob"><label>${name}</label><input class="fx-knob" type="range" min="${min}" max="${max}" step="${step}" value="${val}" data-ins="${ins.id}" data-fx="${fx.type}" data-p="${name}"/></div>`;
-  if (fx.type === 'reverb') {
-    knobs = kn('wet', p.wet ?? 0.3, 0, 1, 0.01) + kn('decay', p.decay ?? 2, 0.2, 5, 0.1);
-  } else if (fx.type === 'delay') {
-    knobs = kn('wet', p.wet ?? 0.4, 0, 1, 0.01) + kn('time', p.time ?? 0.25, 0.01, 1, 0.01) + kn('fdbk', p.feedback ?? 0.35, 0, 0.85, 0.01);
-  } else if (fx.type === 'compressor') {
-    knobs = kn('thresh', p.threshold ?? -20, -60, 0, 1) + kn('ratio', p.ratio ?? 4, 1, 20, 0.5);
-  }
-  return `<div class="fxrow">
-    <div class="fxhead"><span>${fx.type}</span>
-      <button class="fx-remove" data-ins="${ins.id}" data-fx="${fx.type}">✕</button>
-    </div>${knobs}
-  </div>`;
-}
-
-function onInsertFader(e) {
-  const id = e.currentTarget.dataset.ins;
-  const ins = song.mixer.inserts.find(i => i.id === id);
-  if (!ins) return;
-  ins.volume = parseFloat(e.currentTarget.value);
-  e.currentTarget.nextElementSibling.textContent = volToDb(ins.volume) + ' dB';
-  persist();
-}
-function onInsertAddFx(e) {
-  const id = e.currentTarget.dataset.ins;
-  const type = e.currentTarget.value;
-  if (!type) return;
-  const ins = song.mixer.inserts.find(i => i.id === id);
-  if (ins && !ins.effects.find(f => f.type === type)) {
-    ins.effects.push({ type, params: {} });
+function buildStrip({ id, name, volume, color, kind, fxCount, muted, solo, num }) {
+  const strip = document.createElement('div');
+  strip.className = 'mixer-strip' + (kind === 'master' ? ' master' : '');
+  strip.dataset.id = id;
+  strip.dataset.kind = kind;
+  const isMaster = kind === 'master';
+  strip.innerHTML = `
+    ${color ? `<div class="colordot" style="background:${color}"></div>` : '<div class="colordot"></div>'}
+    ${num != null ? `<div class="stripnum">${num}</div>` : ''}
+    <div class="mname" ${isMaster ? '' : `contenteditable="true"`} data-id="${id}">${escapeHtml(name)}</div>
+    <div class="mstate">
+      <div class="led ${muted ? '' : 'on'}" title="active"></div>
+    </div>
+    <div class="fxcount">${fxCount ? fxCount + ' FX' : '·'}</div>
+    <div class="faderwrap">
+      <input class="fader" type="range" min="0" max="1.5" step="0.01" value="${volume}" data-id="${id}" />
+    </div>
+    <div class="db" data-db="${id}">${volToDb(volume)}</div>
+  `;
+  strip.addEventListener('click', (e) => {
+    // Don't hijack clicks inside the fader / editable name.
+    const tag = (e.target.tagName || '').toLowerCase();
+    if (tag === 'input' || e.target.isContentEditable) return;
+    selectedStripId = id;
     renderMixer();
+  });
+  const fader = strip.querySelector('.fader');
+  fader.addEventListener('input', () => onStripFader(id, kind, parseFloat(fader.value)));
+  const nameEl = strip.querySelector('.mname');
+  if (!isMaster) nameEl.addEventListener('blur', () => onStripRename(id, nameEl.textContent.trim()));
+  return strip;
+}
+
+function onStripFader(id, kind, value) {
+  if (kind === 'master') {
+    const m = song.mixer.inserts.find(i => i.id === 'master');
+    if (m) m.volume = value;
+  } else {
+    const ch = song.channels.find(c => c.id === id);
+    if (ch) ch.volume = value;
   }
-}
-function onInsertRemoveFx(e) {
-  const id = e.currentTarget.dataset.ins;
-  const type = e.currentTarget.dataset.fx;
-  const ins = song.mixer.inserts.find(i => i.id === id);
-  if (!ins) return;
-  ins.effects = ins.effects.filter(f => f.type !== type);
-  renderMixer();
-}
-function onInsertFxKnob(e) {
-  const id = e.currentTarget.dataset.ins;
-  const type = e.currentTarget.dataset.fx;
-  const p = e.currentTarget.dataset.p;
-  const ins = song.mixer.inserts.find(i => i.id === id);
-  const fx = ins && ins.effects.find(f => f.type === type);
-  if (!fx) return;
-  fx.params = fx.params || {};
-  const key = p === 'thresh' ? 'threshold' : p === 'fdbk' ? 'feedback' : p;
-  fx.params[key] = parseFloat(e.currentTarget.value);
+  const dbEl = document.querySelector(`[data-db="${id}"]`);
+  if (dbEl) dbEl.textContent = volToDb(value);
   persist();
 }
-function onInsertSendTo(e) {
-  const id = e.currentTarget.dataset.ins;
-  const ins = song.mixer.inserts.find(i => i.id === id);
-  if (ins) { ins.sendToId = e.currentTarget.value; persist(); }
+
+function onStripRename(id, name) {
+  const ch = song.channels.find(c => c.id === id);
+  if (ch && name) { ch.name = name; render(); }
 }
-function onInsertDelete(e) {
-  const id = e.currentTarget.dataset.ins;
-  if (id === 'master') return;
-  if (!confirm('Delete this insert?')) return;
-  song.mixer.inserts = song.mixer.inserts.filter(i => i.id !== id);
-  for (const c of song.channels) if (c.insertId === id) c.insertId = 'master';
-  for (const i of song.mixer.inserts) if (i.sendToId === id) i.sendToId = 'master';
-  renderMixer(); render();
+
+function renderMixerSlots() {
+  const list = document.getElementById('mixer-slots-list');
+  const title = document.getElementById('mixer-slots-title');
+  if (!list || !title) return;
+  list.innerHTML = '';
+
+  let owner = null;
+  let ownerLabel = '—';
+  if (selectedStripId === 'master') {
+    // Master effect chain lives on song.mixer.inserts[master]. It routes
+    // audio through engine node id 'master_bus' — see engineOwnerId below.
+    owner = (song.mixer.inserts || []).find(i => i.id === 'master') || null;
+    ownerLabel = 'Master';
+  } else {
+    const ch = song.channels.find(c => c.id === selectedStripId);
+    if (ch) { owner = ch; ownerLabel = ch.name; }
+    else {
+      const bus = (song.mixer.busses || []).find(b => b.id === selectedStripId);
+      if (bus) { owner = bus; ownerLabel = bus.name; }
+    }
+  }
+  title.textContent = ownerLabel;
+
+  const pluginEffects = owner
+    ? (owner.effects || []).filter(e => e && e.type === 'plugin')
+    : [];
+
+  for (let i = 0; i < MIXER_SLOT_COUNT; i++) {
+    const fx = pluginEffects[i];
+    const row = document.createElement('div');
+    row.className = 'mslot'
+      + (fx ? (fx.bypassed ? ' bypassed' : ' on') : ' empty')
+      + (owner ? '' : ' disabled');
+    row.dataset.slotIdx = String(i);
+    if (fx) row.dataset.slotId = fx.slotId;
+    row.innerHTML = `
+      <span class="mslot-idx">${i + 1}</span>
+      <span class="mslot-led" title="bypass"></span>
+      <span class="mslot-name">${fx ? escapeHtml(fx.name || fx.pluginId) : '—'}</span>
+      <span class="mslot-x" title="remove">✕</span>
+    `;
+    // Drop target for a plugin dragged from the Browser.
+    row.addEventListener('dragover', (e) => {
+      if (!owner) return;
+      if (!e.dataTransfer.types.includes('application/x-nasty-plugin')) return;
+      e.preventDefault();
+      row.classList.add('drop-over');
+    });
+    row.addEventListener('dragleave', () => row.classList.remove('drop-over'));
+    row.addEventListener('drop', (e) => {
+      row.classList.remove('drop-over');
+      if (!owner) return;
+      const raw = e.dataTransfer.getData('application/x-nasty-plugin');
+      if (!raw) return;
+      e.preventDefault();
+      let plugin;
+      try { plugin = JSON.parse(raw); } catch { return; }
+      addEffectToChannel(owner.id, plugin, i);
+    });
+    // FL-style click:
+    //   empty slot  → open the picker (choose a plugin)
+    //   filled slot → open the plugin's native UI (tweak it)
+    // Replace/remove happens via the × button.
+    row.addEventListener('click', () => {
+      if (!owner) return;
+      if (fx) {
+        if (window.nasty && window.nasty.engine) {
+          window.nasty.engine.send({
+            cmd: 'show_effect_ui', channelId: engineOwnerId(owner.id), slotId: fx.slotId,
+          });
+        }
+      } else {
+        openSlotPicker(row, owner.id, i, null);
+      }
+    });
+    // Click on the LED toggles bypass. Only intercept the click when there's
+    // actually a plugin to bypass — otherwise let it bubble so the row-level
+    // handler can open the picker.
+    row.querySelector('.mslot-led').addEventListener('click', (e) => {
+      if (!fx || !owner) return;
+      e.stopPropagation();
+      fx.bypassed = !fx.bypassed;
+      if (window.nasty && window.nasty.engine) {
+        window.nasty.engine.send({
+          cmd: 'bypass_effect', channelId: engineOwnerId(owner.id), slotId: fx.slotId, bypassed: !!fx.bypassed,
+        });
+      }
+      renderMixerSlots();
+      persist();
+    });
+    // Click on the × removes it. Same rule as LED — only swallow the click
+    // when we've actually got something to remove.
+    row.querySelector('.mslot-x').addEventListener('click', (e) => {
+      if (!fx || !owner) return;
+      e.stopPropagation();
+      removeEffectFromChannel(owner.id, fx.slotId);
+    });
+    list.appendChild(row);
+  }
 }
-function onInsertRename(e) {
-  const id = e.currentTarget.dataset.ins;
-  const ins = song.mixer.inserts.find(i => i.id === id);
-  if (ins && id !== 'master') { ins.name = e.currentTarget.textContent.trim() || ins.name; render(); }
+
+// Lookup an effect chain owner by id — could be a channel, an insert bus,
+// or the Master insert. All hold effects[] with the same shape.
+function findEffectOwner(ownerId) {
+  if (ownerId === 'master')
+    return (song.mixer.inserts || []).find(i => i.id === 'master') || null;
+  return song.channels.find(c => c.id === ownerId)
+      || (song.mixer.busses || []).find(b => b.id === ownerId)
+      || null;
 }
+
+// Owner id in the FRONT-END data model is 'master' for the master insert,
+// but the engine node is called 'master_bus'. Translate before sending.
+function engineOwnerId(ownerId) {
+  return ownerId === 'master' ? 'master_bus' : ownerId;
+}
+
+function addEffectToChannel(channelId, plugin, targetIdx) {
+  const owner = findEffectOwner(channelId);
+  if (!owner) return;
+  owner.effects = owner.effects || [];
+  const slotId = 'fx_' + Math.random().toString(36).slice(2, 10);
+  const entry = {
+    type: 'plugin', slotId, pluginId: plugin.id,
+    name: plugin.name || plugin.id, bypassed: false,
+  };
+  const pluginIdxs = [];
+  owner.effects.forEach((e, i) => { if (e && e.type === 'plugin') pluginIdxs.push(i); });
+  if (targetIdx == null || targetIdx >= pluginIdxs.length) {
+    owner.effects.push(entry);
+  } else {
+    owner.effects.splice(pluginIdxs[targetIdx], 0, entry);
+  }
+  if (window.nasty && window.nasty.engine) {
+    const engineId = engineOwnerId(channelId);
+    window.nasty.engine.send({
+      cmd: 'add_effect', channelId: engineId, slotId, pluginId: plugin.id,
+    });
+    sendEffectOrder(owner);
+    // Auto-open the plugin UI (FL's "drop, edit" flow).
+    window.nasty.engine.send({
+      cmd: 'show_effect_ui', channelId: engineId, slotId,
+    });
+  }
+  renderMixer();
+  render();
+  persist();
+}
+
+function removeEffectFromChannel(channelId, slotId) {
+  const owner = findEffectOwner(channelId);
+  if (!owner) return;
+  owner.effects = (owner.effects || []).filter(e => !(e && e.type === 'plugin' && e.slotId === slotId));
+  if (window.nasty && window.nasty.engine) {
+    window.nasty.engine.send({ cmd: 'remove_effect', channelId: engineOwnerId(channelId), slotId });
+  }
+  renderMixer();
+  render();
+  persist();
+}
+
+// ---- Slot picker popover ------------------------------------------------
+// Click an empty slot (or a filled one's name area) to open a searchable
+// plugin list. Selecting a plugin adds it to that slot — same effect as
+// dragging from the Browser, no drag required.
+let slotPickerTarget = null; // { channelId, slotIdx, replaceSlotId? }
+
+function openSlotPicker(anchorEl, channelId, slotIdx, replaceSlotId) {
+  slotPickerTarget = { channelId, slotIdx, replaceSlotId };
+  const picker = document.getElementById('slot-picker');
+  const input  = document.getElementById('slot-picker-input');
+  input.value = '';
+  renderSlotPicker('');
+  picker.classList.remove('hidden');
+  // Position the picker next to the anchor slot, clamped to the viewport.
+  const r = anchorEl.getBoundingClientRect();
+  const pw = 560, ph = 500;
+  let left = r.left - pw - 8;
+  if (left < 8) left = r.right + 8;
+  let top = r.top;
+  if (top + ph > window.innerHeight - 8) top = Math.max(8, window.innerHeight - ph - 8);
+  picker.style.left = left + 'px';
+  picker.style.top  = top  + 'px';
+  setTimeout(() => input.focus(), 0);
+}
+
+function closeSlotPicker() {
+  slotPickerTarget = null;
+  document.getElementById('slot-picker').classList.add('hidden');
+}
+
+// Friendly one-click access to the effects every producer expects. Each
+// entry names the *first* plugin in `enginePluginsList` whose name matches
+// any of the candidates — Apple AU stock plugins are preferred (they exist
+// on every Mac) with Surge XT Effects as the fallback for things Apple
+// doesn't ship (chorus, phaser, flanger, saturation-flavored dist).
+const ESSENTIALS = [
+  { label: 'NastyVerb',   candidates: [/^AUMatrixReverb$/i, /^AUReverb2$/i, /reverb/i, /surge xt effects/i] },
+  { label: 'NastyDelay',  candidates: [/^AUDelay$/i, /^AUSampleDelay$/i, /\bdelay\b/i, /surge xt effects/i] },
+  { label: 'NastyComp',   candidates: [/^AUDynamicsProcessor$/i, /^AUMultibandCompressor$/i, /compressor/i, /dynamics/i] },
+  { label: 'NastyEQ',     candidates: [/^AUParametricEQ$/i, /^AUNBandEQ$/i, /^AUGraphicEQ$/i, /parametric eq/i, /\beq\b/i] },
+  { label: 'NastyDist',   candidates: [/^AUDistortion$/i, /distortion/i, /surge xt effects/i] },
+  { label: 'NastyFilter', candidates: [/^AUFilter$/i, /^AULowpass$/i, /^AUHighPass$/i, /^AUBandpass$/i, /filter/i, /surge xt effects/i] },
+  { label: 'NastyChorus', candidates: [/chorus/i, /surge xt effects/i] },
+  { label: 'NastyPhaser', candidates: [/phaser/i, /surge xt effects/i] },
+];
+
+function findEssentialPlugin(candidates) {
+  const effects = (enginePluginsList || []).filter(p => !p.isInstrument);
+  for (const rx of candidates) {
+    const hit = effects.find(p => rx.test(p.name || ''));
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function renderSlotPicker(query) {
+  const basics = document.getElementById('slot-picker-basics');
+  const list   = document.getElementById('slot-picker-list');
+  basics.innerHTML = '';
+  list.innerHTML   = '';
+  const q = (query || '').trim().toLowerCase();
+  const effects = (enginePluginsList || []).filter(p => !p.isInstrument);
+  if (!effects.length) {
+    list.innerHTML = '<div id="slot-picker-empty">No effect plugins scanned yet.</div>';
+    return;
+  }
+
+  // Top: "Basics" — one-click buttons for the effects every user expects.
+  // Hidden while searching so results take the whole panel.
+  if (!q) {
+    const grid = document.createElement('div');
+    grid.className = 'sp-essentials';
+    for (const ess of ESSENTIALS) {
+      const plugin = findEssentialPlugin(ess.candidates);
+      const btn = document.createElement('div');
+      btn.className = 'sp-ess-btn' + (plugin ? '' : ' disabled');
+      btn.textContent = ess.label;
+      btn.title = plugin ? plugin.name : 'Not installed';
+      if (plugin) {
+        btn.addEventListener('click', () => {
+          if (!slotPickerTarget) return;
+          const { channelId, slotIdx, replaceSlotId } = slotPickerTarget;
+          if (replaceSlotId) removeEffectFromChannel(channelId, replaceSlotId);
+          addEffectToChannel(channelId, { id: plugin.id, name: ess.label }, slotIdx);
+          closeSlotPicker();
+        });
+      }
+      grid.appendChild(btn);
+    }
+    basics.appendChild(grid);
+  }
+
+  // Full plugin catalog, laid out FL-style: dense 3-column list, grouped by
+  // category. No card padding, tiny type, everything visible at a glance.
+  const filtered = q
+    ? effects.filter(p =>
+        (p.name || '').toLowerCase().includes(q)
+        || (p.manufacturer || '').toLowerCase().includes(q)
+        || (p.category || '').toLowerCase().includes(q))
+    : effects;
+  if (!filtered.length) {
+    if (q) list.innerHTML = '<div id="slot-picker-empty">No matches.</div>';
+    return;
+  }
+  const groups = {};
+  for (const p of filtered) {
+    const cat = p.category || 'Effects';
+    (groups[cat] = groups[cat] || []).push(p);
+  }
+  const catNames = Object.keys(groups).sort();
+  for (const cat of catNames) {
+    // Wrap header + items in a group so CSS columns keep them together
+    // instead of splitting a category across two columns.
+    const group = document.createElement('div');
+    group.className = 'sp-cat-group';
+    const h = document.createElement('div');
+    h.className = 'sp-cat'; h.textContent = cat;
+    group.appendChild(h);
+    groups[cat].sort((a, b) => a.name.localeCompare(b.name)).forEach(p => {
+      const row = document.createElement('div');
+      row.className = 'sp-item';
+      row.textContent = p.name;
+      row.title = `${p.name} — ${p.manufacturer || ''}`;
+      row.addEventListener('click', () => {
+        if (!slotPickerTarget) return;
+        const { channelId, slotIdx, replaceSlotId } = slotPickerTarget;
+        if (replaceSlotId) removeEffectFromChannel(channelId, replaceSlotId);
+        addEffectToChannel(channelId, { id: p.id, name: p.name }, slotIdx);
+        closeSlotPicker();
+      });
+      group.appendChild(row);
+    });
+    list.appendChild(group);
+  }
+}
+
+// Close picker on outside click or Escape.
+document.addEventListener('mousedown', (e) => {
+  if (!slotPickerTarget) return;
+  const picker = document.getElementById('slot-picker');
+  if (picker.contains(e.target)) return;
+  // If click was on a slot, let the slot's own handler decide.
+  if (e.target.closest && e.target.closest('.mslot')) return;
+  closeSlotPicker();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && slotPickerTarget) closeSlotPicker();
+});
+document.addEventListener('DOMContentLoaded', () => {
+  const inp = document.getElementById('slot-picker-input');
+  if (inp) inp.addEventListener('input', () => renderSlotPicker(inp.value));
+});
+
+// ---- Instrument picker (+ Channel) --------------------------------------
+// Sibling of the slot picker but for INSTRUMENTS instead of effects. Opens
+// on + Channel, shows a "Basics" grid (Piano, Bass, Drums, Guitar, etc.)
+// mapped to sensible GM programs, and a full 128-instrument catalog below.
+// VST/AU synths installed on the machine also show up under a Plugins group.
+let instPickerOpen = false;
+
+const INST_ESSENTIALS = [
+  { label: 'Piano',       gm: 0  },
+  { label: 'Electric Piano', gm: 4  },
+  { label: 'Organ',       gm: 16 },
+  { label: 'Guitar',      gm: 24 },
+  { label: 'Bass',        gm: 33 },
+  { label: 'Strings',     gm: 48 },
+  { label: 'Brass',       gm: 61 },
+  { label: 'Sax',         gm: 65 },
+  { label: 'Flute',       gm: 73 },
+  { label: 'Synth Lead',  gm: 80 },
+  { label: 'Pad',         gm: 89 },
+  { label: 'Drums',       gm: 128, drumPitch: 36 },
+];
+
+// Grouped GM catalog (name → program number).
+const GM_CATALOG = [
+  ['Piano',       [['Grand Piano',0],['Bright Piano',1],['Electric Grand',2],['Honky-Tonk',3],['Electric Piano 1',4],['Electric Piano 2',5],['Harpsichord',6],['Clavinet',7]]],
+  ['Chromatic',   [['Celesta',8],['Glockenspiel',9],['Music Box',10],['Vibraphone',11],['Marimba',12],['Xylophone',13],['Tubular Bells',14],['Dulcimer',15]]],
+  ['Organ',       [['Drawbar Organ',16],['Percussive Organ',17],['Rock Organ',18],['Church Organ',19],['Reed Organ',20],['Accordion',21],['Harmonica',22],['Tango Accordion',23]]],
+  ['Guitar',      [['Nylon Guitar',24],['Steel Guitar',25],['Jazz Guitar',26],['Clean Guitar',27],['Muted Guitar',28],['Overdrive Guitar',29],['Distortion Guitar',30],['Harmonics',31]]],
+  ['Bass',        [['Acoustic Bass',32],['Finger Bass',33],['Pick Bass',34],['Fretless Bass',35],['Slap Bass 1',36],['Slap Bass 2',37],['Synth Bass 1',38],['Synth Bass 2',39]]],
+  ['Strings',     [['Violin',40],['Viola',41],['Cello',42],['Contrabass',43],['Tremolo',44],['Pizzicato',45],['Harp',46],['Timpani',47]]],
+  ['Ensemble',    [['Strings 1',48],['Strings 2',49],['Synth Strings 1',50],['Synth Strings 2',51],['Choir Aahs',52],['Voice Oohs',53],['Synth Voice',54],['Orchestra Hit',55]]],
+  ['Brass',       [['Trumpet',56],['Trombone',57],['Tuba',58],['Muted Trumpet',59],['French Horn',60],['Brass Section',61],['Synth Brass 1',62],['Synth Brass 2',63]]],
+  ['Reed',        [['Soprano Sax',64],['Alto Sax',65],['Tenor Sax',66],['Baritone Sax',67],['Oboe',68],['English Horn',69],['Bassoon',70],['Clarinet',71]]],
+  ['Pipe',        [['Piccolo',72],['Flute',73],['Recorder',74],['Pan Flute',75],['Blown Bottle',76],['Shakuhachi',77],['Whistle',78],['Ocarina',79]]],
+  ['Synth Lead',  [['Square Lead',80],['Sawtooth Lead',81],['Calliope',82],['Chiff Lead',83],['Charang',84],['Voice Lead',85],['Fifths Lead',86],['Bass+Lead',87]]],
+  ['Synth Pad',   [['New Age',88],['Warm Pad',89],['Polysynth',90],['Choir Pad',91],['Bowed',92],['Metallic',93],['Halo',94],['Sweep',95]]],
+  ['Synth FX',    [['Rain',96],['Soundtrack',97],['Crystal',98],['Atmosphere',99],['Brightness',100],['Goblins',101],['Echoes',102],['Sci-Fi',103]]],
+  ['Ethnic',      [['Sitar',104],['Banjo',105],['Shamisen',106],['Koto',107],['Kalimba',108],['Bagpipe',109],['Fiddle',110],['Shanai',111]]],
+  ['Percussive',  [['Tinkle Bell',112],['Agogo',113],['Steel Drums',114],['Woodblock',115],['Taiko',116],['Melodic Tom',117],['Synth Drum',118],['Reverse Cymbal',119]]],
+  ['Drums',       [['Standard Drum Kit',128]]],
+];
+
+function openInstPicker(anchorEl) {
+  instPickerOpen = true;
+  renderInstPicker('');
+  const picker = document.getElementById('inst-picker');
+  picker.classList.remove('hidden');
+  const input = document.getElementById('inst-picker-input');
+  input.value = '';
+  // Anchor above the +Channel button (which is at the bottom of the rack).
+  const r = anchorEl.getBoundingClientRect();
+  const pw = 560, ph = 500;
+  let left = Math.max(8, r.left);
+  if (left + pw > window.innerWidth - 8) left = Math.max(8, window.innerWidth - pw - 8);
+  let top = r.top - ph - 6;
+  if (top < 8) top = Math.min(window.innerHeight - ph - 8, r.bottom + 6);
+  picker.style.left = left + 'px';
+  picker.style.top  = top  + 'px';
+  setTimeout(() => input.focus(), 0);
+}
+
+function closeInstPicker() {
+  instPickerOpen = false;
+  document.getElementById('inst-picker').classList.add('hidden');
+}
+
+function renderInstPicker(query) {
+  const basics = document.getElementById('inst-picker-basics');
+  const list   = document.getElementById('inst-picker-list');
+  basics.innerHTML = '';
+  list.innerHTML   = '';
+  const q = (query || '').trim().toLowerCase();
+
+  // Basics — big obvious buttons that map to good GM defaults.
+  if (!q) {
+    const grid = document.createElement('div');
+    grid.className = 'sp-essentials';
+    for (const e of INST_ESSENTIALS) {
+      const btn = document.createElement('div');
+      btn.className = 'sp-ess-btn';
+      btn.textContent = e.label;
+      btn.title = 'GM program ' + e.gm;
+      btn.addEventListener('click', () => {
+        addChannelFromInstrument({
+          name: e.label, pluginId: 'gm-' + e.gm, gmProgram: e.gm,
+          drumPitch: e.drumPitch || null,
+        });
+        closeInstPicker();
+      });
+      grid.appendChild(btn);
+    }
+    basics.appendChild(grid);
+  }
+
+  const instruments = (enginePluginsList || []).filter(p => p.isInstrument);
+
+  const gmMatches = q ? GM_CATALOG.flatMap(([cat, items]) =>
+    items.filter(([n]) => n.toLowerCase().includes(q)).map(([n, prog]) => [cat, n, prog])) : null;
+
+  if (q && gmMatches) {
+    if (gmMatches.length) {
+      const group = document.createElement('div');
+      group.className = 'sp-cat-group';
+      const h = document.createElement('div');
+      h.className = 'sp-cat'; h.textContent = 'GM Sounds';
+      group.appendChild(h);
+      for (const [cat, name, prog] of gmMatches) {
+        const row = document.createElement('div');
+        row.className = 'sp-item';
+        row.textContent = name;
+        row.title = `${cat} · GM ${prog}`;
+        row.addEventListener('click', () => {
+          addChannelFromInstrument({ name, pluginId: 'gm-' + prog, gmProgram: prog,
+            drumPitch: prog === 128 ? 36 : null });
+          closeInstPicker();
+        });
+        group.appendChild(row);
+      }
+      list.appendChild(group);
+    }
+  } else {
+    // Full GM catalog by family.
+    for (const [cat, items] of GM_CATALOG) {
+      const group = document.createElement('div');
+      group.className = 'sp-cat-group';
+      const h = document.createElement('div');
+      h.className = 'sp-cat'; h.textContent = cat;
+      group.appendChild(h);
+      for (const [name, prog] of items) {
+        const row = document.createElement('div');
+        row.className = 'sp-item';
+        row.textContent = name;
+        row.title = `GM program ${prog}`;
+        row.addEventListener('click', () => {
+          addChannelFromInstrument({ name, pluginId: 'gm-' + prog, gmProgram: prog,
+            drumPitch: prog === 128 ? 36 : null });
+          closeInstPicker();
+        });
+        group.appendChild(row);
+      }
+      list.appendChild(group);
+    }
+  }
+
+  // VST/AU synths on the machine — Serato, Auto-Tune, Serum, etc.
+  const filteredPlugins = q
+    ? instruments.filter(p => (p.name || '').toLowerCase().includes(q)
+        || (p.manufacturer || '').toLowerCase().includes(q))
+    : instruments;
+  if (filteredPlugins.length) {
+    const pluginGroups = {};
+    for (const p of filteredPlugins) {
+      const cat = p.category || 'Instruments';
+      (pluginGroups[cat] = pluginGroups[cat] || []).push(p);
+    }
+    for (const cat of Object.keys(pluginGroups).sort()) {
+      const group = document.createElement('div');
+      group.className = 'sp-cat-group';
+      const h = document.createElement('div');
+      h.className = 'sp-cat'; h.textContent = 'Plugin · ' + cat;
+      group.appendChild(h);
+      pluginGroups[cat].sort((a, b) => a.name.localeCompare(b.name)).forEach(p => {
+        const row = document.createElement('div');
+        row.className = 'sp-item';
+        row.textContent = p.name;
+        row.title = `${p.name} — ${p.manufacturer || ''}`;
+        row.addEventListener('click', () => {
+          addChannelFromInstrument({ name: p.name, pluginId: p.id });
+          closeInstPicker();
+        });
+        group.appendChild(row);
+      });
+      list.appendChild(group);
+    }
+  }
+}
+
+async function addChannelFromInstrument({ name, pluginId, gmProgram, drumPitch }) {
+  const id = 'ch_' + Math.random().toString(36).slice(2, 10);
+  for (const c of song.channels) c.armed = false;
+  // Auto-assign the next-free insert number so this channel gets its own
+  // mixer strip out of the box — FL-style.
+  const used = new Set(song.channels.map(c => c.targetInsertNum || 0));
+  let nextInsert = 1;
+  while (used.has(nextInsert)) nextInsert++;
+  const ch = {
+    id, name, instrument: 'plugin', pluginId,
+    gmProgram: gmProgram ?? null,
+    drumPitch: drumPitch ?? null,
+    volume: 0.8, effects: [],
+    muted: false, solo: false, armed: true,
+    color: PALETTE[song.channels.length % PALETTE.length],
+    insertId: 'master',
+    targetInsertNum: nextInsert,
+  };
+  song.channels.push(ch);
+  // Hydrate into the engine so notes actually play and the mixer can attach
+  // effects to it. GM channels take a special command; VST/AU channels use
+  // the normal plugin loader.
+  if (window.nasty && window.nasty.engine) {
+    if (typeof pluginId === 'string' && pluginId.startsWith('gm-')) {
+      const sf2 = window.nasty.sf2Path ? await window.nasty.sf2Path() : '';
+      window.nasty.engine.send({
+        cmd: 'add_gm_channel', channelId: id, program: gmProgram, sf2Path: sf2,
+      });
+    } else {
+      autoShowOnLoad.add(id);
+      window.nasty.engine.send({ cmd: 'load_plugin', channelId: id, pluginId });
+    }
+    // Route the new channel into its auto-assigned insert.
+    window.nasty.engine.send({
+      cmd: 'set_channel_target', channelId: id,
+      targetChannelId: nextInsert ? ('bus_' + nextInsert) : '',
+    });
+  }
+  render();
+  persist();
+}
+
+// Close on outside click / Escape.
+document.addEventListener('mousedown', (e) => {
+  if (!instPickerOpen) return;
+  const picker = document.getElementById('inst-picker');
+  if (picker.contains(e.target)) return;
+  if (e.target.id === 'add-channel-btn') return;
+  closeInstPicker();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && instPickerOpen) closeInstPicker();
+});
+document.addEventListener('DOMContentLoaded', () => {
+  const inp = document.getElementById('inst-picker-input');
+  if (inp) inp.addEventListener('input', () => renderInstPicker(inp.value));
+});
+
+// Drag the channel number vertically to change its route (0 = master,
+// 1..20 = insert bus). Small click without drag opens the mixer with the
+// current target strip selected — mirrors FL's insert-number interaction.
+function wireChannelNumRouting(el, ch) {
+  const MAX_BUS = (song.mixer.busses || []).length;
+  let startY = 0, startVal = 0, moved = false;
+  const onMove = (ev) => {
+    const dy = startY - ev.clientY;
+    const delta = Math.trunc(dy / 12);
+    const next = Math.max(0, Math.min(MAX_BUS, startVal + delta));
+    if (next !== (ch.targetInsertNum || 0)) {
+      moved = true;
+      ch.targetInsertNum = next;
+      const targetChannelId = next === 0 ? '' : ('bus_' + next);
+      if (window.nasty && window.nasty.engine) {
+        window.nasty.engine.send({
+          cmd: 'set_channel_target', channelId: ch.id, targetChannelId,
+        });
+      }
+      el.textContent = next === 0 ? 'M' : String(next);
+      el.title = `Route: ${next === 0 ? 'Master' : 'Insert ' + next}`;
+    }
+  };
+  const onUp = (ev) => {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    if (!moved) {
+      // Pure click → jump to the target strip in the mixer.
+      const target = ch.targetInsertNum || 0;
+      selectedStripId = target === 0 ? 'master' : ('bus_' + target);
+      openMixer();
+    } else {
+      persist();
+    }
+  };
+  el.addEventListener('mousedown', (ev) => {
+    ev.stopPropagation();
+    ev.preventDefault();
+    startY = ev.clientY;
+    startVal = ch.targetInsertNum || 0;
+    moved = false;
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
+// ---- Audio device dropdown ----------------------------------------------
+function renderAudioDeviceDropdown(devices) {
+  const sel = document.getElementById('tb-audio-out');
+  if (!sel) return;
+  sel.innerHTML = '';
+  const outputs = devices.outputs || [];
+  const current = devices.currentOutput || '';
+  for (const name of outputs) {
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name;
+    if (name === current) opt.selected = true;
+    sel.appendChild(opt);
+  }
+  // Show current sample rate + pop a modal if it's below 44.1kHz.
+  const rate = devices.sampleRate;
+  const label = document.getElementById('tb-audio-rate');
+  if (label) {
+    if (rate && rate < 44100) {
+      label.textContent = `${(rate/1000).toFixed(1)}kHz ⚠`;
+      label.style.color = 'var(--record)';
+    } else if (rate) {
+      label.textContent = `${(rate/1000).toFixed(1)}kHz`;
+      label.style.color = 'var(--dim)';
+    } else {
+      label.textContent = '';
+    }
+  }
+  if (rate && rate < 44100 && !audioRateWarned) {
+    audioRateWarned = true;
+    document.getElementById('audio-rate-body').textContent =
+      `Project can't play at ${(rate/1000).toFixed(1)}kHz. Change your output device or fix its sample rate, then restart the project.`;
+    document.getElementById('audio-rate-modal').classList.remove('hidden');
+  }
+  if (rate && rate >= 44100) audioRateWarned = false;
+}
+let audioRateWarned = false;
+document.addEventListener('DOMContentLoaded', () => {
+  const b = document.getElementById('audio-rate-dismiss');
+  if (b) b.addEventListener('click', () => {
+    document.getElementById('audio-rate-modal').classList.add('hidden');
+  });
+});
+document.addEventListener('DOMContentLoaded', () => {
+  const sel = document.getElementById('tb-audio-out');
+  if (!sel) return;
+  sel.addEventListener('change', () => {
+    if (window.nasty && window.nasty.engine) {
+      window.nasty.engine.send({ cmd: 'set_output_device', name: sel.value });
+    }
+  });
+});
+
+function sendEffectOrder(ch) {
+  if (!(window.nasty && window.nasty.engine)) return;
+  const order = (ch.effects || [])
+    .filter(e => e && e.type === 'plugin')
+    .map(e => e.slotId);
+  window.nasty.engine.send({ cmd: 'reorder_effects', channelId: engineOwnerId(ch.id), slotIds: order });
+}
+
 function openMixer() {
   document.getElementById('mixer-modal').classList.remove('hidden');
   renderMixer();
@@ -2556,24 +3651,6 @@ function onChannelBtn(e) {
       for (const p of song.patterns) p.notes = p.notes.filter(n => n.channelId !== ch.id);
     }
   }
-  render();
-}
-function onChannelAddFx(e) {
-  const cid = e.currentTarget.dataset.ch;
-  const type = e.currentTarget.value;
-  if (!type) return;
-  const ch = song.channels.find(c => c.id === cid);
-  if (ch && !ch.effects.find(f => f.type === type)) {
-    ch.effects.push({ type, params: {} });
-    render();
-  }
-}
-function onChannelRemoveFx(e) {
-  const cid = e.currentTarget.dataset.ch;
-  const type = e.currentTarget.dataset.fx;
-  const ch = song.channels.find(c => c.id === cid);
-  if (!ch) return;
-  ch.effects = ch.effects.filter(f => f.type !== type);
   render();
 }
 function onPatternBtn(e) {
@@ -2800,7 +3877,13 @@ function openPianoRoll(patternId) {
   const p = song.patterns.find(pt => pt.id === patternId);
   if (!p) return;
   currentPatternId = patternId;
-  if (!pianoRollActiveChannelId || !song.channels.find(c => c.id === pianoRollActiveChannelId)) {
+  // FL-like: opening the piano roll focuses whichever channel is currently
+  // armed in the rack. Falls back to the previous focus, then the first
+  // channel. That way clicking a row → F7 opens THAT channel's notes.
+  const armed = song.channels.find(c => c.armed);
+  if (armed) {
+    pianoRollActiveChannelId = armed.id;
+  } else if (!pianoRollActiveChannelId || !song.channels.find(c => c.id === pianoRollActiveChannelId)) {
     pianoRollActiveChannelId = song.channels[0]?.id || null;
   }
   document.getElementById('pr-title').textContent = p.name;
@@ -2824,15 +3907,15 @@ function closePianoRoll() {
 function renderPianoRoll() {
   const p = song.patterns.find(pt => pt.id === currentPatternId);
   if (!p) { closePianoRoll(); return; }
-  const perCh = {};
-  for (const n of p.notes) perCh[n.channelId] = (perCh[n.channelId] || 0) + 1;
-  const legend = Object.entries(perCh).map(([cid, count]) => {
-    const c = song.channels.find(ch => ch.id === cid);
-    if (!c) return '';
-    return `<span style="color:${c.color};font-weight:600">${escapeHtml(c.name)}: ${count}</span>`;
-  }).join(' · ');
+  recomputePatternLength(p); // keep grid width fit-to-notes
+  // FL-style: one channel per piano roll view. Only show notes for the
+  // active channel — the "Editing:" dropdown switches between them.
+  const activeId = pianoRollActiveChannelId;
+  const activeChObj = song.channels.find(c => c.id === activeId);
+  const visibleNotes = p.notes.filter(n => n.channelId === activeId);
+  const activeName = activeChObj ? activeChObj.name : '—';
   document.getElementById('pr-info').innerHTML =
-    `${p.notes.length} notes · ${p.lengthBars} bars${legend ? ' — ' + legend : ''}`;
+    `<span style="color:${activeChObj ? activeChObj.color : 'var(--dim)'};font-weight:600">${escapeHtml(activeName)}</span> · ${visibleNotes.length} notes · ${p.lengthBars} bars`;
   const keysEl = document.getElementById('pr-keys');
   const gridWrap = document.getElementById('pr-grid-wrap');
   const grid = document.getElementById('pr-grid');
@@ -2870,16 +3953,19 @@ function renderPianoRoll() {
     gridWrap.dataset.centered = '1';
   }
 
-  const chColor = new Map(song.channels.map(c => [c.id, c.color]));
+  // Only render notes on the active channel (FL-style piano roll).  `data-idx`
+  // still points into p.notes[] (the true canonical index) so drag/delete
+  // handlers can mutate the right note without a lookup dance.
+  const activeColor = activeChObj ? activeChObj.color : '#888';
   for (let i = 0; i < p.notes.length; i++) {
     const note = p.notes[i];
+    if (note.channelId !== activeId) continue;
     const el = document.createElement('div');
     el.className = 'pr-note';
     el.style.left = (note.startBeat * PR_BEAT_WIDTH) + 'px';
     el.style.width = Math.max(4, note.durationBeats * PR_BEAT_WIDTH - 1) + 'px';
     el.style.top = ((PR_PITCH_MAX - note.pitch) * PR_KEY_HEIGHT) + 'px';
-    const color = chColor.get(note.channelId) || '#888';
-    el.style.background = color;
+    el.style.background = activeColor;
     el.dataset.idx = i;
     const resize = document.createElement('div');
     resize.className = 'resize';
@@ -2906,6 +3992,7 @@ function tryEraseAt(x, y) {
   if (!p) return;
   if (idx >= 0 && idx < p.notes.length) {
     p.notes.splice(idx, 1);
+    recomputePatternLength(p);
     renderPianoRoll();
   }
 }
@@ -2942,6 +4029,7 @@ function onPrGridMouseDown(e) {
   const pitch = PR_PITCH_MAX - Math.floor(y / PR_KEY_HEIGHT);
   const note = { channelId: activeCh.id, pitch, startBeat, durationBeats: 0.5, velocity: 0.8 };
   p.notes.push(note);
+  recomputePatternLength(p);
   previewNote(activeCh, pitch);
   prCreateDrag = { note, startX: e.clientX };
   document.addEventListener('mousemove', onPrCreateMove);
@@ -2952,6 +4040,8 @@ function onPrCreateMove(e) {
   if (!prCreateDrag) return;
   const dx = e.clientX - prCreateDrag.startX;
   prCreateDrag.note.durationBeats = Math.max(0.25, snapBeat(dx / PR_BEAT_WIDTH + 0.5));
+  const p = song.patterns.find(pt => pt.id === currentPatternId);
+  if (p) recomputePatternLength(p);
   renderPianoRoll();
 }
 function onPrCreateUp() {
@@ -3333,6 +4423,10 @@ function getActiveInputChannel() {
   return song.channels.find(c => c.armed);
 }
 
+// Handles for sustained built-in-synth notes triggered by MIDI hardware,
+// keyed by `${channelId}:${pitch}` so we can release on note-off.
+const midiHardwareActive = {};
+
 function onMidiMessage(e) {
   const [status, data1, data2] = e.data;
   const type = status & 0xf0;
@@ -3343,7 +4437,10 @@ function onMidiMessage(e) {
       if (ch.instrument === 'plugin' && window.nasty && window.nasty.engine) {
         window.nasty.engine.send({ cmd: 'note_on', channelId: ch.id, pitch: data1, velocity });
       } else {
-        previewNote(ch, data1, velocity, 10);
+        // Hold-to-sustain — key stays down, note stays on.
+        const key = ch.id + ':' + data1;
+        if (midiHardwareActive[key]) stopSustainedNote(midiHardwareActive[key]);
+        midiHardwareActive[key] = startSustainedNote(ch, data1, velocity);
       }
     }
     if (midiRecording && ch) {
@@ -3353,6 +4450,12 @@ function onMidiMessage(e) {
   } else if (type === 0x80 || (type === 0x90 && data2 === 0)) {
     if (ch && ch.instrument === 'plugin' && window.nasty && window.nasty.engine) {
       window.nasty.engine.send({ cmd: 'note_off', channelId: ch.id, pitch: data1 });
+    } else if (ch) {
+      const key = ch.id + ':' + data1;
+      if (midiHardwareActive[key]) {
+        stopSustainedNote(midiHardwareActive[key]);
+        delete midiHardwareActive[key];
+      }
     }
     if (midiRecording && midiRecording.active[data1]) {
       const start = midiRecording.active[data1];
@@ -3451,16 +4554,17 @@ document.addEventListener('keydown', (e) => {
   const pitch = TYPING_BASE_PITCH + TYPING_MAP[lk] + typingOctave * 12;
   initAudio();
   if (ctx.state === 'suspended') ctx.resume();
+  let handle = null;
   if (ch.instrument === 'plugin') {
     // Real note-on/note-off — hold-to-sustain like FL Studio.
     if (window.nasty && window.nasty.engine) {
       window.nasty.engine.send({ cmd: 'note_on', channelId: ch.id, pitch, velocity: 0.8 });
     }
   } else {
-    // Built-in synths use fixed envelope; give it a long tail so held keys don't cut off short.
-    previewNote(ch, pitch, 0.8, 10);
+    // Built-in synths: real hold-to-sustain via Web Audio envelope.
+    handle = startSustainedNote(ch, pitch, 0.8);
   }
-  typingActive[lk] = { pitch, channelId: ch.id, tStart: ctx.currentTime };
+  typingActive[lk] = { pitch, channelId: ch.id, tStart: ctx.currentTime, handle };
   if (midiRecording) {
     const t = ctx.currentTime - midiRecording.startTime;
     midiRecording.active[pitch] = { pitch, velocity: 0.8, tStart: t, channelId: ch.id };
@@ -3474,6 +4578,8 @@ document.addEventListener('keyup', (e) => {
   const ch = song.channels.find(c => c.id === st.channelId);
   if (ch && ch.instrument === 'plugin' && window.nasty && window.nasty.engine) {
     window.nasty.engine.send({ cmd: 'note_off', channelId: ch.id, pitch: st.pitch });
+  } else if (st.handle) {
+    stopSustainedNote(st.handle);
   }
   if (midiRecording && midiRecording.active[st.pitch]) {
     const start = midiRecording.active[st.pitch];
@@ -3534,6 +4640,10 @@ document.getElementById('clear-btn').addEventListener('click', () => {
   audioBuffers.clear();
   currentPatternId = null;
   ensureDefaults();
+  // Load the freshly-created default channels into the engine so audio flows.
+  // Without this, drum channels exist in song data but have no engine-side
+  // synth attached, so note_on messages are dropped and the DAW is silent.
+  hydratePluginChannels();
   document.getElementById('chat-messages').innerHTML = '';
   stopSong();
   render();
@@ -3542,9 +4652,8 @@ document.getElementById('bpm-input').addEventListener('change', (e) => {
   const v = parseInt(e.target.value);
   if (v >= 30 && v <= 300) { song.bpm = v; persist(); }
 });
-document.getElementById('add-channel-btn').addEventListener('click', () => {
-  document.getElementById('add-channel-modal').classList.remove('hidden');
-  document.getElementById('new-channel-name').focus();
+document.getElementById('add-channel-btn').addEventListener('click', (e) => {
+  openInstPicker(e.currentTarget);
 });
 document.getElementById('new-channel-cancel').addEventListener('click', () => {
   document.getElementById('add-channel-modal').classList.add('hidden');
@@ -3592,14 +4701,6 @@ document.getElementById('new-pattern-ok').addEventListener('click', () => {
 });
 document.getElementById('mixer-btn').addEventListener('click', openMixer);
 document.getElementById('mixer-close').addEventListener('click', closeMixer);
-document.getElementById('add-insert-btn').addEventListener('click', () => {
-  const nextIdx = song.mixer.inserts.filter(i => i.id !== 'master').length + 1;
-  song.mixer.inserts.push({
-    id: 'ins_' + Date.now().toString(36),
-    name: 'Insert ' + nextIdx, volume: 0.8, effects: [], sendToId: 'master',
-  });
-  renderMixer(); render();
-});
 document.getElementById('save-btn').addEventListener('click', saveToFile);
 document.getElementById('load-btn').addEventListener('click', loadFromFile);
 document.getElementById('export-btn').addEventListener('click', exportWAV);
@@ -3608,6 +4709,7 @@ document.getElementById('pr-close').addEventListener('click', closePianoRoll);
 document.getElementById('piano-roll-panel').addEventListener('contextmenu', (e) => e.preventDefault());
 document.getElementById('pr-active-channel').addEventListener('change', (e) => {
   pianoRollActiveChannelId = e.target.value;
+  renderPianoRoll();
 });
 document.getElementById('send-btn').addEventListener('click', sendMessage);
 document.getElementById('chat-input').addEventListener('keydown', (e) => {
@@ -3670,7 +4772,6 @@ function runCmd(cmd) {
     case 'clear':              return document.getElementById('clear-btn').click();
     case 'add-channel':        return document.getElementById('add-channel-btn').click();
     case 'add-pattern':        return document.getElementById('add-pattern-btn').click();
-    case 'add-insert':         return document.getElementById('add-insert-btn').click();
     case 'mic-rec':            return document.getElementById('mic-rec-btn').click();
     case 'midi-rec':           return startMidiRecording();
     case 'toggle-playlist':    return toggleWindow('playlist');
@@ -3919,13 +5020,182 @@ function renderBrowser() {
         const it = document.createElement('div');
         it.className = 'br-item draggable';
         it.textContent = `${p.name}  · ${p.format}`;
-        it.title = `${p.manufacturer || ''} — double-click to add as channel`;
+        it.title = p.isInstrument
+          ? `${p.manufacturer || ''} — double-click to add as channel`
+          : `${p.manufacturer || ''} — drag onto a mixer slot to insert as effect`;
+        it.setAttribute('draggable', 'true');
+        it.addEventListener('dragstart', (e) => {
+          e.dataTransfer.setData(
+            'application/x-nasty-plugin',
+            JSON.stringify({ id: p.id, name: p.name, isInstrument: !!p.isInstrument })
+          );
+          e.dataTransfer.effectAllowed = 'copy';
+        });
         it.addEventListener('dblclick', () => addPluginChannel(p));
         wrap.appendChild(it);
       });
       tree.appendChild(wrap);
       fEl.addEventListener('click', () => fEl.classList.toggle('open'));
     });
+  } else if (browserTab === 'gm') {
+    if (!window.nasty || !window.nasty.isDesktop) {
+      tree.innerHTML = '<div style="padding:12px;color:var(--dim);font-size:11px;line-height:1.5">' +
+        'Built-in instruments require the desktop app.</div>';
+      return;
+    }
+    // Standard General MIDI 128, grouped by family. Double-click adds a
+    // channel using Nasty\'s built-in FluidSynth + bundled SoundFont.
+    const GM_GROUPS = [
+      ['Piano', 0, ['Grand Piano', 'Bright Piano', 'Electric Grand', 'Honky-Tonk', 'Electric Piano 1', 'Electric Piano 2', 'Harpsichord', 'Clavinet']],
+      ['Chromatic Percussion', 8, ['Celesta', 'Glockenspiel', 'Music Box', 'Vibraphone', 'Marimba', 'Xylophone', 'Tubular Bells', 'Dulcimer']],
+      ['Organ', 16, ['Drawbar Organ', 'Percussive Organ', 'Rock Organ', 'Church Organ', 'Reed Organ', 'Accordion', 'Harmonica', 'Tango Accordion']],
+      ['Guitar', 24, ['Acoustic Guitar (Nylon)', 'Acoustic Guitar (Steel)', 'Electric Guitar (Jazz)', 'Electric Guitar (Clean)', 'Electric Guitar (Muted)', 'Overdriven Guitar', 'Distortion Guitar', 'Guitar Harmonics']],
+      ['Bass', 32, ['Acoustic Bass', 'Electric Bass (Finger)', 'Electric Bass (Pick)', 'Fretless Bass', 'Slap Bass 1', 'Slap Bass 2', 'Synth Bass 1', 'Synth Bass 2']],
+      ['Strings', 40, ['Violin', 'Viola', 'Cello', 'Contrabass', 'Tremolo Strings', 'Pizzicato Strings', 'Orchestral Harp', 'Timpani']],
+      ['Ensemble', 48, ['String Ensemble 1', 'String Ensemble 2', 'Synth Strings 1', 'Synth Strings 2', 'Choir Aahs', 'Voice Oohs', 'Synth Voice', 'Orchestra Hit']],
+      ['Brass', 56, ['Trumpet', 'Trombone', 'Tuba', 'Muted Trumpet', 'French Horn', 'Brass Section', 'Synth Brass 1', 'Synth Brass 2']],
+      ['Reed', 64, ['Soprano Sax', 'Alto Sax', 'Tenor Sax', 'Baritone Sax', 'Oboe', 'English Horn', 'Bassoon', 'Clarinet']],
+      ['Pipe', 72, ['Piccolo', 'Flute', 'Recorder', 'Pan Flute', 'Blown Bottle', 'Shakuhachi', 'Whistle', 'Ocarina']],
+      ['Synth Lead', 80, ['Lead 1 (Square)', 'Lead 2 (Sawtooth)', 'Lead 3 (Calliope)', 'Lead 4 (Chiff)', 'Lead 5 (Charang)', 'Lead 6 (Voice)', 'Lead 7 (Fifths)', 'Lead 8 (Bass+Lead)']],
+      ['Synth Pad', 88, ['Pad 1 (New Age)', 'Pad 2 (Warm)', 'Pad 3 (Polysynth)', 'Pad 4 (Choir)', 'Pad 5 (Bowed)', 'Pad 6 (Metallic)', 'Pad 7 (Halo)', 'Pad 8 (Sweep)']],
+      ['Synth Effects', 96, ['FX 1 (Rain)', 'FX 2 (Soundtrack)', 'FX 3 (Crystal)', 'FX 4 (Atmosphere)', 'FX 5 (Brightness)', 'FX 6 (Goblins)', 'FX 7 (Echoes)', 'FX 8 (Sci-Fi)']],
+      ['Ethnic', 104, ['Sitar', 'Banjo', 'Shamisen', 'Koto', 'Kalimba', 'Bagpipe', 'Fiddle', 'Shanai']],
+      ['Percussive', 112, ['Tinkle Bell', 'Agogo', 'Steel Drums', 'Woodblock', 'Taiko Drum', 'Melodic Tom', 'Synth Drum', 'Reverse Cymbal']],
+      ['Sound Effects', 120, ['Guitar Fret Noise', 'Breath Noise', 'Seashore', 'Bird Tweet', 'Telephone Ring', 'Helicopter', 'Applause', 'Gunshot']],
+      ['Drums', 128, ['Standard Drum Kit']],
+    ];
+    const parts = ['<div style="padding:10px 12px 6px;color:var(--dim);font-size:11px;line-height:1.4">' +
+      '128 built-in sounds via bundled SoundFont. Double-click any to add a channel — instant, no plugin browsing.' +
+      '</div>'];
+    for (const [group, base, names] of GM_GROUPS) {
+      parts.push('<div class="br-folder open" style="padding:6px 12px;font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:0.5px">' +
+        escapeHtml(group) + '</div>');
+      for (let i = 0; i < names.length; i++) {
+        const program = base + i;
+        parts.push('<div class="br-item draggable gm-item" ' +
+          'data-name="' + escapeHtml(names[i]) + '" ' +
+          'data-program="' + program + '" ' +
+          'style="padding:5px 20px;cursor:pointer;font-size:12px;color:var(--text);border-bottom:1px solid rgba(255,255,255,0.03)">' +
+          escapeHtml(names[i]) + '</div>');
+      }
+    }
+    tree.innerHTML = parts.join('');
+    tree.querySelectorAll('.gm-item').forEach(el => {
+      el.addEventListener('dblclick', () => {
+        addGmChannel(parseInt(el.getAttribute('data-program'), 10), el.getAttribute('data-name'));
+      });
+    });
+  } else if (browserTab === 'presets') {
+    if (!window.nasty || !window.nasty.isDesktop) {
+      tree.innerHTML = '<div style="padding:12px;color:var(--dim);font-size:11px;line-height:1.5">' +
+        'Bundled instruments only work in the desktop app.' +
+        '</div>';
+      return;
+    }
+    const PRESETS = [
+      { name: 'Grand Piano',     folder: 'grand-piano',  file: 'SalamanderGrandPiano-V3+20200602.sfz',
+        desc: 'Salamander concert grand — the classic free piano.' },
+      { name: 'Maestro Piano',   folder: 'maestro-piano', file: 'Maestro Concert Grand.sfz',
+        desc: 'Alternative concert grand by Mats Helgesson.' },
+      { name: 'Rhodes EP',       folder: 'rhodes-ep',    file: 'jRhodes3c-looped-flac-sfz/_jRhodes-stereo-looped.sfz',
+        desc: 'Fender Rhodes electric piano — classic warm keys.' },
+      { name: 'Electric Guitar', folder: 'guitar',       file: 'Programs/electric_release.sfz',
+        desc: 'Shiny electric guitar with release samples.' },
+      { name: 'Synth Strings',   folder: 'strings',      file: 'Programs/ironface_distorted.sfz',
+        desc: 'String Cyborgs — modeled + processed strings.' },
+      { name: 'Upright Bass',    folder: 'double-bass',  file: 'd_smolken_rubner_bass_pizz.sfz',
+        desc: 'Sampled upright bass, pizzicato.' },
+      { name: 'Cello',           folder: 'cello',        file: 'Programs/vc_arco_four_map.sfz',
+        desc: 'Bigcat sampled cello — bowed articulation.' },
+      { name: 'Tuba',            folder: 'tuba',         file: 'Programs/1-solo-legato.sfz',
+        desc: 'Solo tuba with legato transitions.' },
+      { name: 'Saxophone',       folder: 'sax',          file: 'Programs/alto_map_wind_noise.sfz',
+        desc: 'Alto sax with breath noise for realism.' },
+      { name: 'Pluck Synth',     folder: 'synth-pluck',  file: 'cowsynth_shifty_pluck.sfz',
+        desc: 'Karoryfer plucky synth — bright + punchy.' },
+      { name: 'Drum Kit',        folder: 'drums',        file: 'DrumGizmo/MuldjordKit/Stereo/DrumGizmo MuldjordKit.sfz',
+        desc: 'Muldjord acoustic drum kit — full stereo mix.' },
+    ];
+    const parts = [];
+    parts.push('<div style="padding:10px 12px 8px;color:var(--dim);font-size:11px;line-height:1.4">' +
+      'Double-click to add. Sfizz opens — pick the highlighted file to load the sound.' +
+      '</div>');
+    for (const p of PRESETS) {
+      parts.push(
+        '<div class="br-item draggable preset-item" ' +
+        'data-name="' + escapeHtml(p.name) + '" ' +
+        'data-folder="' + escapeHtml(p.folder) + '" ' +
+        'data-file="' + escapeHtml(p.file) + '" ' +
+        'style="padding:8px 12px;border-bottom:1px solid rgba(255,255,255,0.06);cursor:pointer">' +
+          '<div style="font-size:12px;font-weight:600;color:var(--text)">' + escapeHtml(p.name) + '</div>' +
+          '<div style="font-size:10px;color:var(--dim);margin-top:2px">' + escapeHtml(p.desc) + '</div>' +
+        '</div>'
+      );
+    }
+    tree.innerHTML = parts.join('');
+    tree.querySelectorAll('.preset-item').forEach(el => {
+      el.addEventListener('dblclick', () => {
+        const name = el.getAttribute('data-name');
+        const folder = el.getAttribute('data-folder');
+        const file = el.getAttribute('data-file');
+        addSfizzPresetChannel(name, folder, file);
+      });
+    });
+  } else if (browserTab === 'free') {
+    if (!window.nasty || !window.nasty.isDesktop) {
+      tree.innerHTML = '<div style="padding:12px;color:var(--dim);font-size:11px;line-height:1.5">' +
+        'Free synths are for the desktop app — the web build can only run built-in sounds.' +
+        '</div>';
+      return;
+    }
+    const RECOMMENDED = [
+      { name: 'Surge XT',  desc: 'Versatile hybrid synth — subtractive, wavetable, FM.',
+        url: 'https://surge-synthesizer.github.io/',
+        match: (n) => /surge\s*xt/i.test(n) },
+      { name: 'Vitalium',  desc: 'Powerful wavetable synth — free fork of Vital.',
+        url: 'https://github.com/DISTRHO/DISTRHO-Ports/releases',
+        match: (n) => /vitalium/i.test(n) },
+      { name: 'Sfizz',     desc: 'Sampler that loads free SFZ instrument libraries.',
+        url: 'https://sfz.tools/sfizz/',
+        match: (n) => /sfizz/i.test(n) },
+      { name: 'Dexed',     desc: 'FM synth — Yamaha DX7 emulation with the original patches.',
+        url: 'https://asb2m10.github.io/dexed/',
+        match: (n) => /dexed/i.test(n) },
+      { name: 'OB-Xd',     desc: 'Classic analog polysynth — Oberheim OB-X emulation.',
+        url: 'https://www.discodsp.com/obxd/',
+        match: (n) => /ob[-\s]?xd/i.test(n) },
+      { name: 'TAL-NoiseMaker', desc: 'Warm virtual analog — great presets, tiny download.',
+        url: 'https://tal-software.com/products/tal-noisemaker',
+        match: (n) => /tal[-\s]?noisemaker/i.test(n) },
+    ];
+    const installed = new Set();
+    if (enginePluginsList) {
+      for (const p of enginePluginsList) {
+        for (const r of RECOMMENDED) if (r.match(p.name)) installed.add(r.name);
+      }
+    }
+    const parts = [];
+    parts.push('<div style="padding:10px 12px 8px;color:var(--dim);font-size:11px;line-height:1.4">' +
+      'One-click install — opens the official page in your browser. ' +
+      'After install, restart Nasty and it appears under Plugins.' +
+      '</div>');
+    for (const r of RECOMMENDED) {
+      const isInstalled = installed.has(r.name);
+      parts.push(
+        '<div style="padding:8px 12px;border-bottom:1px solid rgba(255,255,255,0.06)">' +
+          '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">' +
+            '<div style="font-size:12px;font-weight:600;color:var(--text)">' + escapeHtml(r.name) + '</div>' +
+            (isInstalled
+              ? '<div style="font-size:10px;color:#6c6">Installed ✓</div>'
+              : '<a href="' + escapeHtml(r.url) + '" target="_blank" ' +
+                'style="font-size:10px;padding:2px 8px;border:1px solid #888;border-radius:3px;' +
+                'text-decoration:none;color:var(--text);cursor:pointer">Install</a>') +
+          '</div>' +
+          '<div style="font-size:10px;color:var(--dim);margin-top:3px">' + escapeHtml(r.desc) + '</div>' +
+        '</div>'
+      );
+    }
+    tree.innerHTML = parts.join('');
   }
 }
 
@@ -3937,6 +5207,92 @@ let engineScanning = null;
 // Channel IDs where we should auto-pop the plugin UI once the engine reports
 // it's loaded. Set for user-initiated adds; NOT set on song-restore re-loads.
 const autoShowOnLoad = new Set();
+
+// Learned-state cache per preset name. First time you click a preset, Sfizz
+// opens and you load the file manually — Nasty auto-captures the plugin
+// state. Every subsequent click uses that state to auto-load. So after one
+// setup per instrument, it's true one-click forever.
+// Pre-captured default Sfizz states shipped with the app so instruments
+// work out of the box for anyone who installs Nasty. Users can override by
+// tweaking Sfizz — their state gets saved in localStorage and takes priority.
+const PRESET_DEFAULT_STATES = { "Grand Piano": "VkMyIWUBAAA8P3htbCB2ZXJzaW9uPSIxLjAiIGVuY29kaW5nPSJVVEYtOCI/PiA8VlNUM1BsdWdpblN0YXRlPjxJQ29tcG9uZW50PjE5MC5FLi4uLi4uLi4udlcuLi4udVQwYmtJMmJ1SGxiazRGWWc0RmE0NDFYbjhCUXVNVmNzVWxhek0yS1NZalZmamxheVFtYjAwVll0UTJidWJsYmc0RllzLldaZzQxYXVMVVhyRVZhZzRGWWtJMlF4RWxhakFVWmc0MWFzWDBMcUhDTHguQ0wxLmlMdExtWTVBLi4uLi4uLkEuLi4uLi4uLi4uZi4uLkEuLi4uLi5PLi4uLi4uLjJDQS4uLi5mLi4uLi5BLi4uLm4uLi4udi4uLi4uLi52KysrKytELi4uLmIuLmxMWVIrbi4uLi4uLityLi4uLi5mKy5ELi4uLi4uLjwvSUNvbXBvbmVudD48L1ZTVDNQbHVnaW5TdGF0ZT4A", "Maestro Piano": "VkMyIYkBAAA8P3htbCB2ZXJzaW9uPSIxLjAiIGVuY29kaW5nPSJVVEYtOCI/PiA8VlNUM1BsdWdpblN0YXRlPjxJQ29tcG9uZW50PjIxNy5FLi4uLi4uLi4uZlUuLi4udVQwYmtJMmJ1SGxiazRGWWc0RmE0NDFYbjhCUXVNVmNzVWxhek0yS1NZalZmamxheVFtYjAwVll0UTJidXpWWGtNR2N4OFZLdmtWWHQ4MUtNRVZZeVFtYnVBeFB1NDFYa0lHY2ZiamJnNEZZdExtWTVBLi4uLi4uLkEuLi4uLi4uLi4uZi4uLkEuLi4uLi5PLi4uLi4uLjJDQS4uLi5mLi4uLi5BLi4uLm4uLi4udi4uLi4uLi52KysrKytKLi4uLmIuLmxMWVIrbi4uLi4uLityLi4uLi5mKy5ELi4uLi4uSEQuLi4uLi5MRC4uLi4uLmZELnlMeUQrLkUuLi4uZitERS5NeUx5OExGLi4uLmYrLjwvSUNvbXBvbmVudD48L1ZTVDNQbHVnaW5TdGF0ZT4A", "Rhodes EP": "VkMyIW0BAAA8P3htbCB2ZXJzaW9uPSIxLjAiIGVuY29kaW5nPSJVVEYtOCI/PiA8VlNUM1BsdWdpblN0YXRlPjxJQ29tcG9uZW50PjE5Ni5FLi4uLi4uLi4udlouLi4udVQwYmtJMmJ1SGxiazRGWWc0RmE0NDFYbjhCUXVNVmNzVWxhek0yS1NZalZmamxheVFtYjAwVll0UTJidUhHWnVRVll5MFJZdjhoWlJnMWFqVTFieUxWS3I4MWF2VUZZc1hGYWdNVkt5WWxkdTdrWlJnMWFqVTFic0gxYXpnVktyODFhdlVGWXRMbVk1QS4uLi4uLi5BLi4uLi4uLi4uLmYuLi5BLi4uLi4uTy4uLi4uLi4yQ0EuLi4uZi4uLi4uQS4uLi5uLi4uLnYuLi4uLi4udisrKysrQy4uLi5iLi5sTFlSK24uLi4uLi4rci4uLi4uZisuPC9JQ29tcG9uZW50PjwvVlNUM1BsdWdpblN0YXRlPgA=", "Electric Guitar": "VkMyITUBAAA8P3htbCB2ZXJzaW9uPSIxLjAiIGVuY29kaW5nPSJVVEYtOCI/PiA8VlNUM1BsdWdpblN0YXRlPjxJQ29tcG9uZW50PjE1NC5FLi4uLi4uLi4udlQuLi4udVQwYmtJMmJ1SGxiazRGWWc0RmE0NDFYbjhCUXVNVmNzVWxhek0yS1NZalZmamxheVFtYjAwVll0UTJidWJWY29RV1h4OEJUeDgxWXhFVmF5OFJZclUxWHpJV1ppOGtia3dWWWdNV1l0TG1ZNUEuLi4uLi4uQS4uLi4uLi4uLi5mLi4uQS4uLi4uLk8uLi4uLi4uMkNBLi4uLmYuLi4uLkEuLi4ubi4uLi52Li4uLi4uLnYrKysrKy4uLi4uLjwvSUNvbXBvbmVudD48L1ZTVDNQbHVnaW5TdGF0ZT4A", "Synth Strings": "VkMyIXkBAAA8P3htbCB2ZXJzaW9uPSIxLjAiIGVuY29kaW5nPSJVVEYtOCI/PiA8VlNUM1BsdWdpblN0YXRlPjxJQ29tcG9uZW50PjIwNS5FLi4uLi4uLi4uZlUuLi4udVQwYmtJMmJ1SGxiazRGWWc0RmE0NDFYbjhCUXVNVmNzVWxhek0yS1NZalZmamxheVFtYjAwVll0UTJidUxHY3hrbGFtTTJLUEkyYW1JV1hzTTJLb0kyYXRZVlhpVTFXamsxYno4bGJ6VUZZdExtWTVBLi4uLi4uLkEuLi4uLi4uLi4uZi4uLkEuLi4uLi5PLi4uLi4uLjJDQS4uLi5mLi4uLi5BLi4uLm4uLi4udi4uLi4uLi52KysrKytILi4uLmIuLmxMWVIrbi4uLi4uLityLi4uLi5mK1RFLi4uLi4udkUuLi4uLi56RS4uLi4uLjNFLi4uLi4uN0UuLi4uLi4uPC9JQ29tcG9uZW50PjwvVlNUM1BsdWdpblN0YXRlPgA=", "Upright Bass": "VkMyIVUBAAA8P3htbCB2ZXJzaW9uPSIxLjAiIGVuY29kaW5nPSJVVEYtOCI/PiA8VlNUM1BsdWdpblN0YXRlPjxJQ29tcG9uZW50PjE3OC5FLi4uLi4uLi4uUFYuLi4udVQwYmtJMmJ1SGxiazRGWWc0RmE0NDFYbjhCUXVNVmNzVWxhek0yS1NZalZmamxheVFtYjAwVll0UTJidVAxYTBJRmFrMGhYZ00yYnVQMVd5MDFhcnNWWXQ4a2IwSWxha0kyV2hFMWJ5OEVib29tZHRMbVk1QS4uLi4uLi5BLi4uLi4uLi4uLmYuLi5BLi4uLi4uTy4uLi4uLi4yQ0EuLi4uZi4uLi4uQS4uLi5uLi4uLnYuLi4uLi4udisrKysrQy4uLi5iLi5sTFlSK24uLi4uLi4rci4uLi4uZisuPC9JQ29tcG9uZW50PjwvVlNUM1BsdWdpblN0YXRlPgA=", "Cello": "VkMyIX0BAAA8P3htbCB2ZXJzaW9uPSIxLjAiIGVuY29kaW5nPSJVVEYtOCI/PiA8VlNUM1BsdWdpblN0YXRlPjxJQ29tcG9uZW50PjIwOC5FLi4uLi4uLi4uUFYuLi4udVQwYmtJMmJ1SGxiazRGWWc0RmE0NDFYbjhCUXVNVmNzVWxhek0yS1NZalZmamxheVFtYjAwVll0UTJidUxWWXJ3MWF1LmtidWNsYmcwMWJ1WDJYZUVsYmk4MVdsOFZjeDhFYWtjVlh6ODFXc0VGYnRMbVk1QS4uLi4uLi5BLi4uLi4uLi4uLmYuLi5BLi4uLi4uTy4uLi4uLi4yQ0EuLi4uZi4uLi4uQS4uLi5uLi4uLnYuLi4uLi4udisrKysrSC4uLi5iLi5sTFlSK24uLi4uLi4rci4uLi4uZitQRi4uLi4uLnJGLi4uLi4uekYuLi4uLi5uRy4uLi4uLnJHLi4uLi4uLjwvSUNvbXBvbmVudD48L1ZTVDNQbHVnaW5TdGF0ZT4A", "Tuba": "VkMyIbYBAAA8P3htbCB2ZXJzaW9uPSIxLjAiIGVuY29kaW5nPSJVVEYtOCI/PiA8VlNUM1BsdWdpblN0YXRlPjxJQ29tcG9uZW50PjI1MS5FLi4uLi4uLi4uZlMuLi4udVQwYmtJMmJ1SGxiazRGWWc0RmE0NDFYbjhCUXVNVmNzVWxhek0yS1NZalZmamxheVFtYjAwVll0UTJidVBXY2hFMUtQSTJhbUlXWHNNMkt3enhidXcxYXN2VlltRUZjdTR4YmxvRy4uLi4uLi5ELi4uLi4uLi4uLi5CLi5ELi4uLi4uNy4uLi4uLi5iT0QuLi4uLkIuLi4uRC4uLi5mQi4uLi5DLi4uLi4uLlkuLi4uREEuLi5QLi5mKzk4NnlBLlh4akk4aUIuZis5ODZ5Qi4uLi4uOVNRLi4uLi4uZlEuUGlGTTV5US5UblBnNUNSLi4uLi45U1IuWHhqSThpUi5UblBnM3lSLi4uLi4udmEuLi4uLi4uYi5mOTc0NGliLi4uLi4udmIuWHhqSTZDYy4uLi4uLlBjLi4uLi4uLjwvSUNvbXBvbmVudD48L1ZTVDNQbHVnaW5TdGF0ZT4A", "Pluck Synth": "VkMyIaYBAAA8P3htbCB2ZXJzaW9uPSIxLjAiIGVuY29kaW5nPSJVVEYtOCI/PiA8VlNUM1BsdWdpblN0YXRlPjxJQ29tcG9uZW50PjIzOS5FLi4uLi4uLi4uLlUuLi4udVQwYmtJMmJ1SGxiazRGWWc0RmE0NDFYbjhCUXVNVmNzVWxhek0yS1NZalZmamxheVFtYjAwVll0UTJidUxXZHRRR1pzLkdhME0xWnVMMWEyTVdkdFFHWmVNR1pvWUZjNDhFYnJVMlhxNHhibG9HLi4uLi4uLkQuLi4uLi4uLi4uLkIuLkQuLi4uLi43Li4uLi4uLmJPRC4uLi4uQi4uLi5ELi4uLmZCLi4uLkMuLi4uLi4uKysrKys2Li4uLnZBLlh4akk4aUIuLi4uLjd5Qi4uLi4uOUNZLi4uLi4uUFkuLi4uLi5mWS5YdmZBMnlZLi4uLi4uLlouVG5QZzNTWi4uLi4uLmZaLi4uLi4udlouLi4uLi4uYS5QZi5BN1NhLi4uLi4uZmEuUGYuQTVDPC9JQ29tcG9uZW50PjwvVlNUM1BsdWdpblN0YXRlPgA=", "Drum Kit": "VkMyIU0CAAA8P3htbCB2ZXJzaW9uPSIxLjAiIGVuY29kaW5nPSJVVEYtOCI/PiA8VlNUM1BsdWdpblN0YXRlPjxJQ29tcG9uZW50PjM2NC5FLi4uLi4uLi4udlouLi4udVQwYmtJMmJ1SGxiazRGWWc0RmE0NDFYbjhCUXVNVmNzVWxhek0yS1NZalZmamxheVFtYjAwVll0UTJidVBsYjAwMWJ1UGpiMDAxUW9vV2F1OFJTMHdGWXA4bGJqc1Raejh4VHpVbGJrODFLRElXY3NjVFo1MDFhZnpUY3JRbFp1SUdZS2tGY3RMbVk1QS4uLi4uLi5BLi4uLi4uLi4uLmYuLi5BLi4uLi4uTy4uLi4uLi4yQ0EuLi4uZi4uLi4uQS4uLi5uLi4uLnYuLi4uLi4udisrKysrZS4uLi5iLi5sTFlSK24uLi4uLi4rci4uLi4uZitQQS4uLi4uK1RBLi4uLi4rWEEuLi4uLitiQS4uLi4uK2ZBLi4uLi4rakEuLi4uLituQS4uLi4uK3JBLi4uLi4rdkEuLi4uLit6QS4uLi4uKzNBLi4uLi4rN0EuLi4uLisuQi4uLi4uK0RCLk15TFM5SEIuTXlMeTlMQi5abFlGK1BCLk15TFMrVEIuWmxZbDlYQi4uLi5mOWJCLi4uLlArZkIuLi4uZitqQi4uLi5mK25CLi4uLi4uckIuLi4uLit2Qi4uLi4uK3pCLi4uLi4rM0IuLi4uLitISC4uLi4uLi48L0lDb21wb25lbnQ+PC9WU1QzUGx1Z2luU3RhdGU+AA==", "Saxophone": "VkMyId4AAAA8P3htbCB2ZXJzaW9uPSIxLjAiIGVuY29kaW5nPSJVVEYtOCI/PiA8VlNUM1BsdWdpblN0YXRlPjxJQ29tcG9uZW50PjkwLkUuLi4uLi4uLi5QLi4uLi4uLi4uLi4uUC4uLi4uLi4uLi4uSC4uUC4uLi4uLnZDLi4uLi4udjhQLi4uLi5ILi4uLlAuLi4uLkouLi4uTC4uLi4uLi43KysrKysuLi4uLkcuZklTbHpPSi4uLi4udk9LLi4uLi4zTzwvSUNvbXBvbmVudD48L1ZTVDNQbHVnaW5TdGF0ZT4A" };
+
+const PRESET_STATES_KEY = 'nasty_preset_states_v1';
+function loadPresetStates() {
+  try { return JSON.parse(localStorage.getItem(PRESET_STATES_KEY) || '{}'); } catch { return {}; }
+}
+// TEMP: on load, dump whatever's currently saved to /tmp so Claude can grab it.
+setTimeout(() => {
+  try {
+    if (window.nasty && window.nasty.dumpPresetStates) {
+      window.nasty.dumpPresetStates(JSON.stringify(loadPresetStates(), null, 2));
+    }
+  } catch {}
+}, 500);
+function savePresetStates(states) {
+  try { localStorage.setItem(PRESET_STATES_KEY, JSON.stringify(states)); } catch {}
+  // TEMP: also write to a file so Claude can extract them to bake as defaults.
+  try {
+    if (window.nasty && window.nasty.dumpPresetStates) {
+      window.nasty.dumpPresetStates(JSON.stringify(states, null, 2));
+    }
+  } catch {}
+}
+
+function addSfizzPresetChannel(name, folder, file) {
+  if (!enginePluginsList) { alert('Audio engine still starting — try again in a sec.'); return; }
+  const sfizz = enginePluginsList.find(p => /sfizz/i.test(p.name) && p.format === 'VST3');
+  if (!sfizz) { alert('Sfizz not found. Ensure the bundled instruments are installed.'); return; }
+
+  const savedStates = loadPresetStates();
+  // User's own tweaks take priority; otherwise fall back to the bundled
+  // default so first-time users get an instant one-click load.
+  const savedState = savedStates[name] || PRESET_DEFAULT_STATES[name] || '';
+
+  const id = 'ch_plugin_' + Date.now().toString(36);
+  for (const c of song.channels) c.armed = false;
+  const ch = {
+    id, name, instrument: 'plugin',
+    pluginId: sfizz.id, pluginFormat: sfizz.format,
+    drumPitch: null, volume: 0.8, effects: [],
+    muted: false, solo: false, armed: true,
+    color: PALETTE[song.channels.length % PALETTE.length],
+    insertId: 'master',
+    // Tag so future auto-saves know which preset this channel represents.
+    presetName: name,
+    pluginState: savedState,
+  };
+  song.channels.push(ch);
+  autoShowOnLoad.add(id);
+  window.nasty.engine.send({
+    cmd: 'load_plugin', channelId: id, pluginId: sfizz.id, state: savedState,
+  });
+  if (savedState) latestPluginStates[id] = savedState;
+  render();
+}
+
+// Add a channel that plays one of the 128 GM programs via Nasty's built-in
+// FluidSynth. Marked with pluginId='gm-N' so it's engine-routed like plugin
+// channels, and hydration knows to use add_gm_channel instead of load_plugin.
+async function addGmChannel(program, displayName) {
+  const sf2 = window.nasty && window.nasty.sf2Path ? await window.nasty.sf2Path() : '';
+  if (!sf2) { alert('Bundled SoundFont not found.'); return; }
+  const id = 'ch_gm_' + Date.now().toString(36);
+  for (const c of song.channels) c.armed = false;
+  const ch = {
+    id, name: displayName, instrument: 'plugin',
+    pluginId: 'gm-' + program, pluginFormat: 'GM', gmProgram: program,
+    drumPitch: null, volume: 0.8, effects: [],
+    muted: false, solo: false, armed: true,
+    color: PALETTE[song.channels.length % PALETTE.length],
+    insertId: 'master',
+  };
+  song.channels.push(ch);
+  window.nasty.engine.send({
+    cmd: 'add_gm_channel', channelId: id, program, sf2Path: sf2,
+  });
+  render();
+}
 
 function addPluginChannel(pluginDesc) {
   const id = 'ch_plugin_' + Date.now().toString(36);
@@ -3969,18 +5325,78 @@ function addPluginChannel(pluginDesc) {
 // Skips known unstable plugins (like FL Studio as a plugin) so one bad
 // plugin can't crash the engine at boot.
 const UNSAFE_HYDRATE_PATTERNS = [/FL Studio/i, /Fruity Loops/i];
-function hydratePluginChannels() {
+async function hydratePluginChannels() {
   if (!(window.nasty && window.nasty.engine)) return;
+  const sf2 = window.nasty.sf2Path ? await window.nasty.sf2Path() : '';
+  // Path to bundled drum samples (mirrors sf2Path for GM).
+  const drumsBase = sf2 ? sf2.replace(/[^/]+$/, 'drums/') : '';
   for (const c of song.channels) {
     if (c.instrument !== 'plugin' || !c.pluginId) continue;
+    if (typeof c.pluginId === 'string' && c.pluginId.startsWith('gm-')) {
+      const program = c.gmProgram != null ? c.gmProgram : parseInt(c.pluginId.slice(3), 10);
+      window.nasty.engine.send({
+        cmd: 'add_gm_channel', channelId: c.id, program, sf2Path: sf2,
+      });
+      continue;
+    }
+    if (typeof c.pluginId === 'string' && c.pluginId.startsWith('drum:')) {
+      const sample = c.drumSample || c.pluginId.slice(5);
+      const rootNote = c.drumRootNote ?? 60;
+      window.nasty.engine.send({
+        cmd: 'add_drum_channel', channelId: c.id,
+        samplePath: drumsBase + sample, rootNote,
+      });
+      continue;
+    }
     if (UNSAFE_HYDRATE_PATTERNS.some(re => re.test(c.name || c.pluginId))) {
       console.log('[nasty] skipping auto-hydrate of', c.name, '- open manually');
       continue;
     }
     window.nasty.engine.send({
       cmd: 'load_plugin', channelId: c.id, pluginId: c.pluginId,
+      state: c.pluginState || '',
+    });
+    if (c.pluginState) latestPluginStates[c.id] = c.pluginState;
+  }
+  // Master bus — everything routes through it so effects on Master strip
+  // apply to the whole mix. Graph mutations are now suspended-processing
+  // wrapped in rewireChannelUnlocked to avoid the earlier SIGSEGV.
+  window.nasty.engine.send({ cmd: 'create_bus', channelId: 'master_bus' });
+  for (const b of (song.mixer.busses || [])) {
+    window.nasty.engine.send({ cmd: 'create_bus', channelId: b.id });
+  }
+  for (const c of song.channels) {
+    const target = c.targetInsertNum ? ('bus_' + c.targetInsertNum) : '';
+    window.nasty.engine.send({
+      cmd: 'set_channel_target', channelId: c.id, targetChannelId: target,
     });
   }
+  const hydrateEffects = (ownerId, effects, savedStatesMap) => {
+    const plugins = (effects || []).filter(e => e && e.type === 'plugin');
+    if (!plugins.length) return;
+    const engineId = ownerId === 'master' ? 'master_bus' : ownerId;
+    latestEffectStates[engineId] = latestEffectStates[engineId] || {};
+    for (const fx of plugins) {
+      const savedState = (savedStatesMap && savedStatesMap[fx.slotId]) || '';
+      window.nasty.engine.send({
+        cmd: 'add_effect', channelId: engineId, slotId: fx.slotId,
+        pluginId: fx.pluginId, state: savedState,
+      });
+      if (savedState) latestEffectStates[engineId][fx.slotId] = savedState;
+      if (fx.bypassed) {
+        window.nasty.engine.send({
+          cmd: 'bypass_effect', channelId: engineId, slotId: fx.slotId, bypassed: true,
+        });
+      }
+    }
+  };
+  for (const c of song.channels)     hydrateEffects(c.id, c.effects, c.effectStates);
+  for (const b of (song.mixer.busses || []))
+    hydrateEffects(b.id, b.effects, b.effectStates);
+  // Master's effect chain lives on the master insert entry, routed to the
+  // engine's dedicated master_bus node.
+  const master = (song.mixer.inserts || []).find(i => i.id === 'master');
+  if (master) hydrateEffects('master_bus', master.effects, master.effectStates);
 }
 
 // Subscribe to audio-engine events (desktop only)
@@ -3991,20 +5407,48 @@ if (window.nasty && window.nasty.engine) {
       if (browserTab === 'plugins') renderBrowser();
     } else if (msg.event === 'ready') {
       engineScanning = null;
-      // Fetch plugin list once scan finishes
       window.nasty.engine.send({ cmd: 'list_plugins' });
-      // Re-hydrate plugins from the saved song so double-click / notes work.
+      window.nasty.engine.send({ cmd: 'list_audio_devices' });
       hydratePluginChannels();
     } else if (msg.event === 'plugin_list') {
       enginePluginsList = msg.plugins || [];
       enginePluginsError = null;
       if (browserTab === 'plugins') renderBrowser();
+    } else if (msg.event === 'audio_devices') {
+      renderAudioDeviceDropdown(msg.devices || {});
+    } else if (msg.event === 'output_device_set') {
+      // Re-query so the dropdown reflects what the engine actually settled on.
+      window.nasty.engine.send({ cmd: 'list_audio_devices' });
     } else if (msg.event === 'plugin_loaded') {
       // Only auto-pop the plugin window if the user explicitly added it in
       // this session — not on song-restore re-loads (which would spam windows).
       if (msg.channelId && autoShowOnLoad.has(msg.channelId)) {
         autoShowOnLoad.delete(msg.channelId);
         window.nasty.engine.send({ cmd: 'show_plugin_ui', channelId: msg.channelId });
+      }
+    } else if (msg.event === 'plugin_states_snapshot') {
+      latestPluginStates = msg.states || {};
+      // Learn preset states: if a channel is tagged with a presetName, cache
+      // its current state under that name so future clicks of the same
+      // preset auto-load it (one-click after the first-time setup).
+      const learned = loadPresetStates();
+      let learnedChanged = false;
+      for (const c of song.channels) {
+        if (c.presetName && latestPluginStates[c.id] && latestPluginStates[c.id] !== learned[c.presetName]) {
+          learned[c.presetName] = latestPluginStates[c.id];
+          learnedChanged = true;
+        }
+      }
+      if (learnedChanged) savePresetStates(learned);
+      if (persistPendingPluginSnapshot) {
+        persistPendingPluginSnapshot = false;
+        maybeWriteAfterSnapshots();
+      }
+    } else if (msg.event === 'effect_states_snapshot') {
+      latestEffectStates = msg.states || {};
+      if (persistPendingEffectSnapshot) {
+        persistPendingEffectSnapshot = false;
+        maybeWriteAfterSnapshots();
       }
     } else if (msg.event === 'error') {
       enginePluginsError = msg.error || 'engine error';
@@ -4013,6 +5457,9 @@ if (window.nasty && window.nasty.engine) {
   });
   // Ask for plugin list on startup (engine will respond after scan finishes)
   setTimeout(() => window.nasty.engine.send({ cmd: 'list_plugins' }), 500);
+  // Also request the audio device list — this covers the case where the
+  // engine's 'ready' event fired before the renderer registered its listener.
+  setTimeout(() => window.nasty.engine.send({ cmd: 'list_audio_devices' }), 500);
 }
 
 // Sync FL shell state on every render()
@@ -4127,7 +5574,7 @@ function makeFloating(opts) {
   el.classList.add('fl-floating');
   el.addEventListener('mousedown', bringToFront);
 
-  // Drag
+  // Drag — viewport-anchored so the window can go anywhere on screen.
   let dragging = false;
   let dragOffX = 0, dragOffY = 0;
   titleBar.addEventListener('mousedown', (e) => {
@@ -4141,39 +5588,59 @@ function makeFloating(opts) {
   });
   document.addEventListener('mousemove', (e) => {
     if (!dragging) return;
-    const containerRect = container.getBoundingClientRect();
-    let left = e.clientX - containerRect.left - dragOffX;
-    let top  = e.clientY - containerRect.top  - dragOffY;
-    left = Math.max(0, Math.min(containerRect.width  - 60,  left));
-    top  = Math.max(0, Math.min(containerRect.height - 24,  top));
+    let left = e.clientX - dragOffX;
+    let top  = e.clientY - dragOffY;
+    // Keep at least a bit of the title bar on screen so the user can grab it.
+    left = Math.max(-el.offsetWidth + 60, Math.min(window.innerWidth  - 60, left));
+    top  = Math.max(0, Math.min(window.innerHeight - 24, top));
     el.style.left = left + 'px';
     el.style.top  = top  + 'px';
   });
   document.addEventListener('mouseup', () => {
     if (dragging) { dragging = false; persist(); }
-    if (resizing) { resizing = false; persist(); }
+    if (resizing) { resizing = false; edgeResizing = null; persist(); }
   });
 
-  // Resize
+  // Resize (bottom-right corner + all four edges).
   let resizing = false;
-  let startX = 0, startY = 0, startW = 0, startH = 0;
-  if (resizeH) {
-    resizeH.addEventListener('mousedown', (e) => {
-      if (el.classList.contains('maximized')) return;
-      resizing = true;
-      startX = e.clientX; startY = e.clientY;
-      startW = el.offsetWidth; startH = el.offsetHeight;
-      e.preventDefault(); e.stopPropagation();
-    });
-  }
+  let edgeResizing = null; // 'right' | 'left' | 'top' | 'bottom' | 'corner'
+  let startX = 0, startY = 0, startW = 0, startH = 0, startL = 0, startT = 0;
+  const beginResize = (e, edge) => {
+    if (el.classList.contains('maximized')) return;
+    resizing = true;
+    edgeResizing = edge;
+    startX = e.clientX; startY = e.clientY;
+    startW = el.offsetWidth; startH = el.offsetHeight;
+    startL = parseInt(el.style.left) || 0;
+    startT = parseInt(el.style.top)  || 0;
+    e.preventDefault(); e.stopPropagation();
+  };
+  if (resizeH) resizeH.addEventListener('mousedown', (e) => beginResize(e, 'corner'));
+  el.querySelectorAll('.fl-edge').forEach(edge => {
+    edge.addEventListener('mousedown', (e) => beginResize(e, edge.dataset.edge));
+  });
   document.addEventListener('mousemove', (e) => {
     if (!resizing) return;
     const min = { w: parseInt(getComputedStyle(el).minWidth)  || 200,
                   h: parseInt(getComputedStyle(el).minHeight) || 120 };
-    const w = Math.max(min.w, startW + (e.clientX - startX));
-    const h = Math.max(min.h, startH + (e.clientY - startY));
-    el.style.width  = w + 'px';
-    el.style.height = h + 'px';
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    if (edgeResizing === 'right' || edgeResizing === 'corner') {
+      el.style.width  = Math.max(min.w, startW + dx) + 'px';
+    }
+    if (edgeResizing === 'bottom' || edgeResizing === 'corner') {
+      el.style.height = Math.max(min.h, startH + dy) + 'px';
+    }
+    if (edgeResizing === 'left') {
+      const w = Math.max(min.w, startW - dx);
+      el.style.width = w + 'px';
+      el.style.left  = (startL + (startW - w)) + 'px';
+    }
+    if (edgeResizing === 'top') {
+      const h = Math.max(min.h, startH - dy);
+      el.style.height = h + 'px';
+      el.style.top    = (startT + (startH - h)) + 'px';
+    }
   });
 
   return {

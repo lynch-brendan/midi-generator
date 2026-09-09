@@ -34,6 +34,11 @@
         "from": "../audio-engine/build/nasty-audio-engine_artefacts",
         "to": "audio-engine",
         "filter": ["nasty-audio-engine"]
+      },
+      {
+        "from": "../audio-engine/bundled-instruments",
+        "to": "bundled-instruments",
+        "filter": ["**/*"]
       }
     ],
     "mac": {

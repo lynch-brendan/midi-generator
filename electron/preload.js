@@ -7,6 +7,12 @@ contextBridge.exposeInMainWorld('nasty', {
   platform: process.platform,
   apiBase: 'https://museaimusician.com',
 
+  // TEMP: dump preset states to /tmp so Claude can bake them as defaults.
+  dumpPresetStates: (json) => ipcRenderer.invoke('dump-preset-states', json),
+
+  // Path to the bundled General MIDI SoundFont on disk.
+  sf2Path: () => ipcRenderer.invoke('nasty-sf2-path'),
+
   // Audio engine bridge (VST/AU plugin hosting).
   engine: {
     // Send a command to the audio engine (JSON serialisable).

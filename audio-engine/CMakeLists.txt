@@ -31,13 +31,25 @@ target_sources(nasty-audio-engine PRIVATE
     src/main.cpp
     src/PluginHost.cpp
     src/StdioBridge.cpp
+    src/GmSynth.cpp
+    src/SampleDrum.cpp
     $<$<PLATFORM_ID:Darwin>:src/MacHelpers.mm>
 )
+
+# FluidSynth for the built-in General MIDI synth (piano, strings, brass,
+# drums, etc.). Homebrew: brew install fluidsynth.
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(FLUIDSYNTH REQUIRED fluidsynth)
+target_include_directories(nasty-audio-engine PRIVATE ${FLUIDSYNTH_INCLUDE_DIRS})
+target_link_directories(nasty-audio-engine PRIVATE ${FLUIDSYNTH_LIBRARY_DIRS})
 
 if(APPLE)
     target_link_libraries(nasty-audio-engine PRIVATE
         "-framework Cocoa"
+        ${FLUIDSYNTH_LIBRARIES}
     )
+else()
+    target_link_libraries(nasty-audio-engine PRIVATE ${FLUIDSYNTH_LIBRARIES})
 endif()
 
 target_compile_definitions(nasty-audio-engine PRIVATE

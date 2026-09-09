@@ -8,3 +8,8 @@ soundfonts/
 *.DS_Store
 Drum kits/
 *.asd
+
+# Bundled plugin binaries (Surge XT, Dexed, drum samples etc.) — too big for git.
+# These are copied into place at build time or checked in via Git LFS if needed.
+audio-engine/bundled-instruments/
+*.zip

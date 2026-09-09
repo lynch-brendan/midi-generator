@@ -14,6 +14,7 @@
 #include "StdioBridge.h"
 
 #include <iostream>
+#include <thread>
 
 #if __APPLE__
 namespace nasty { void setSubprocessAsAgentApp(); }

@@ -28,6 +28,34 @@ function findAudioEngineBinary() {
   return candidates.find(p => p && fs.existsSync(p));
 }
 
+// On first launch, copy any bundled SFZ folders into the user's Sfizz
+// default folder so they show up in Sfizz's file picker without setup.
+// Idempotent: only copies folders that don't already exist.
+function seedBundledInstruments() {
+  try {
+    const devBundle  = path.join(__dirname, '..', 'audio-engine', 'bundled-instruments', 'sfz');
+    const prodBundle = path.join(process.resourcesPath || '', 'bundled-instruments', 'sfz');
+    const source = fs.existsSync(devBundle) ? devBundle
+                 : fs.existsSync(prodBundle) ? prodBundle
+                 : null;
+    if (!source) return;
+    const dest = path.join(require('os').homedir(), 'Documents', 'SFZ instruments');
+    fs.mkdirSync(dest, { recursive: true });
+    const entries = fs.readdirSync(source, { withFileTypes: true });
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      const from = path.join(source, e.name);
+      const to = path.join(dest, e.name);
+      if (fs.existsSync(to)) continue;
+      // Recursive copy (Node 16.7+ supports fs.cpSync).
+      fs.cpSync(from, to, { recursive: true });
+      console.log('[nasty] seeded instrument:', e.name);
+    }
+  } catch (e) {
+    console.error('[nasty] seedBundledInstruments failed:', e);
+  }
+}
+
 // Spawn the native audio engine and pipe JSON lines both ways.
 function startAudioEngine() {
   const bin = findAudioEngineBinary();
@@ -35,8 +63,25 @@ function startAudioEngine() {
     console.log('[nasty] audio engine binary not found — VST hosting disabled. Build it with: cd audio-engine/build && cmake --build .');
     return;
   }
+  // Point the engine at our bundled instruments folder so Sfizz + our
+  // curated CC0/CC-BY sample libraries get scanned alongside the user's
+  // system plugins. Dev: audio-engine/bundled-instruments. Prod: inside
+  // Nasty.app/Contents/Resources.
+  const devInstruments  = path.join(__dirname, '..', 'audio-engine', 'bundled-instruments');
+  const prodInstruments = path.join(process.resourcesPath || '', 'bundled-instruments');
+  const instrumentsPath = fs.existsSync(devInstruments) ? devInstruments
+                        : fs.existsSync(prodInstruments) ? prodInstruments
+                        : null;
+  const engineEnv = { ...process.env };
+  if (instrumentsPath) engineEnv.NASTY_INSTRUMENTS_PATH = instrumentsPath;
+  // Path to the bundled General MIDI SoundFont — renderer sends this to the
+  // engine when creating GM channels.
+  const sf2Path = instrumentsPath ? path.join(instrumentsPath, 'GeneralUser.sf2') : '';
+  engineEnv.NASTY_SF2_PATH = sf2Path;
+
   console.log('[nasty] spawning audio engine:', bin);
-  audioEngineProc = spawn(bin, [], { stdio: ['pipe', 'pipe', 'pipe'] });
+  if (instrumentsPath) console.log('[nasty] bundled instruments at:', instrumentsPath);
+  audioEngineProc = spawn(bin, [], { stdio: ['pipe', 'pipe', 'pipe'], env: engineEnv });
 
   const rl = readline.createInterface({ input: audioEngineProc.stdout });
   rl.on('line', (line) => {
@@ -83,10 +128,24 @@ ipcMain.handle('engine-cmd', (_evt, msg) => {
   }
 });
 
+ipcMain.handle('dump-preset-states', (_evt, json) => {
+  try { fs.writeFileSync('/tmp/nasty-preset-states.json', json); return { ok: true }; }
+  catch (e) { return { ok: false, error: String(e) }; }
+});
+
 ipcMain.handle('engine-status', () => ({
   running: !!audioEngineProc,
   ready: engineReady,
 }));
+
+// Renderer reads this to send the SF2 path along with GM channel creation.
+ipcMain.handle('nasty-sf2-path', () => {
+  const devInstruments  = path.join(__dirname, '..', 'audio-engine', 'bundled-instruments');
+  const prodInstruments = path.join(process.resourcesPath || '', 'bundled-instruments');
+  const dir = fs.existsSync(devInstruments) ? devInstruments
+            : fs.existsSync(prodInstruments) ? prodInstruments : null;
+  return dir ? path.join(dir, 'GeneralUser.sf2') : '';
+});
 
 function findNastyHtml() {
   // Dev: web/nasty.html is one level up from electron/
@@ -118,6 +177,17 @@ function createWindow() {
 
   mainWindow.loadFile(findNastyHtml());
   mainWindow.once('ready-to-show', () => mainWindow.show());
+
+  // Tell the audio engine when Nasty gains/loses focus so it can lower
+  // plugin windows from floating to normal level — otherwise they sit on
+  // top of Chrome/Slack when the user Cmd+Tabs away.
+  const sendFocus = (focused) => {
+    if (audioEngineProc && audioEngineProc.stdin.writable) {
+      try { audioEngineProc.stdin.write(JSON.stringify({ cmd: 'nasty_focus', focused }) + '\n'); } catch {}
+    }
+  };
+  mainWindow.on('focus', () => sendFocus(true));
+  mainWindow.on('blur',  () => sendFocus(false));
   // Surface renderer errors in the terminal so silent crashes are visible.
   mainWindow.webContents.on('render-process-gone', (_e, d) => console.error('[nasty] renderer gone:', d));
   mainWindow.webContents.on('console-message', (_e, level, msg, line, src) => {
@@ -194,7 +264,6 @@ function buildMenu() {
       submenu: [
         { label: 'Channel…',   click: () => sendCmd('add-channel') },
         { label: 'Pattern…',   click: () => sendCmd('add-pattern') },
-        { label: 'Mixer Insert', click: () => sendCmd('add-insert') },
       ],
     },
     {
@@ -236,6 +305,7 @@ function buildMenu() {
 app.whenReady().then(() => {
   createWindow();
   buildMenu();
+  seedBundledInstruments();
   startAudioEngine();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
