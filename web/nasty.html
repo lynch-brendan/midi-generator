@@ -1904,6 +1904,133 @@ const engineTransport = {
   setMetronomeEnabled(v) {
     this.send({ cmd: 'metronome_set_enabled', enabled: !!v });
   },
+
+  // ---- SONG mode ----
+  //
+  // PAT mode uses one flat pattern-note map per channel + a looping
+  // PatternPlayer. SONG mode uses per-pattern note maps + a per-channel
+  // arrangement of clips the engine walks against monotonic Transport time.
+  // Clips tile their referenced pattern to fill lengthSamples — stretch a
+  // 1-bar pattern to 4 bars and it plays four times, shrink it and only its
+  // first half plays.
+  setMode(mode) {
+    this.send({ cmd: 'transport_set_mode', mode: mode === 'song' ? 'song' : 'pat' });
+  },
+  setPatternNoteIn(patternId, note) {
+    this.send({
+      cmd: 'pattern_set_note_in',
+      channelId: note.channelId,
+      patternId,
+      noteId: this.noteIdOf(note),
+      pitch: note.pitch,
+      velocity: note.velocity ?? 0.8,
+      atSample: this.beatsToSamples(note.startBeat),
+      durationSamples: this.beatsToSamples(note.durationBeats),
+    });
+  },
+  clearPatternNoteIn(patternId, note) {
+    this.send({
+      cmd: 'pattern_clear_note_in',
+      channelId: note.channelId,
+      patternId,
+      noteId: this.noteIdOf(note),
+    });
+  },
+  clearAllPatternsInChannel(channelId) {
+    this.send({ cmd: 'pattern_clear_all_in_channel', channelId });
+  },
+  setChannelArrangement(channelId, clips) {
+    this.send({ cmd: 'set_channel_arrangement', channelId, clips });
+  },
+  clearChannelArrangement(channelId) {
+    this.send({ cmd: 'clear_channel_arrangement', channelId });
+  },
+  // Push the whole SONG-mode view of the song to the engine: every pattern's
+  // notes on every plugin channel, plus each channel's arrangement lane
+  // (clips from every track that reference a pattern touching that channel).
+  // Called on transport start in SONG mode so the engine has a clean,
+  // complete picture. Cheap enough that a full re-push on play is fine —
+  // live-edit deltas are a later optimisation.
+  pushSongArrangement() {
+    const pluginChIds = new Set(
+      song.channels.filter(c => c.instrument === 'plugin').map(c => c.id));
+    if (pluginChIds.size === 0) return;
+
+    // 1) Reset every plugin channel's SONG-mode state on the engine.
+    for (const chId of pluginChIds) {
+      this.clearAllPatternsInChannel(chId);
+      this.clearChannelArrangement(chId);
+    }
+
+    // 2) Push every pattern's notes, grouped by channel. Notes with a
+    //    channelId not in the plugin set are silently skipped (samplers
+    //    handle their own channels via the same shape — TODO if needed).
+    for (const pat of song.patterns) {
+      for (const note of (pat.notes || [])) {
+        if (!pluginChIds.has(note.channelId)) continue;
+        this.setPatternNoteIn(pat.id, note);
+      }
+    }
+
+    // 3) Build each channel's arrangement from song.tracks[*].clips[*].
+    //    A clip appears on a channel's lane only if its pattern has notes
+    //    for that channel — keeps the engine walk tight.
+    const patternById = new Map(song.patterns.map(p => [p.id, p]));
+    const channelHasNotesIn = new Map(); // patternId → Set(channelId)
+    for (const pat of song.patterns) {
+      const s = new Set();
+      for (const n of (pat.notes || [])) s.add(n.channelId);
+      channelHasNotesIn.set(pat.id, s);
+    }
+
+    const perChannelClips = new Map(); // channelId → [clip]
+    for (const chId of pluginChIds) perChannelClips.set(chId, []);
+
+    for (const track of song.tracks) {
+      if (track.muted) continue;
+      // Solo semantics for tracks: if any track is soloed, only soloed tracks
+      // contribute. Matches FL's "S" behaviour.
+      const anySolo = song.tracks.some(t => t.solo);
+      if (anySolo && !track.solo) continue;
+
+      for (const clip of (track.clips || [])) {
+        if (clip.type !== 'pattern') continue;  // audio clips: TODO
+        const pat = patternById.get(clip.patternId);
+        if (!pat) continue;
+        const touched = channelHasNotesIn.get(pat.id) || new Set();
+        const startSample = this.beatsToSamples(clip.startBar * 4);
+        const lengthSample = this.beatsToSamples(clip.lengthBars * 4);
+        const patLenSample = this.beatsToSamples((pat.lengthBars || 1) * 4);
+        for (const chId of touched) {
+          if (!pluginChIds.has(chId)) continue;
+          perChannelClips.get(chId).push({
+            patternId: pat.id,
+            songStartSample: startSample,
+            lengthSamples: lengthSample,
+            patternLoopLenSamples: patLenSample,
+          });
+        }
+      }
+    }
+
+    for (const [chId, clips] of perChannelClips) {
+      this.setChannelArrangement(chId, clips);
+    }
+  },
+  // Total arrangement length in beats — used to size the Transport loop so
+  // SONG playback repeats at song end. Falls back to 1 bar so play never
+  // hangs on an empty arrangement.
+  songLengthBeats() {
+    let maxEndBar = 0;
+    for (const t of song.tracks) {
+      for (const c of (t.clips || [])) {
+        if (c.type !== 'pattern') continue;
+        const end = (c.startBar || 0) + (c.lengthBars || 0);
+        if (end > maxEndBar) maxEndBar = end;
+      }
+    }
+    return Math.max(4, maxEndBar * 4);
+  },
 };
 
 function beatsToSec(beats, bpm = song.bpm) { return beats * 60 / bpm; }
@@ -1939,6 +2066,35 @@ function tracksToPlay() {
   });
 }
 
+// PAT mode hot-swap: if we're currently playing in PAT mode and the user
+// picks a different pattern (channel-rack pattern list, playlist pattern
+// picker, piano-roll dropdown), swap the engine's pattern in place — no
+// stop, no reseek. Matches FL: clicking Pattern 2 while Pattern 1 loops
+// switches to Pattern 2 on the next loop iteration.
+function hotSwapCurrentPatternIfPlaying() {
+  if (!animationFrame) return;                     // not playing
+  if (song.transportMode !== 'pat') return;
+  if (!engineTransport.available()) return;
+  const pat = song.patterns.find(p => p.id === currentPatternId);
+  if (!pat) return;
+  engineTransport.pushPattern(pat);
+  engineTransport.setLoopBeats(pat.lengthBars * 4);
+}
+
+// Re-push the SONG arrangement to the engine if we're in SONG mode. Called
+// after any clip mutation (add/resize/move/delete) so live edits during
+// playback are heard on the next audio buffer — otherwise the engine's
+// arrangement stays frozen at whatever was pushed on Play, and drags on
+// the timeline are silent until you stop-and-restart.
+function syncSongArrangement() {
+  if (song.transportMode !== 'song') return;
+  if (!engineTransport.available()) return;
+  engineTransport.pushSongArrangement();
+  // Loop length may have changed (clip resize / new clip past current end).
+  // Publish so the PatternPlayer wraps at the new song boundary.
+  engineTransport.setLoopBeats(engineTransport.songLengthBeats());
+}
+
 // Stop any held plugin notes on the engine. Called on transport stop /
 // pattern edits so nothing hangs. Cheap enough to fire freely.
 function stopAllEngineNotes() {
@@ -1955,7 +2111,31 @@ function stopAllEngineNotes() {
 
 function playSong() {
   if (!engineTransport.available()) return;
-  if (song.transportMode !== 'pat') return; // SONG-mode arrangement TBD
+
+  // Always tell the engine which mode this play is starting in — the flag
+  // decides which walker path the MidiInjector runs (PAT: looping
+  // PatternPlayer; SONG: monotonic Transport against per-channel arrangement).
+  engineTransport.setMode(song.transportMode);
+
+  if (song.transportMode === 'song') {
+    // Push the whole arrangement to the engine. Cheap enough on play; live
+    // edits during playback are a later delta-push optimisation.
+    engineTransport.pushSongArrangement();
+    const lenBeats = engineTransport.songLengthBeats();
+    engineTransport.seek(0);
+    engineTransport.seekPattern(0);
+    // setLoopBeats sizes the PatternPlayer loop — not what SONG uses for
+    // playback, but keeps the "pattern position" state consistent and lets
+    // animatePlayhead's SONG branch use songLengthBeats for its own wrap.
+    engineTransport.setLoopBeats(lenBeats);
+    engineTransport.setMetronomeEnabled(!!document.getElementById('metronome')?.checked);
+    engineTransport.play();
+    document.getElementById('playhead').style.display = 'block';
+    animatePlayhead();
+    return;
+  }
+
+  // PAT mode.
   const pat = song.patterns.find(p => p.id === currentPatternId);
   if (!pat) {
     document.getElementById('playhead').style.display = 'none';
@@ -1975,7 +2155,7 @@ function playSong() {
   engineTransport.play();
   // In PAT mode we're looping the pattern, not scrubbing the playlist — hide
   // the playlist playhead so it doesn't confusingly march across the timeline.
-  document.getElementById('playhead').style.display = song.transportMode === 'pat' ? 'none' : 'block';
+  document.getElementById('playhead').style.display = 'none';
   // Always animate — the tick loop drives both the playlist playhead
   // (SONG mode) and the transport BAR:BEAT:TICK clock + channel-rack
   // playhead (PAT mode).
@@ -2189,6 +2369,10 @@ function applyToolCalls(calls) {
     } catch (e) { console.error('tool apply failed', call, e); }
   }
   autoExpandBars();
+  // Any AI-driven mutation could change what a currently-playing SONG
+  // arrangement should hear (new clip, moved clip, deleted pattern, edited
+  // notes). Cheapest fix: re-push the whole SONG view once per tool batch.
+  syncSongArrangement();
   return summaries;
 }
 function autoExpandBars() {
@@ -2348,12 +2532,24 @@ function toggleStepNote(pattern, channel, stepIdx) {
   // Push the single change straight into the audio engine's pattern data.
   // The audio callback picks it up on the very next buffer — no cancel-
   // and-rebuild of scheduled events, no playhead twitch.
-  if (channel.instrument === 'plugin' && song.transportMode === 'pat' && engineTransport.available()) {
-    if (addedNote)   engineTransport.setNote(addedNote);
-    if (removedNote) engineTransport.clearNote(removedNote);
-    // Loop length may have grown when the note extended past the current
-    // pattern end. Re-publish so the engine loops at the new boundary.
-    engineTransport.setLoopBeats(pattern.lengthBars * 4);
+  //
+  // Two engine data paths live side by side; edits go to whichever the
+  // current mode reads from:
+  //   PAT  → the flat patternNotes map (looped by PatternPlayer)
+  //   SONG → the per-pattern notesByPattern map keyed by pattern.id
+  // Mirroring to the wrong path either does nothing (PAT walker doesn't
+  // read notesByPattern) or pollutes the OTHER mode's playback.
+  if (channel.instrument === 'plugin' && engineTransport.available()) {
+    if (song.transportMode === 'pat') {
+      if (addedNote)   engineTransport.setNote(addedNote);
+      if (removedNote) engineTransport.clearNote(removedNote);
+      // Loop length may have grown when the note extended past the current
+      // pattern end. Re-publish so the engine loops at the new boundary.
+      engineTransport.setLoopBeats(pattern.lengthBars * 4);
+    } else {
+      if (addedNote)   engineTransport.setPatternNoteIn(pattern.id, addedNote);
+      if (removedNote) engineTransport.clearPatternNoteIn(pattern.id, removedNote);
+    }
   }
 }
 
@@ -2494,7 +2690,11 @@ function renderPatternList() {
         <button data-a="del" data-pid="${p.id}" title="Delete pattern">✕</button>
       </span>
     `;
-    row.addEventListener('click', () => { currentPatternId = p.id; render(); });
+    row.addEventListener('click', () => {
+      currentPatternId = p.id;
+      hotSwapCurrentPatternIfPlaying();
+      render();
+    });
     row.addEventListener('dragstart', (e) => {
       e.dataTransfer.setData('application/x-nasty-pattern', p.id);
       e.dataTransfer.effectAllowed = 'copy';
@@ -3340,13 +3540,14 @@ function onPatternBtn(e) {
   const pid = e.currentTarget.dataset.pid;
   const p = song.patterns.find(pt => pt.id === pid);
   if (!p) return;
-  if (a === 'edit') { currentPatternId = pid; openPianoRoll(pid); }
+  if (a === 'edit') { currentPatternId = pid; hotSwapCurrentPatternIfPlaying(); openPianoRoll(pid); }
   else if (a === 'del') {
     if (confirm('Delete pattern "' + p.name + '"?')) {
       song.patterns = song.patterns.filter(pt => pt !== p);
       for (const t of song.tracks) t.clips = t.clips.filter(c => c.patternId !== pid);
       if (currentPatternId === pid) currentPatternId = song.patterns[0]?.id || null;
       render();
+      syncSongArrangement();
     }
   }
 }
@@ -3377,7 +3578,10 @@ function onClipResizeMove(e) {
   if (!clip) return;
   const dx = e.clientX - clipResizeDrag.startX;
   const dBars = dx / BAR_WIDTH;
-  const snap = document.getElementById('quantize').checked ? 0.25 : 0.0625;
+  // Default snap = 1/4 bar (one beat) — coarse enough that exact bar
+  // boundaries are easy to land on, fine enough for beat-level phrasing.
+  // Hold Shift for 1/16 (a step) when you want to sculpt the tail.
+  const snap = e.shiftKey ? 0.0625 : 0.25;
   let newLen = clipResizeDrag.origLen + dBars;
   newLen = Math.max(snap, Math.round(newLen / snap) * snap);
   if (Math.abs(newLen - clip.lengthBars) > 0.001) {
@@ -3391,6 +3595,7 @@ function onClipResizeUp() {
   document.removeEventListener('mouseup', onClipResizeUp);
   clipResizeDrag = null;
   persist();
+  syncSongArrangement();
 }
 
 function onLaneMouseDown(e) {
@@ -3414,6 +3619,7 @@ function onLaneMouseDown(e) {
   selectedClipId = clip.id;
   autoExpandBars();
   render();
+  syncSongArrangement();
 }
 
 function onLaneDragOver(e) {
@@ -3441,6 +3647,7 @@ function onLaneDrop(e) {
   selectedClipId = clip.id;
   autoExpandBars();
   render();
+  syncSongArrangement();
 }
 
 function onClipMouseDown(e) {
@@ -3495,6 +3702,7 @@ function onClipMouseUp(e) {
   if (!clipDrag) return;
   const track = song.tracks.find(t => t.id === clipDrag.trackId);
   const clip = track && track.clips.find(c => c.id === clipDrag.clipId);
+  const didChange = clipDrag.moved;
   if (clipDrag.copy && clip && clipDrag.moved) {
     const copy = { ...clip, id: 'clip_' + Date.now().toString(36) };
     const ended = Math.round(clipDrag.origBar + (e.clientX - clipDrag.startX) / BAR_WIDTH);
@@ -3508,6 +3716,7 @@ function onClipMouseUp(e) {
     openPianoRoll(clip.patternId);
   }
   clipDrag = null;
+  if (didChange) syncSongArrangement();
 }
 
 // ============================================================
@@ -3520,6 +3729,7 @@ document.addEventListener('keydown', (e) => {
     for (const t of song.tracks) t.clips = t.clips.filter(c => c.id !== selectedClipId);
     selectedClipId = null;
     render();
+    syncSongArrangement();
   }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b' && selectedClipId && !isPrOpen) {
     e.preventDefault();
@@ -3532,6 +3742,7 @@ document.addEventListener('keydown', (e) => {
         selectedClipId = copy.id;
         autoExpandBars();
         render();
+        syncSongArrangement();
         break;
       }
     }
@@ -4169,8 +4380,12 @@ function commitRecordedNote(rec, channelId, pitch, velocity, tStart, tEnd) {
   // loop mid-recording, which is what "the looping keeps happening"
   // bug was.
   const ch = song.channels.find(c => c.id === note.channelId);
-  if (ch && ch.instrument === 'plugin' && song.transportMode === 'pat' && engineTransport.available()) {
-    engineTransport.setNote(note);
+  if (ch && ch.instrument === 'plugin' && engineTransport.available()) {
+    if (song.transportMode === 'pat') {
+      engineTransport.setNote(note);
+    } else {
+      engineTransport.setPatternNoteIn(rec.patternId, note);
+    }
   }
 }
 
@@ -4276,12 +4491,18 @@ document.getElementById('rec-btn').addEventListener('click', () => {
 document.getElementById('metronome').addEventListener('change', (e) => {
   engineTransport.setMetronomeEnabled(!!e.target.checked);
 });
-// PAT / SONG mode toggle
+// PAT / SONG mode toggle. Toggling stops playback and tells the engine —
+// otherwise a SONG-mode play in flight keeps walking the arrangement even
+// after the UI has switched to PAT (and vice-versa), which is exactly the
+// "why do the drums keep playing while I'm editing chords in a new pattern"
+// footgun Brendan hit.
 document.querySelectorAll('.patsong .ps-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     const mode = btn.dataset.mode;
     if (!mode || song.transportMode === mode) return;
+    stopSong();
     song.transportMode = mode;
+    if (engineTransport.available()) engineTransport.setMode(mode);
     document.querySelectorAll('.patsong .ps-btn').forEach(b => {
       b.classList.toggle('active', b.dataset.mode === mode);
     });
@@ -4357,6 +4578,7 @@ document.getElementById('new-pattern-ok').addEventListener('click', () => {
     color: PALETTE[song.patterns.length % PALETTE.length],
   });
   currentPatternId = id;
+  hotSwapCurrentPatternIfPlaying();
   document.getElementById('add-pattern-modal').classList.add('hidden');
   render();
 });
@@ -4456,6 +4678,7 @@ function runCmd(cmd) {
   if (cmd && cmd.startsWith('sel-pat:')) {
     const id = cmd.slice(8);
     currentPatternId = id;
+    hotSwapCurrentPatternIfPlaying();
     render();
     if (isWindowOpen('pr') && typeof openPianoRoll === 'function') openPianoRoll(id);
   }
@@ -4500,6 +4723,7 @@ document.querySelectorAll('.tb-close[data-cmd], .ch-x[data-cmd]').forEach(el => 
 // Toolbar pattern selector
 document.getElementById('tb-pattern-select').addEventListener('change', (e) => {
   currentPatternId = e.target.value;
+  hotSwapCurrentPatternIfPlaying();
   render();
   if (isWindowOpen('pr') && typeof openPianoRoll === 'function') openPianoRoll(currentPatternId);
 });
@@ -4630,7 +4854,11 @@ function renderBrowser() {
       const it = document.createElement('div');
       it.className = 'br-item';
       it.innerHTML = `<span class="br-swatch" style="background:${p.color}"></span> ${p.name}`;
-      it.addEventListener('click', () => { currentPatternId = p.id; render(); });
+      it.addEventListener('click', () => {
+        currentPatternId = p.id;
+        hotSwapCurrentPatternIfPlaying();
+        render();
+      });
       wrap.appendChild(it);
     });
     tree.appendChild(wrap);

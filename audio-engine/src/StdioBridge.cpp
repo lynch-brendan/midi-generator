@@ -313,6 +313,54 @@ juce::var StdioBridge::handleCommand(const juce::var& msg) {
         return {};
     }
 
+    // ---- SONG mode ----
+    if (cmd == "transport_set_mode") {
+        const auto s = msg["mode"].toString();
+        host.getTransport().setMode(
+            s == "song" ? Transport::Mode::SONG : Transport::Mode::PAT);
+        return {};
+    }
+
+    if (cmd == "pattern_set_note_in") {
+        host.setPatternNoteIn(
+            msg["channelId"].toString(),
+            msg["patternId"].toString(),
+            msg["noteId"].toString(),
+            (int) msg["pitch"],
+            (float) (double) msg["velocity"],
+            (juce::int64) (double) msg["atSample"],
+            (juce::int64) (double) msg["durationSamples"]);
+        return {};
+    }
+
+    if (cmd == "pattern_clear_note_in") {
+        host.clearPatternNoteIn(msg["channelId"].toString(),
+                                msg["patternId"].toString(),
+                                msg["noteId"].toString());
+        return {};
+    }
+
+    if (cmd == "pattern_clear_in") {
+        host.clearPatternInChannel(msg["channelId"].toString(),
+                                   msg["patternId"].toString());
+        return {};
+    }
+
+    if (cmd == "pattern_clear_all_in_channel") {
+        host.clearAllPatternsIn(msg["channelId"].toString());
+        return {};
+    }
+
+    if (cmd == "set_channel_arrangement") {
+        host.setChannelArrangement(msg["channelId"].toString(), msg["clips"]);
+        return {};
+    }
+
+    if (cmd == "clear_channel_arrangement") {
+        host.clearChannelArrangement(msg["channelId"].toString());
+        return {};
+    }
+
     if (cmd == "transport_get") {
         auto& tr = host.getTransport();
         auto& pp = host.getPatternPlayer();

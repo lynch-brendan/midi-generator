@@ -26,6 +26,19 @@ struct PatternNote {
     std::int64_t durationSamples;    // note length; noteOff = atSample + this
 };
 
+// SONG mode: one placement of a pattern on a channel's arrangement lane.
+// The pattern's notes tile inside the clip to fill lengthSamples — a 1-bar
+// pattern stretched to 4 bars plays four times, a 2-bar pattern truncated
+// to 1 bar plays just its first half. patternRefSample is where in the
+// pattern the first iteration starts (usually 0; reserved for future
+// clip-offset support).
+struct ArrangementClip {
+    std::int64_t songStartSample;         // absolute Transport sample
+    std::int64_t lengthSamples;           // how far the clip extends in song time
+    std::int64_t patternLoopLenSamples;   // the pattern's own bar-boundary length
+    juce::String patternId;               // key into notesByPattern
+};
+
 // MIDI-only processor sitting in front of each plugin. Serves two producers:
 //   1. UI-triggered notes (preview/keyboard/held) via MidiMessageCollector.
 //      Lock-free by construction — that's the collector's whole job.
@@ -49,11 +62,24 @@ public:
 
     // Pattern data. UI thread writes under fullLock; audio thread reads under
     // tryLock and skips this buffer if it can't get in.
+    //
+    // Two coexisting shapes, one lock:
+    //   * patternNotes           — PAT mode. Flat map of the currently-loaded
+    //                              pattern's notes. Walker fires these looped
+    //                              at the PatternPlayer position.
+    //   * notesByPattern         — SONG mode. Keyed by patternId so multiple
+    //                              patterns can live in the injector at once
+    //                              and clips can reference them by ID.
+    //   * arrangement            — SONG mode. Ordered clips on this channel's
+    //                              lane; the walker tiles each clip's referenced
+    //                              pattern across its lengthSamples.
     juce::SpinLock patternLock;
     std::map<juce::String, PatternNote> patternNotes;
+    std::map<juce::String, std::map<juce::String, PatternNote>> notesByPattern;
+    std::vector<ArrangementClip> arrangement;
 
-    // UI-facing pattern editing API. Idempotent by noteId — replacing a
-    // noteId's entry updates it in place.
+    // UI-facing PAT-mode pattern editing API. Idempotent by noteId — replacing
+    // a noteId's entry updates it in place.
     void uiSetNote(const juce::String& noteId, const PatternNote& note) {
         const juce::SpinLock::ScopedLockType lock(patternLock);
         patternNotes[noteId] = note;
@@ -65,6 +91,37 @@ public:
     void uiClearAll() {
         const juce::SpinLock::ScopedLockType lock(patternLock);
         patternNotes.clear();
+    }
+
+    // UI-facing SONG-mode editors. Same lock; edits picked up by the walker
+    // on the very next buffer.
+    void uiSetNoteInPattern(const juce::String& patternId,
+                            const juce::String& noteId,
+                            const PatternNote& note) {
+        const juce::SpinLock::ScopedLockType lock(patternLock);
+        notesByPattern[patternId][noteId] = note;
+    }
+    void uiClearNoteInPattern(const juce::String& patternId,
+                              const juce::String& noteId) {
+        const juce::SpinLock::ScopedLockType lock(patternLock);
+        auto it = notesByPattern.find(patternId);
+        if (it != notesByPattern.end()) it->second.erase(noteId);
+    }
+    void uiClearPatternInChannel(const juce::String& patternId) {
+        const juce::SpinLock::ScopedLockType lock(patternLock);
+        notesByPattern.erase(patternId);
+    }
+    void uiClearAllPatterns() {
+        const juce::SpinLock::ScopedLockType lock(patternLock);
+        notesByPattern.clear();
+    }
+    void uiSetArrangement(std::vector<ArrangementClip> clips) {
+        const juce::SpinLock::ScopedLockType lock(patternLock);
+        arrangement = std::move(clips);
+    }
+    void uiClearArrangement() {
+        const juce::SpinLock::ScopedLockType lock(patternLock);
+        arrangement.clear();
     }
 
     MidiInjector() : juce::AudioProcessor(BusesProperties()) {}
@@ -100,17 +157,27 @@ public:
     void setStateInformation(const void*, int) override    {}
 
 private:
-    // Walk the pattern and inject any noteOn/noteOff falling in this buffer.
-    // Called on the audio thread, real-time safe.
+    // Dispatch based on Transport mode. PAT walks the looping PatternPlayer;
+    // SONG walks the monotonic Transport clock against the arrangement.
+    void injectPattern(juce::MidiBuffer& midi, int numSamples) {
+        if (transport == nullptr) return;
+        if (transport->getMode() == Transport::Mode::SONG)
+            injectSongMode(midi, numSamples);
+        else
+            injectPatMode(midi, numSamples);
+    }
+
+    // PAT mode. Walk the pattern and inject any noteOn/noteOff falling in this
+    // buffer. Called on the audio thread, real-time safe.
     //
     // Position comes from PatternPlayer — a state-based counter that
     // advances + wraps in its own beginBuffer/endBuffer. So the walker just
     // needs to answer "which notes are in [bufPos, bufPos + numSamples)?",
     // with a small extra check for buffers that span the wrap boundary
     // (rare — only when a buffer straddles the loop end).
-    void injectPattern(juce::MidiBuffer& midi, int numSamples) {
+    void injectPatMode(juce::MidiBuffer& midi, int numSamples) {
         if (patternPlayer == nullptr) return;
-        if (transport == nullptr || !transport->getIsPlaying()) return;
+        if (!transport->getIsPlaying()) return;
         // During count-in the Transport rides at negative samples but the
         // PatternPlayer stays parked at 0. Without this guard the walker
         // would re-fire whatever's at pattern position 0 on every audio
@@ -164,6 +231,94 @@ private:
                         patternMidiChannel, note.pitch),
                         (int) (offPos + offsetAfterWrap));
                 }
+            }
+        }
+    }
+
+    // SONG mode. Walk this channel's arrangement, tile each clip's pattern to
+    // fill the clip's lengthSamples, and inject any noteOn/noteOff falling in
+    // this buffer.
+    //
+    // Position comes from PatternPlayer — same source as PAT mode. In SONG
+    // mode, JS sets PatternPlayer.loopLength to the full arrangement length,
+    // so the position naturally wraps at song end (free looping, no JS
+    // reset-on-wrap needed). Clip positions in `arrangement` are relative to
+    // this same "song-local" origin.
+    //
+    // Tiling: a 1-bar pattern on a 4-bar clip plays four times. A 2-bar
+    // pattern on a 1-bar clip plays only its first bar. We walk iterations of
+    // the pattern within the clip and clip each iteration's pattern-local
+    // range against the buffer overlap.
+    void injectSongMode(juce::MidiBuffer& midi, int numSamples) {
+        if (patternPlayer == nullptr) return;
+        if (!transport->getIsPlaying()) return;
+        if (transport->getBufferStartSample() < 0) return;  // count-in
+        const std::int64_t bufStart = patternPlayer->getBufferStartPosition();
+        const std::int64_t bufEnd = bufStart + numSamples;
+
+        const juce::SpinLock::ScopedTryLockType tryLock(patternLock);
+        if (!tryLock.isLocked()) return;
+        if (arrangement.empty() || notesByPattern.empty()) return;
+
+        for (const auto& clip : arrangement) {
+            if (clip.patternLoopLenSamples <= 0) continue;
+            const std::int64_t clipEndSong = clip.songStartSample + clip.lengthSamples;
+            if (clipEndSong <= bufStart)      continue; // clip fully in the past
+            if (clip.songStartSample >= bufEnd) continue; // clip fully in the future
+
+            auto notesIt = notesByPattern.find(clip.patternId);
+            if (notesIt == notesByPattern.end()) continue;
+            const auto& notes = notesIt->second;
+            if (notes.empty()) continue;
+
+            // Song-time overlap between this buffer and this clip.
+            const std::int64_t overlapStart = juce::jmax(bufStart, clip.songStartSample);
+            const std::int64_t overlapEnd   = juce::jmin(bufEnd,   clipEndSong);
+
+            // Convert overlap to clip-local time (0 = start of clip).
+            const std::int64_t clipLocalStart = overlapStart - clip.songStartSample;
+            const std::int64_t clipLocalEnd   = overlapEnd   - clip.songStartSample;
+            const std::int64_t patLen = clip.patternLoopLenSamples;
+
+            // Iterate every tiled pattern iteration that intersects the overlap.
+            // firstIter = iteration containing clipLocalStart. We advance until
+            // the iteration's start is past clipLocalEnd.
+            std::int64_t iter = clipLocalStart / patLen;
+            while (iter * patLen < clipLocalEnd) {
+                const std::int64_t iterStartInClip = iter * patLen;
+                // Pattern-local overlap for this iteration.
+                const std::int64_t patStart = juce::jmax((std::int64_t) 0,
+                                                         clipLocalStart - iterStartInClip);
+                const std::int64_t patEnd   = juce::jmin(patLen,
+                                                         clipLocalEnd - iterStartInClip);
+
+                for (const auto& [_, note] : notes) {
+                    if (note.atSample >= patLen) continue; // beyond pattern content
+                    const std::int64_t onPat  = note.atSample;
+                    const std::int64_t offPat = note.atSample + note.durationSamples;
+
+                    if (onPat >= patStart && onPat < patEnd) {
+                        const std::int64_t songPos =
+                            clip.songStartSample + iterStartInClip + onPat;
+                        midi.addEvent(juce::MidiMessage::noteOn(
+                            patternMidiChannel, note.pitch, note.velocity),
+                            (int) (songPos - bufStart));
+                    }
+                    // noteOff only fires if it falls inside this iteration's
+                    // pattern range. Matches PAT-mode semantics — notes whose
+                    // duration exceeds the pattern length are dropped, not
+                    // dragged into the next tile.
+                    if (offPat >= patStart && offPat < patEnd) {
+                        const std::int64_t songPos =
+                            clip.songStartSample + iterStartInClip + offPat;
+                        if (songPos < clipEndSong) {
+                            midi.addEvent(juce::MidiMessage::noteOff(
+                                patternMidiChannel, note.pitch),
+                                (int) (songPos - bufStart));
+                        }
+                    }
+                }
+                ++iter;
             }
         }
     }
@@ -1016,6 +1171,103 @@ void PluginHost::clearPattern(const juce::String& channelId) {
     if (!node) return;
     if (auto* inj = dynamic_cast<MidiInjector*>(node->getProcessor())) {
         inj->uiClearAll();
+    }
+}
+
+// ---- SONG-mode pattern + arrangement API ----
+//
+// These route into the injector's SONG-mode state (notesByPattern +
+// arrangement). Kept separate from setPatternNote/clearPatternNote so
+// PAT-mode edits and SONG-mode edits can't accidentally step on each
+// other's data.
+
+void PluginHost::setPatternNoteIn(const juce::String& channelId,
+                                  const juce::String& patternId,
+                                  const juce::String& noteId,
+                                  int pitch, float velocity,
+                                  std::int64_t atSample,
+                                  std::int64_t durationSamples) {
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = channels.find(channelId);
+    if (it == channels.end()) return;
+    auto node = graph.getNodeForId(it->second.injectorNodeId);
+    if (!node) return;
+    if (auto* inj = dynamic_cast<MidiInjector*>(node->getProcessor())) {
+        inj->uiSetNoteInPattern(patternId, noteId,
+            PatternNote{ pitch, velocity, atSample, durationSamples });
+    }
+}
+
+void PluginHost::clearPatternNoteIn(const juce::String& channelId,
+                                    const juce::String& patternId,
+                                    const juce::String& noteId) {
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = channels.find(channelId);
+    if (it == channels.end()) return;
+    auto node = graph.getNodeForId(it->second.injectorNodeId);
+    if (!node) return;
+    if (auto* inj = dynamic_cast<MidiInjector*>(node->getProcessor())) {
+        inj->uiClearNoteInPattern(patternId, noteId);
+    }
+}
+
+void PluginHost::clearPatternInChannel(const juce::String& channelId,
+                                       const juce::String& patternId) {
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = channels.find(channelId);
+    if (it == channels.end()) return;
+    auto node = graph.getNodeForId(it->second.injectorNodeId);
+    if (!node) return;
+    if (auto* inj = dynamic_cast<MidiInjector*>(node->getProcessor())) {
+        inj->uiClearPatternInChannel(patternId);
+    }
+}
+
+void PluginHost::clearAllPatternsIn(const juce::String& channelId) {
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = channels.find(channelId);
+    if (it == channels.end()) return;
+    auto node = graph.getNodeForId(it->second.injectorNodeId);
+    if (!node) return;
+    if (auto* inj = dynamic_cast<MidiInjector*>(node->getProcessor())) {
+        inj->uiClearAllPatterns();
+    }
+}
+
+void PluginHost::setChannelArrangement(const juce::String& channelId,
+                                       const juce::var& clips) {
+    std::vector<ArrangementClip> parsed;
+    if (auto* arr = clips.getArray()) {
+        parsed.reserve((size_t) arr->size());
+        for (const auto& v : *arr) {
+            ArrangementClip c{};
+            c.patternId              = v["patternId"].toString();
+            c.songStartSample        = (std::int64_t) (double) v["songStartSample"];
+            c.lengthSamples          = (std::int64_t) (double) v["lengthSamples"];
+            c.patternLoopLenSamples  = (std::int64_t) (double) v["patternLoopLenSamples"];
+            if (c.patternId.isEmpty()) continue;
+            if (c.lengthSamples <= 0 || c.patternLoopLenSamples <= 0) continue;
+            parsed.push_back(std::move(c));
+        }
+    }
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = channels.find(channelId);
+    if (it == channels.end()) return;
+    auto node = graph.getNodeForId(it->second.injectorNodeId);
+    if (!node) return;
+    if (auto* inj = dynamic_cast<MidiInjector*>(node->getProcessor())) {
+        inj->uiSetArrangement(std::move(parsed));
+    }
+}
+
+void PluginHost::clearChannelArrangement(const juce::String& channelId) {
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = channels.find(channelId);
+    if (it == channels.end()) return;
+    auto node = graph.getNodeForId(it->second.injectorNodeId);
+    if (!node) return;
+    if (auto* inj = dynamic_cast<MidiInjector*>(node->getProcessor())) {
+        inj->uiClearArrangement();
     }
 }
 

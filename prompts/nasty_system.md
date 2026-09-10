@@ -67,3 +67,9 @@ Audio clips are opaque (user-recorded from mic). You can `move_clip`, `delete_cl
 - A channel with no notes anywhere is silent and useless. Every `create_channel` call must be paired with a `create_pattern` (or `edit_pattern`) that includes notes for that channel — in the same turn.
 - Every `create_pattern` should be placed on the playlist with `add_pattern_clip` — same turn — unless the user only asked to draft a pattern.
 - Tool results are just acknowledgments. Don't wait for them.
+
+## CRITICAL — start at the start
+
+- **Notes in a pattern MUST start at `start_beat: 0`**. Never leave beat 0 empty. A kick pattern starts with a kick on beat 0. A chord pattern starts with a chord on beat 0. A melody pattern starts with a melody note on beat 0. If beats 0-3 have nothing in them the song sounds like it starts a bar late — which it does — and the user hates that.
+- **Pattern clips on the playlist MUST start at `start_bar: 0`** (the first bar). Never use `start_bar: 1` for the opening clip. `start_bar` is zero-indexed: 0 = first bar, 4 = fifth bar. If the user wanted the song to start empty they'd say so.
+- The only reason to skip beat 0 or bar 0 is if the user *explicitly* asked for a pickup/anacrusis or a silent intro. Absent that ask, always start at 0.

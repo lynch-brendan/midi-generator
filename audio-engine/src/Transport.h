@@ -28,6 +28,12 @@ namespace nasty {
 
 class Transport {
 public:
+    // PAT: MidiInjector walks the loop-wrapped PatternPlayer position and
+    // fires the flat `patternNotes` for each channel. SONG: it walks the
+    // monotonic Transport clock against the per-channel arrangement (clips
+    // reference patterns; patterns tile inside each clip to fill its length).
+    enum class Mode : int { PAT = 0, SONG = 1 };
+
     // ---- AUDIO THREAD ONLY (between callback in and out) ----
     void beginBuffer(int numSamples) noexcept {
         bufferStartSample = currentSample.load(std::memory_order_acquire);
@@ -48,6 +54,7 @@ public:
     double       getTempoBpm()           const noexcept { return tempoBpm.load(std::memory_order_acquire); }
     std::int64_t getLoopLengthSamples()  const noexcept { return loopLengthSamples.load(std::memory_order_acquire); }
     double       getSampleRate()         const noexcept { return sampleRate.load(std::memory_order_acquire); }
+    Mode         getMode()               const noexcept { return static_cast<Mode>(mode.load(std::memory_order_acquire)); }
 
     // ---- UI THREAD WRITERS ----
     void play()                                noexcept { isPlaying.store(true,  std::memory_order_release); }
@@ -56,6 +63,7 @@ public:
     void setTempo(double bpm)                  noexcept { tempoBpm.store(bpm,    std::memory_order_release); }
     void setLoopLengthSamples(std::int64_t s)  noexcept { loopLengthSamples.store(s, std::memory_order_release); }
     void setSampleRate(double sr)              noexcept { sampleRate.store(sr,   std::memory_order_release); }
+    void setMode(Mode m)                       noexcept { mode.store(static_cast<int>(m), std::memory_order_release); }
 
 private:
     std::atomic<std::int64_t> currentSample{0};
@@ -63,6 +71,7 @@ private:
     std::atomic<double>       tempoBpm{120.0};
     std::atomic<std::int64_t> loopLengthSamples{0};
     std::atomic<double>       sampleRate{48000.0};
+    std::atomic<int>          mode{static_cast<int>(Mode::PAT)};
 
     // Audio-thread scratch, only touched between beginBuffer/endBuffer.
     std::int64_t bufferStartSample{0};

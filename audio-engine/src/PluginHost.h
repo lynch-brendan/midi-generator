@@ -141,6 +141,32 @@ public:
                           const juce::String& noteId);
     void clearPattern(const juce::String& channelId);
 
+    // SONG-mode pattern edits. Same shape as setPatternNote/clearPatternNote,
+    // but keyed by patternId so a channel can hold many patterns at once and
+    // the arrangement references them by ID. Notes edited here don't affect
+    // PAT-mode playback (which reads the flat patternNotes map instead).
+    void setPatternNoteIn(const juce::String& channelId,
+                          const juce::String& patternId,
+                          const juce::String& noteId,
+                          int pitch, float velocity,
+                          std::int64_t atSample,
+                          std::int64_t durationSamples);
+    void clearPatternNoteIn(const juce::String& channelId,
+                            const juce::String& patternId,
+                            const juce::String& noteId);
+    void clearPatternInChannel(const juce::String& channelId,
+                               const juce::String& patternId);
+    void clearAllPatternsIn(const juce::String& channelId);
+
+    // Per-channel arrangement lane. `clips` is a juce::var array of objects
+    // shaped { patternId, songStartSample, lengthSamples, patternLoopLenSamples }.
+    // Replaces the channel's arrangement wholesale (atomic swap under the
+    // injector's SpinLock — the audio thread picks up the new arrangement on
+    // its very next buffer, no cross-buffer bleed).
+    void setChannelArrangement(const juce::String& channelId,
+                               const juce::var& clips);
+    void clearChannelArrangement(const juce::String& channelId);
+
     // Show / hide the plugin's native editor window. Safe to call from any
     // thread — dispatched to the JUCE message thread internally.
     void showPluginUI(const juce::String& channelId);
