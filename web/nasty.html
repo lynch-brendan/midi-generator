@@ -141,7 +141,7 @@
   #transport .rec-led.on { background: var(--record); box-shadow: 0 0 8px var(--record); animation: pulse 1s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: 0.55; } }
   #transport .t-info { margin-left: auto; color: var(--dim); font-size: 11px; text-align: right; }
-  #mic-rec-btn.recording, #midi-rec-btn.active {
+  #midi-rec-btn.active {
     background: linear-gradient(var(--record), #b02830); color: white; border-color: #111;
     animation: pulse 1s ease-in-out infinite;
   }
@@ -924,7 +924,7 @@
   }
   #transport .rec-led { background: #200; border-color: #400; }
   #transport .rec-led.on { background: var(--record); box-shadow: 0 0 10px var(--record); }
-  #mic-rec-btn.recording, #midi-rec-btn.active {
+  #midi-rec-btn.active {
     background: linear-gradient(#e04040, #a02024);
     color: #fff;
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.2), 0 0 8px rgba(255,60,70,0.5);
@@ -1170,7 +1170,6 @@
     </div>
     <div class="menu-item" data-menu="tools">TOOLS
       <div class="menu-drop">
-        <div class="mi" data-cmd="mic-rec"><span>Record microphone</span></div>
         <div class="mi" data-cmd="midi-rec"><span>Record MIDI keyboard</span></div>
       </div>
     </div>
@@ -1195,7 +1194,6 @@
         <div class="ps-btn active" id="ps-song" data-mode="song">SONG</div>
       </div>
       <button class="t-btn big" id="rec-btn" title="Arm recording — hit Play to record MIDI notes into the current pattern">●</button>
-      <button class="t-btn" id="mic-rec-btn" title="Record mic to timeline">🎤</button>
       <span class="rec-led" id="rec-led"></span>
     </div>
     <div class="t-sep"></div>
@@ -1425,12 +1423,6 @@
     <input id="new-channel-name" type="text" value="Channel" />
     <label>Instrument</label>
     <select id="new-channel-inst">
-      <optgroup label="Melodic">
-        <option value="piano">Piano</option>
-        <option value="bass">Bass</option>
-        <option value="lead">Lead</option>
-        <option value="pad">Pad</option>
-      </optgroup>
       <optgroup label="Drums">
         <option value="drums:36">Kick</option>
         <option value="drums:38">Snare</option>
@@ -1483,7 +1475,6 @@ let currentPatternId = null;
 let pianoRollActiveChannelId = null;
 let saveTimer = null;
 let loopEnabled = false;
-const audioBuffers = new Map(); // clipId -> AudioBuffer
 
 // ============================================================
 // Persistence
@@ -1670,9 +1661,6 @@ function ensureShape(s) {
     c.armed = !!c.armed;
     c.color = c.color || PALETTE[i % PALETTE.length];
     if (!c.insertId) c.insertId = 'master';
-    // drumPitch: fixed pitch for drum-piece channels (kick=36, snare=38, etc)
-    // For melodic channels this stays null and the step sequencer uses C5 (60)
-    if (c.instrument === 'drums' && c.drumPitch == null) c.drumPitch = 36;
   });
   s.patterns.forEach((p, i) => {
     p.notes = p.notes || [];
@@ -1727,20 +1715,23 @@ function ensureDefaults() {
       });
     });
   } else {
-    // Migrate legacy single "Drums" channel — split it into 5 per-piece channels
+    // Migrate legacy single "Drums" channel — split it into 5 sample-based
+    // plugin channels, one per drum piece.
     const legacyDrums = song.channels.find(c => c.id === 'ch_drums' && (c.drumPitch == null || c.drumPitch === 36));
     const hasSplit = song.channels.some(c => c.id === 'ch_kick');
     if (legacyDrums && !hasSplit) {
       const idx = song.channels.indexOf(legacyDrums);
       const newDrums = [
-        { id: 'ch_kick',  name: 'Kick',     inst: 'drums', drumPitch: 36 },
-        { id: 'ch_snare', name: 'Snare',    inst: 'drums', drumPitch: 38 },
-        { id: 'ch_clap',  name: 'Clap',     inst: 'drums', drumPitch: 39 },
-        { id: 'ch_hh',    name: 'Hi-Hat',   inst: 'drums', drumPitch: 42 },
-        { id: 'ch_hho',   name: 'Open Hat', inst: 'drums', drumPitch: 46 },
+        { id: 'ch_kick',  name: 'Kick',     sample: 'Kick.wav'  },
+        { id: 'ch_snare', name: 'Snare',    sample: 'Snare.wav' },
+        { id: 'ch_clap',  name: 'Clap',     sample: 'Clap.wav'  },
+        { id: 'ch_hh',    name: 'Hi-Hat',   sample: 'HiHat.wav' },
+        { id: 'ch_hho',   name: 'Open Hat', sample: 'HiHat.wav' },
       ];
       const built = newDrums.map((d, i) => ({
-        id: d.id, name: d.name, instrument: d.inst, drumPitch: d.drumPitch,
+        id: d.id, name: d.name,
+        instrument: 'plugin', pluginId: 'drum:' + d.sample,
+        drumSample: d.sample, drumRootNote: 60,
         volume: legacyDrums.volume ?? 0.8, effects: [],
         muted: false, solo: false, armed: false,
         color: PALETTE[(idx + i) % PALETTE.length],
@@ -1778,51 +1769,57 @@ function ensureDefaults() {
 }
 
 // ============================================================
-// Web Audio
+// Playback state (all audio is engine-driven).
 // ============================================================
-let ctx = null;
-let masterGain = null;
-let scheduledSources = [];
-// Metronome click oscillators tracked separately so toggling the checkbox
-// mid-play can silence them without touching the rest of playback.
-let metronomeSources = [];
-let playStartTime = 0;
-let songDurationSec = 0;
-let singleLoopDurSec = 0;
 let animationFrame = null;
 
 // ============================================================
 // Engine transport bridge.
 //
-// The native audio engine owns the sample clock and the pattern data. JS
-// pushes edits down; the engine's audio callback walks the pattern and
-// injects MIDI at exact sample offsets. Solves the "add a note while
-// playing = playhead jumps / notes get lost" problem that the old
-// setTimeout-based scheduler had: edits are idempotent
-// pattern_set_note / pattern_clear_note commands the audio thread picks
-// up on the very next buffer, no cancel-and-reschedule needed.
-//
-// Non-plugin channels (legacy WebAudio built-in synths like `piano`,
-// `bass`, `lead`) still schedule through JS in scheduleSong(). This
-// module only handles engine-hosted channels (instrument === 'plugin').
+// The native audio engine owns the sample clock, the pattern data, the
+// metronome, and per-channel playback. JS pushes edits down; the engine's
+// audio callback walks the pattern and injects MIDI at exact sample
+// offsets. Solves the "add a note while playing = playhead jumps / notes
+// get lost" problem that the old setTimeout-based scheduler had: edits
+// are idempotent pattern_set_note / pattern_clear_note commands the
+// audio thread picks up on the very next buffer, no cancel-and-reschedule
+// needed.
 // ============================================================
 const engineTransport = {
   sampleRate: 48000,          // updated on first transport_position event
-  currentSample: 0,           // last position received from engine
-  lastEventPerfMs: 0,         // performance.now() when currentSample was captured
+  currentSample: 0,           // Transport session sample (monotonic)
+  patternPosition: 0,         // PatternPlayer position within [0, loopSamples)
+  loopSamples: 0,             // PatternPlayer loop length in samples
+  lastEventPerfMs: 0,         // performance.now() when patternPosition was captured
   isPlaying: false,
-  loopSamples: 0,
-  // Live playhead position in seconds, extrapolated forward from the last
+  // Live pattern position in seconds, extrapolated forward from the last
   // engine update using wall-clock delta. Between the 60 Hz position events
   // this keeps the visual playhead rolling smoothly instead of stepping.
+  // Read directly — no `mod` — because PatternPlayer already tracks its
+  // position as state and wraps at its own loop length, so loop-length
+  // changes don't teleport the playhead.
   elapsedSecondsLive() {
     const sr = this.sampleRate || 48000;
-    const base = this.currentSample / sr;
+    const base = this.patternPosition / sr;
     if (!this.isPlaying || !this.lastEventPerfMs) return base;
     // Cap the extrapolation. Engine emits position at 60 Hz, so anything
     // beyond ~30 ms means an event got dropped or the JS thread stalled.
-    // Without a cap, the playhead visually wraps early (looks like "jerk
-    // back a quarter inch before the end of the bar").
+    const dtMs = Math.min(performance.now() - this.lastEventPerfMs, 30);
+    const projected = base + dtMs / 1000;
+    // Don't overshoot the loop end — the engine's wrap is atomic per
+    // buffer, and extrapolating past visually skips the wrap.
+    if (this.loopSamples > 0) {
+      const loopSec = this.loopSamples / sr;
+      if (projected >= loopSec) return loopSec - 0.0001;
+    }
+    return projected;
+  },
+  // Session time (monotonic). Used to know how far we are through the
+  // count-in (transport starts at negative and counts up to 0).
+  transportSecondsLive() {
+    const sr = this.sampleRate || 48000;
+    const base = this.currentSample / sr;
+    if (!this.isPlaying || !this.lastEventPerfMs) return base;
     const dtMs = Math.min(performance.now() - this.lastEventPerfMs, 30);
     return base + dtMs / 1000;
   },
@@ -1881,7 +1878,11 @@ const engineTransport = {
   setLoopBeats(beats) {
     const samples = this.beatsToSamples(beats);
     this.loopSamples = samples;
-    this.send({ cmd: 'transport_set_loop_length', samples });
+    // Routes to PatternPlayer.setLoopLengthSamples in the engine. If the
+    // new length would shrink below the current playhead position, the
+    // engine holds the change as pending and applies it at the next wrap
+    // so the playhead doesn't teleport backward.
+    this.send({ cmd: 'pattern_set_loop_length', samples });
   },
   play() {
     this.send({ cmd: 'transport_play' });
@@ -1889,173 +1890,24 @@ const engineTransport = {
   stop() {
     this.send({ cmd: 'transport_stop' });
   },
+  // Session-time seek (Transport). Used for count-in — seeks to a negative
+  // sample so the metronome fires beats leading up to zero.
   seek(sample) {
     this.send({ cmd: 'transport_seek', sample });
+  },
+  // Pattern-position seek (PatternPlayer). Independent of Transport. Used
+  // to reset the pattern to the top on Play.
+  seekPattern(sample) {
+    this.send({ cmd: 'pattern_seek', sample });
+    this.patternPosition = sample;
   },
   setMetronomeEnabled(v) {
     this.send({ cmd: 'metronome_set_enabled', enabled: !!v });
   },
 };
 
-function initAudio() {
-  if (ctx) return;
-  ctx = new (window.AudioContext || window.webkitAudioContext)();
-  masterGain = ctx.createGain();
-  masterGain.gain.value = 0.8;
-  masterGain.connect(ctx.destination);
-}
 function beatsToSec(beats, bpm = song.bpm) { return beats * 60 / bpm; }
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
-function pitchToFreq(pitch) { return 440 * Math.pow(2, (pitch - 69) / 12); }
-
-function makeImpulse(actx, decay) {
-  const rate = actx.sampleRate;
-  const length = Math.max(1, Math.floor(rate * decay));
-  const buf = actx.createBuffer(2, length, rate);
-  for (let ch = 0; ch < 2; ch++) {
-    const data = buf.getChannelData(ch);
-    for (let i = 0; i < length; i++) {
-      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 3);
-    }
-  }
-  return buf;
-}
-
-function buildChannelChain(actx, dest, channel) {
-  // Effects are hosted in the C++ audio engine (real VST/AU chain on the
-  // channel), so WebAudio just wires straight through the volume gain.
-  const input = actx.createGain();
-  input.gain.value = channel.volume ?? 0.8;
-  input.connect(dest);
-  return input;
-}
-
-function playNote(actx, dest, instrument, pitch, velocity, t, duration, sink) {
-  velocity = velocity ?? 0.8;
-  if (instrument === 'drums') { playDrum(actx, dest, pitch, velocity, t, sink); return; }
-  const osc = actx.createOscillator();
-  const gain = actx.createGain();
-  let osc2 = null;
-  let attack = 0.005, release = 0.1, sustainLevel = 0.3;
-  if (instrument === 'piano') {
-    osc.type = 'triangle'; attack = 0.003; release = 0.25; sustainLevel = 0.35;
-  } else if (instrument === 'bass') {
-    osc.type = 'sine'; attack = 0.005; release = 0.1; sustainLevel = 0.55;
-    osc2 = actx.createOscillator(); osc2.type = 'triangle';
-    osc2.frequency.value = pitchToFreq(pitch);
-  } else if (instrument === 'lead') {
-    osc.type = 'sawtooth'; attack = 0.01; release = 0.15; sustainLevel = 0.28;
-  } else if (instrument === 'pad') {
-    osc.type = 'sine'; attack = 0.3; release = 0.6; sustainLevel = 0.25;
-    osc2 = actx.createOscillator(); osc2.type = 'triangle';
-    osc2.frequency.value = pitchToFreq(pitch) * 1.005;
-  }
-  osc.frequency.value = pitchToFreq(pitch);
-  const peak = velocity * sustainLevel;
-  gain.gain.setValueAtTime(0.0001, t);
-  gain.gain.exponentialRampToValueAtTime(Math.max(0.001, peak), t + attack);
-  gain.gain.setValueAtTime(peak, t + Math.max(attack, duration));
-  gain.gain.exponentialRampToValueAtTime(0.0001, t + duration + release);
-  osc.connect(gain);
-  if (osc2) {
-    const g2 = actx.createGain(); g2.gain.value = 0.5;
-    osc2.connect(g2); g2.connect(gain);
-    osc2.start(t); osc2.stop(t + duration + release + 0.05);
-    if (sink) sink.push(osc2);
-  }
-  gain.connect(dest);
-  osc.start(t); osc.stop(t + duration + release + 0.05);
-  if (sink) sink.push(osc);
-}
-
-function playDrum(actx, dest, pitch, velocity, t, sink) {
-  const v = velocity;
-  if (pitch === 36 || pitch === 35) {
-    // Kick
-    const osc = actx.createOscillator();
-    const gain = actx.createGain();
-    osc.frequency.setValueAtTime(150, t);
-    osc.frequency.exponentialRampToValueAtTime(35, t + 0.15);
-    gain.gain.setValueAtTime(v, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
-    osc.connect(gain); gain.connect(dest);
-    osc.start(t); osc.stop(t + 0.3);
-    if (sink) sink.push(osc);
-  } else if (pitch === 38 || pitch === 40) {
-    // Snare
-    const noise = actx.createBufferSource();
-    const buf = actx.createBuffer(1, actx.sampleRate * 0.2, actx.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-    noise.buffer = buf;
-    const filter = actx.createBiquadFilter();
-    filter.type = 'highpass'; filter.frequency.value = 1200;
-    const gain = actx.createGain();
-    gain.gain.setValueAtTime(v * 0.6, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
-    noise.connect(filter); filter.connect(gain); gain.connect(dest);
-    const osc = actx.createOscillator();
-    const oscGain = actx.createGain();
-    osc.frequency.setValueAtTime(180, t);
-    osc.frequency.exponentialRampToValueAtTime(90, t + 0.08);
-    oscGain.gain.setValueAtTime(v * 0.3, t);
-    oscGain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
-    osc.connect(oscGain); oscGain.connect(dest);
-    noise.start(t); noise.stop(t + 0.2);
-    osc.start(t); osc.stop(t + 0.15);
-    if (sink) sink.push(noise, osc);
-  } else if (pitch === 39) {
-    // Clap — bright noise with 3 short envelopes for the layered slap
-    const noise = actx.createBufferSource();
-    const buf = actx.createBuffer(1, actx.sampleRate * 0.25, actx.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-    noise.buffer = buf;
-    const filter = actx.createBiquadFilter();
-    filter.type = 'bandpass'; filter.frequency.value = 1200; filter.Q.value = 0.9;
-    const gain = actx.createGain();
-    gain.gain.setValueAtTime(0.0001, t);
-    // three quick pulses at 10ms intervals then tail
-    for (let i = 0; i < 3; i++) {
-      gain.gain.setValueAtTime(v * 0.7, t + i * 0.01);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.01 + 0.015);
-    }
-    gain.gain.setValueAtTime(v * 0.4, t + 0.03);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
-    noise.connect(filter); filter.connect(gain); gain.connect(dest);
-    noise.start(t); noise.stop(t + 0.2);
-    if (sink) sink.push(noise);
-  } else {
-    // Hi-Hat closed (42/44/anything else) or open (46)
-    const isOpen = pitch === 46;
-    const noise = actx.createBufferSource();
-    const buf = actx.createBuffer(1, actx.sampleRate * 0.3, actx.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-    noise.buffer = buf;
-    const filter = actx.createBiquadFilter();
-    filter.type = 'highpass'; filter.frequency.value = 7000;
-    const gain = actx.createGain();
-    const decay = isOpen ? 0.2 : 0.04;
-    gain.gain.setValueAtTime(v * 0.35, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + decay);
-    noise.connect(filter); filter.connect(gain); gain.connect(dest);
-    noise.start(t); noise.stop(t + decay + 0.05);
-    if (sink) sink.push(noise);
-  }
-}
-
-function playClick(actx, dest, t, accent) {
-  const osc = actx.createOscillator();
-  const gain = actx.createGain();
-  osc.frequency.value = accent ? 1600 : 1000;
-  osc.type = 'square';
-  gain.gain.setValueAtTime(0.2, t);
-  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
-  osc.connect(gain); gain.connect(dest);
-  osc.start(t); osc.stop(t + 0.06);
-  return osc;
-}
 
 function channelsToPlay() {
   const anySolo = song.channels.some(c => c.solo);
@@ -2087,47 +1939,12 @@ function tracksToPlay() {
   });
 }
 
-function computeSongDurationSec() {
-  // PAT mode: duration = the current pattern's length.
-  if (song.transportMode === 'pat') {
-    const pat = song.patterns.find(p => p.id === currentPatternId);
-    if (!pat) return 0;
-    return beatsToSec(pat.lengthBars * 4);
-  }
-  let maxEndBeats = 0;
-  const patternById = new Map(song.patterns.map(p => [p.id, p]));
-  for (const track of song.tracks) {
-    for (const clip of track.clips) {
-      const startBeats = clip.startBar * 4;
-      if (clip.type === 'audio') {
-        const end = startBeats + clip.lengthBars * 4;
-        if (end > maxEndBeats) maxEndBeats = end;
-        continue;
-      }
-      const p = patternById.get(clip.patternId);
-      if (!p) continue;
-      for (const n of p.notes) {
-        const end = startBeats + n.startBeat + n.durationBeats;
-        if (end > maxEndBeats) maxEndBeats = end;
-      }
-      const patEnd = startBeats + p.lengthBars * 4;
-      if (patEnd > maxEndBeats) maxEndBeats = patEnd;
-    }
-  }
-  return beatsToSec(maxEndBeats);
-}
-
-function stopAllSources({ includeEngineChannels = true } = {}) {
-  for (const s of scheduledSources) { try { s.stop(); } catch (e) {} }
-  scheduledSources = [];
-  for (const s of metronomeSources) { try { s.stop(); } catch (e) {} }
-  metronomeSources = [];
+// Stop any held plugin notes on the engine. Called on transport stop /
+// pattern edits so nothing hangs. Cheap enough to fire freely.
+function stopAllEngineNotes() {
   for (const id of pluginNoteTimeouts) clearTimeout(id);
   pluginNoteTimeouts.clear();
-  // Skip the engine all_notes_off when a refresh is caused by a WebAudio-only
-  // edit — the engine's pattern walker is still cleanly playing plugin
-  // channels and we don't want to clobber held notes.
-  if (includeEngineChannels && window.nasty && window.nasty.engine) {
+  if (window.nasty && window.nasty.engine) {
     for (const c of song.channels) {
       if (c.instrument === 'plugin') {
         window.nasty.engine.send({ cmd: 'all_notes_off', channelId: c.id });
@@ -2145,15 +1962,17 @@ function playSong() {
     return;
   }
   // The engine now owns clock, pattern, playback, AND the metronome. Play
-  // is just: push the pattern, seek to 0, enable metronome per the toggle,
-  // start the transport.
+  // is just: push the pattern, reset both clocks to zero, size the loop,
+  // enable metronome per the toggle, go. Order matters: seekPattern(0)
+  // happens BEFORE setLoopBeats so the new length is compared against a
+  // fresh position — otherwise transitioning out of linear-record mode
+  // (loop=1e12) would defer the new smaller loop as pending forever.
   engineTransport.pushPattern(pat);
+  engineTransport.seek(0);
+  engineTransport.seekPattern(0);
   engineTransport.setLoopBeats(pat.lengthBars * 4);
   engineTransport.setMetronomeEnabled(!!document.getElementById('metronome')?.checked);
-  engineTransport.seek(0);
   engineTransport.play();
-  singleLoopDurSec = pat.lengthBars * 4 * (60 / song.bpm);
-  songDurationSec = singleLoopDurSec;
   // In PAT mode we're looping the pattern, not scrubbing the playlist — hide
   // the playlist playhead so it doesn't confusingly march across the timeline.
   document.getElementById('playhead').style.display = song.transportMode === 'pat' ? 'none' : 'block';
@@ -2163,102 +1982,12 @@ function playSong() {
   animatePlayhead();
 }
 
-function scheduleSong(actx, masterOut, tStart, sink, notBefore) {
-  // Insert chains: input gain → volume gain. Effects live in the C++ engine
-  // (per-channel VST/AU chains), not WebAudio.
-  const insertIn = {}, insertOut = {};
-  for (const ins of song.mixer.inserts) {
-    const input = actx.createGain();
-    const vol = actx.createGain();
-    vol.gain.value = ins.volume ?? 0.8;
-    input.connect(vol);
-    insertIn[ins.id] = input;
-    insertOut[ins.id] = vol;
-  }
-  // Wire insert sends
-  for (const ins of song.mixer.inserts) {
-    if (ins.id === 'master') insertOut[ins.id].connect(masterOut);
-    else {
-      const t = insertIn[ins.sendToId] || insertIn['master'];
-      insertOut[ins.id].connect(t);
-    }
-  }
-  const patternById = new Map(song.patterns.map(p => [p.id, p]));
-  const channelById = new Map(song.channels.map(c => [c.id, c]));
-  const activeChannels = new Set(channelsToPlay().map(c => c.id));
-  const channelChains = {};
-  for (const c of channelsToPlay()) {
-    const dest = insertIn[c.insertId] || insertIn['master'];
-    channelChains[c.id] = buildChannelChain(actx, dest, c);
-  }
-  for (const track of tracksToPlay()) {
-    for (const clip of track.clips) {
-      const startBeats = clip.startBar * 4;
-      const t = tStart + beatsToSec(startBeats);
-      if (clip.type === 'audio') {
-        const buf = audioBuffers.get(clip.id);
-        if (!buf) continue;
-        const clipLenSec = beatsToSec(clip.lengthBars * 4);
-        const src = actx.createBufferSource();
-        src.buffer = buf; src.connect(insertIn['master']);
-        src.start(t, 0, Math.min(clipLenSec, buf.duration));
-        if (sink) sink.push(src);
-        continue;
-      }
-      const pattern = patternById.get(clip.patternId);
-      if (!pattern) continue;
-      const clipLenBeats = clip.lengthBars * 4;
-      const patLenBeats = pattern.lengthBars * 4;
-      const loops = Math.max(1, Math.ceil(clipLenBeats / patLenBeats));
-      for (let loop = 0; loop < loops; loop++) {
-        const loopOffsetBeats = loop * patLenBeats;
-        for (const note of pattern.notes) {
-          if (!activeChannels.has(note.channelId)) continue;
-          const channel = channelById.get(note.channelId);
-          if (!channel) continue;
-          const localStart = loopOffsetBeats + note.startBeat;
-          if (localStart >= clipLenBeats) continue;
-          const localEnd = localStart + note.durationBeats;
-          const effectiveDur = Math.min(localEnd, clipLenBeats) - localStart;
-          if (effectiveDur <= 0) continue;
-          const noteT = t + beatsToSec(localStart);
-          if (notBefore != null && noteT < notBefore) continue; // skip past notes on live re-schedule
-          if (channel.instrument === 'plugin') {
-            // PAT mode: the engine's pattern walker drives plugin channels.
-            // Skip scheduling here to avoid double-triggering notes.
-            if (song.transportMode === 'pat') continue;
-            if (window.nasty && window.nasty.engine) {
-              const delayMs = Math.max(0, (noteT - actx.currentTime) * 1000);
-              const durMs = beatsToSec(effectiveDur) * 1000;
-              const onId = setTimeout(() => {
-                window.nasty.engine.send({ cmd: 'note_on', channelId: channel.id,
-                  pitch: note.pitch, velocity: note.velocity });
-                pluginNoteTimeouts.delete(onId);
-              }, delayMs);
-              const offId = setTimeout(() => {
-                window.nasty.engine.send({ cmd: 'note_off', channelId: channel.id,
-                  pitch: note.pitch });
-                pluginNoteTimeouts.delete(offId);
-              }, delayMs + durMs);
-              pluginNoteTimeouts.add(onId);
-              pluginNoteTimeouts.add(offId);
-            }
-            continue;
-          }
-          playNote(actx, channelChains[channel.id], channel.instrument,
-            note.pitch, note.velocity, noteT, beatsToSec(effectiveDur), sink);
-        }
-      }
-    }
-  }
-}
-
 function stopSong() {
-  // Halt the engine's pattern walker first so any held notes get their
-  // all-notes-off immediately, then tear down the WebAudio side.
+  // Halt the engine's pattern walker; it emits its own all-notes-off, and
+  // we also flush any JS-scheduled plugin-note timeouts.
   engineTransport.stop();
   engineTransport.setMetronomeEnabled(false);
-  stopAllSources();
+  stopAllEngineNotes();
   document.getElementById('playhead').style.display = 'none';
   if (animationFrame) { cancelAnimationFrame(animationFrame); animationFrame = null; }
   if (midiRecording) stopMidiRecording();
@@ -2271,35 +2000,22 @@ function stopSong() {
 function animatePlayhead() {
   const ph = document.getElementById('playhead');
   const tick = () => {
-    if (!ctx) return;
-    // In PAT mode the engine's transport is authoritative — read the
-    // audio-clock position (extrapolated per-frame for smoothness) instead
-    // of guessing off ctx.currentTime. In SONG mode we fall back to the
-    // WebAudio clock since the engine isn't driving playback there.
-    const engineDriven = song.transportMode === 'pat' && engineTransport.isPlaying;
-    const elapsed = engineDriven
-      ? engineTransport.elapsedSecondsLive()
-      : (ctx.currentTime - playStartTime);
-    if (elapsed < 0) { animationFrame = requestAnimationFrame(tick); return; }
-    if (elapsed > songDurationSec + 0.3 && !midiRecording && !engineDriven) { stopSong(); return; }
+    // The engine transport is the single source of truth for playback
+    // time. Extrapolated per-frame for smoothness between the 60 Hz
+    // position events.
+    // elapsedSecondsLive reads the PatternPlayer position directly — the
+    // engine already wraps this in its audio callback, so there's no `mod`
+    // here. Loop-length changes are handled inside PatternPlayer (applied
+    // immediately for extensions, deferred to the next wrap for shrinks)
+    // so the playhead never teleports.
+    const displayElapsed = engineTransport.elapsedSecondsLive();
+    if (displayElapsed < 0) { animationFrame = requestAnimationFrame(tick); return; }
     // Query rack-playhead fresh every tick — the channel rack re-renders
     // whenever a note is added, which replaces the playhead node. Grabbing
     // it once at the top would leave us updating a stale/detached element.
     const rackPh = document.getElementById('rack-playhead');
     const isPat = song.transportMode === 'pat';
     const isRecording = !!midiRecording;
-    // In PAT mode, wrap on the current pattern's length so the clock +
-    // rack playhead loop with it — EXCEPT during recording, where playback
-    // is linear (no loop-back) so the pattern can grow past its old end.
-    // In SONG mode, use songDurationSec / any global loop.
-    let loopSec = singleLoopDurSec;
-    if (isPat) {
-      const pat = song.patterns.find(p => p.id === currentPatternId);
-      const bars = (pat && pat.lengthBars) ? pat.lengthBars : 1;
-      loopSec = beatsToSec(bars * 4);
-    }
-    const shouldWrap = loopSec > 0 && !(isPat && isRecording);
-    const displayElapsed = shouldWrap ? (elapsed % loopSec) : elapsed;
     const barsElapsed = (displayElapsed * song.bpm / 60) / 4;
     // Playlist playhead only in SONG mode.
     if (!isPat) ph.style.left = (barsElapsed * BAR_WIDTH) + 'px';
@@ -2342,190 +2058,24 @@ function animatePlayhead() {
 }
 
 function previewNote(channelOrInstrument, pitch, velocity = 0.8, duration = 0.4) {
-  // Accept either a channel object (new) or a bare instrument string (legacy).
+  // Only plugin channels make sound now — everything else is engine-hosted
+  // via a plugin/GM/sample-drum, so a channel object with instrument !==
+  // 'plugin' is either legacy data or nothing we can preview.
   const ch = (channelOrInstrument && typeof channelOrInstrument === 'object')
     ? channelOrInstrument : null;
-  const instrument = ch ? ch.instrument : channelOrInstrument;
-
-  // Plugin channels play through the native audio engine (desktop only).
-  if (ch && ch.instrument === 'plugin' && window.nasty && window.nasty.engine) {
-    console.error('[previewNote] sending note_on ch=', ch.id, 'pitch=', pitch);
-    window.nasty.engine.send({ cmd: 'note_on', channelId: ch.id, pitch, velocity });
-    const id = setTimeout(() => {
-      window.nasty.engine.send({ cmd: 'note_off', channelId: ch.id, pitch });
-      pluginNoteTimeouts.delete(id);
-    }, duration * 1000);
-    pluginNoteTimeouts.add(id);
-    return;
-  }
-
-  initAudio();
-  if (ctx.state === 'suspended') ctx.resume();
-  const gain = ctx.createGain(); gain.gain.value = 0.8;
-  gain.connect(masterGain);
-  playNote(ctx, gain, instrument, pitch, velocity, ctx.currentTime + 0.01, duration, null);
-}
-
-// Hold-to-sustain voice for built-in synths (non-drum, non-plugin channels).
-// Mirrors playNote's per-instrument voice choice but leaves the envelope
-// holding at peak; stopSustainedNote() applies the release ramp on keyup.
-function startSustainedNote(ch, pitch, velocity = 0.8) {
-  const instrument = ch.instrument;
-  if (instrument === 'drums' || instrument === 'plugin') return null;
-  initAudio();
-  if (ctx.state === 'suspended') ctx.resume();
-
-  const outGain = ctx.createGain(); outGain.gain.value = 0.8;
-  outGain.connect(masterGain);
-
-  const osc = ctx.createOscillator();
-  const voiceGain = ctx.createGain();
-  let osc2 = null;
-  let attack = 0.005, release = 0.1, sustainLevel = 0.3;
-  if (instrument === 'piano') {
-    osc.type = 'triangle'; attack = 0.003; release = 0.25; sustainLevel = 0.35;
-  } else if (instrument === 'bass') {
-    osc.type = 'sine'; attack = 0.005; release = 0.1; sustainLevel = 0.55;
-    osc2 = ctx.createOscillator(); osc2.type = 'triangle';
-    osc2.frequency.value = pitchToFreq(pitch);
-  } else if (instrument === 'lead') {
-    osc.type = 'sawtooth'; attack = 0.01; release = 0.15; sustainLevel = 0.28;
-  } else if (instrument === 'pad') {
-    osc.type = 'sine'; attack = 0.3; release = 0.6; sustainLevel = 0.25;
-    osc2 = ctx.createOscillator(); osc2.type = 'triangle';
-    osc2.frequency.value = pitchToFreq(pitch) * 1.005;
-  }
-  osc.frequency.value = pitchToFreq(pitch);
-  const peak = Math.max(0.001, velocity * sustainLevel);
-  const t = ctx.currentTime;
-  voiceGain.gain.setValueAtTime(0.0001, t);
-  voiceGain.gain.exponentialRampToValueAtTime(peak, t + attack);
-  osc.connect(voiceGain);
-  if (osc2) {
-    const g2 = ctx.createGain(); g2.gain.value = 0.5;
-    osc2.connect(g2); g2.connect(voiceGain);
-    osc2.start(t);
-  }
-  voiceGain.connect(outGain);
-  osc.start(t);
-
-  return { osc, osc2, voiceGain, release };
-}
-
-function stopSustainedNote(handle) {
-  if (!handle) return;
-  const { osc, osc2, voiceGain, release } = handle;
-  const now = ctx.currentTime;
-  const cur = Math.max(0.001, voiceGain.gain.value);
-  voiceGain.gain.cancelScheduledValues(now);
-  voiceGain.gain.setValueAtTime(cur, now);
-  voiceGain.gain.exponentialRampToValueAtTime(0.0001, now + release);
-  try { osc.stop(now + release + 0.05); } catch (_) {}
-  if (osc2) { try { osc2.stop(now + release + 0.05); } catch (_) {} }
+  if (!ch || ch.instrument !== 'plugin') return;
+  if (!(window.nasty && window.nasty.engine)) return;
+  window.nasty.engine.send({ cmd: 'note_on', channelId: ch.id, pitch, velocity });
+  const id = setTimeout(() => {
+    window.nasty.engine.send({ cmd: 'note_off', channelId: ch.id, pitch });
+    pluginNoteTimeouts.delete(id);
+  }, duration * 1000);
+  pluginNoteTimeouts.add(id);
 }
 
 // Pending setTimeout IDs for note_on/note_off dispatched to the native engine.
 // Cleared on stop so hanging notes don't fire after the transport stops.
 const pluginNoteTimeouts = new Set();
-
-// ============================================================
-// Mic recording (audio clip on a playlist track)
-// ============================================================
-let mediaRecorder = null;
-let recordingChunks = [];
-let isMicRecording = false;
-
-async function startMicRecording() {
-  initAudio();
-  if (ctx.state === 'suspended') await ctx.resume();
-  let stream;
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false },
-    });
-  } catch (e) { alert('Mic access denied: ' + e.message); return; }
-  recordingChunks = [];
-  const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-    ? 'audio/webm;codecs=opus' : 'audio/webm';
-  mediaRecorder = new MediaRecorder(stream, { mimeType });
-  mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) recordingChunks.push(e.data); };
-  mediaRecorder.onstop = async () => {
-    stream.getTracks().forEach((t) => t.stop());
-    const blob = new Blob(recordingChunks, { type: mimeType });
-    const arrayBuffer = await blob.arrayBuffer();
-    const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
-    const durationBeats = audioBuffer.duration * song.bpm / 60;
-    const lengthBars = Math.max(1, Math.ceil(durationBeats / 4));
-    const clipId = `rec-${Date.now().toString(36)}`;
-    const target = song.tracks[0] || (song.tracks.push({
-      id: 'track_1', name: 'Track 1', muted: false, solo: false, clips: []
-    }) && song.tracks[song.tracks.length - 1]);
-    target.clips.push({ id: clipId, type: 'audio', startBar: 0, lengthBars });
-    audioBuffers.set(clipId, audioBuffer);
-    autoExpandBars();
-    render();
-  };
-  if (song.tracks.some(t => t.clips.length)) playSong();
-  mediaRecorder.start();
-  isMicRecording = true;
-  const btn = document.getElementById('mic-rec-btn');
-  btn.classList.add('recording');
-  btn.textContent = '🎤 Recording…';
-}
-
-function stopMicRecording() {
-  if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
-  mediaRecorder.stop();
-  isMicRecording = false;
-  const btn = document.getElementById('mic-rec-btn');
-  btn.classList.remove('recording');
-  btn.textContent = '🎤 Mic';
-  stopSong();
-}
-
-// ============================================================
-// Audio file drag & drop → audio clip on the track lane you drop on
-// ============================================================
-function initAudioDrop() {
-  const scroll = document.getElementById('timeline-scroll');
-  scroll.addEventListener('dragover', (e) => {
-    if (!e.dataTransfer.types.includes('Files')) return;
-    e.preventDefault();
-    scroll.style.boxShadow = 'inset 0 0 0 2px var(--accent-2)';
-  });
-  scroll.addEventListener('dragleave', () => { scroll.style.boxShadow = ''; });
-  scroll.addEventListener('drop', async (e) => {
-    if (e.dataTransfer.types.includes('Files')) {
-      e.preventDefault();
-      scroll.style.boxShadow = '';
-      const files = [...e.dataTransfer.files].filter(f => f.type.startsWith('audio/'));
-      if (!files.length) return;
-      initAudio();
-      if (ctx.state === 'suspended') await ctx.resume();
-      const rect = scroll.getBoundingClientRect();
-      const x = e.clientX - rect.left + scroll.scrollLeft;
-      const y = e.clientY - rect.top + scroll.scrollTop - 28;
-      const trackIdx = Math.max(0, Math.min(song.tracks.length - 1, Math.floor(y / 50)));
-      const dropBar = Math.max(0, Math.floor(x / BAR_WIDTH));
-      let target = song.tracks[trackIdx];
-      let cursor = dropBar;
-      for (const file of files) {
-        try {
-          const arrayBuf = await file.arrayBuffer();
-          const audioBuffer = await ctx.decodeAudioData(arrayBuf);
-          const durBeats = audioBuffer.duration * song.bpm / 60;
-          const lengthBars = Math.max(1, Math.ceil(durBeats / 4));
-          const clipId = 'drop-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,5);
-          target.clips.push({ id: clipId, type: 'audio', startBar: cursor, lengthBars });
-          audioBuffers.set(clipId, audioBuffer);
-          cursor += lengthBars;
-        } catch (err) { alert('Could not load ' + file.name + ': ' + err.message); }
-      }
-      autoExpandBars();
-      render();
-    }
-  });
-}
 
 // ============================================================
 // AI tool calls (FL model)
@@ -2762,10 +2312,10 @@ function recomputePatternLength(p) {
 const STEP_BEATS = 0.25; // 1/16 note = 0.25 beats
 function stepPitchFor(channel) {
   // Sample-based drum channels: play the sample at its root note (C5=60) so
-  // the step triggers the natural pitch. Legacy channels fall through.
+  // the step triggers the natural pitch. drumPitch survives on legacy data
+  // that came through the migration pre-plugin.
   if (channel.drumRootNote != null) return channel.drumRootNote;
   if (channel.drumPitch != null) return channel.drumPitch;
-  if (channel.instrument === 'drums') return channel.drumPitch ?? 36;
   return 60;
 }
 function findStepNote(pattern, channel, stepIdx) {
@@ -2795,45 +2345,16 @@ function toggleStepNote(pattern, channel, stepIdx) {
     pattern.notes.push(addedNote);
   }
   recomputePatternLength(pattern);
-  // Engine-hosted channel: push the single change straight into the audio
-  // engine's pattern data. The audio callback picks it up on the very next
-  // buffer — no cancel-and-rebuild of scheduled events, no playhead twitch.
+  // Push the single change straight into the audio engine's pattern data.
+  // The audio callback picks it up on the very next buffer — no cancel-
+  // and-rebuild of scheduled events, no playhead twitch.
   if (channel.instrument === 'plugin' && song.transportMode === 'pat' && engineTransport.available()) {
     if (addedNote)   engineTransport.setNote(addedNote);
     if (removedNote) engineTransport.clearNote(removedNote);
     // Loop length may have grown when the note extended past the current
     // pattern end. Re-publish so the engine loops at the new boundary.
     engineTransport.setLoopBeats(pattern.lengthBars * 4);
-  } else {
-    // WebAudio path: legacy cancel-and-reschedule for non-engine channels.
-    refreshLoopIfPlaying();
   }
-}
-
-// Live re-schedule during looping. Debounced so rapid step clicks don't
-// stall the playhead — the reschedule loop touches N iterations × M notes
-// and running it on every click was dropping animation frames.
-let _refreshDeadline = 0;
-function refreshLoopIfPlaying() {
-  if (song.transportMode !== 'pat') return;
-  if (!animationFrame || !ctx) return;
-  const now = performance.now();
-  if (now < _refreshDeadline) return;
-  _refreshDeadline = now + 150;
-  const singleDur = singleLoopDurSec;
-  if (singleDur <= 0) return;
-  // In PAT mode the engine drives plugin channels via its own pattern data,
-  // so a refresh must not send all_notes_off to them — that would clobber a
-  // note the engine is holding. WebAudio channels still get rescheduled.
-  const engineDriven = song.transportMode === 'pat' && engineTransport.available();
-  stopAllSources({ includeEngineChannels: !engineDriven });
-  const shouldLoop = loopEnabled || song.transportMode === 'pat';
-  const N = shouldLoop ? Math.min(100, Math.max(2, Math.ceil(600 / singleDur))) : 1;
-  const notBefore = ctx.currentTime + 0.02;
-  for (let i = 0; i < N; i++) {
-    scheduleSong(ctx, masterGain, playStartTime + i * singleDur, scheduledSources, notBefore);
-  }
-  songDurationSec = singleDur * N;
 }
 
 function renderChannelRack() {
@@ -3980,10 +3501,6 @@ function onClipMouseUp(e) {
     clip.startBar = clipDrag.origBar;
     copy.startBar = Math.max(0, ended);
     track.clips.push(copy);
-    if (copy.type === 'audio') {
-      const buf = audioBuffers.get(clip.id);
-      if (buf) audioBuffers.set(copy.id, buf);
-    }
     selectedClipId = copy.id;
     autoExpandBars();
     render();
@@ -4001,7 +3518,6 @@ document.addEventListener('keydown', (e) => {
   const isPrOpen = !document.getElementById('piano-roll').classList.contains('hidden');
   if ((e.key === 'Delete' || e.key === 'Backspace') && selectedClipId && !isPrOpen) {
     for (const t of song.tracks) t.clips = t.clips.filter(c => c.id !== selectedClipId);
-    audioBuffers.delete(selectedClipId);
     selectedClipId = null;
     render();
   }
@@ -4013,10 +3529,6 @@ document.addEventListener('keydown', (e) => {
         const copy = { ...c, id: 'clip_' + Date.now().toString(36),
           startBar: c.startBar + c.lengthBars };
         t.clips.push(copy);
-        if (c.type === 'audio') {
-          const buf = audioBuffers.get(c.id);
-          if (buf) audioBuffers.set(copy.id, buf);
-        }
         selectedClipId = copy.id;
         autoExpandBars();
         render();
@@ -4471,7 +3983,6 @@ function loadFromFile() {
         song = ensureShape(parsed);
         currentPatternId = song.patterns[0]?.id || null;
         chatHistory = [];
-        audioBuffers.clear();
         document.getElementById('chat-messages').innerHTML = '';
         render();
       } catch (e) { alert('Bad file: ' + e.message); }
@@ -4489,47 +4000,10 @@ function downloadBlob(blob, filename) {
 }
 
 async function exportWAV() {
-  const dur = computeSongDurationSec();
-  if (dur <= 0) { alert('Nothing to export.'); return; }
-  const btn = document.getElementById('export-btn');
-  btn.disabled = true; btn.textContent = 'Rendering...';
-  try {
-    const sr = 44100;
-    const offline = new OfflineAudioContext(2, Math.ceil((dur + 1) * sr), sr);
-    const master = offline.createGain(); master.gain.value = 0.8; master.connect(offline.destination);
-    scheduleSong(offline, master, 0, null);
-    const buffer = await offline.startRendering();
-    const wav = audioBufferToWav(buffer);
-    downloadBlob(new Blob([wav], { type: 'audio/wav' }), 'nasty-song.wav');
-  } catch (e) { alert('Export failed: ' + e.message);
-  } finally { btn.disabled = false; btn.textContent = 'Export WAV'; }
-}
-
-function audioBufferToWav(buffer) {
-  const numCh = buffer.numberOfChannels;
-  const len = buffer.length * numCh * 2 + 44;
-  const arr = new ArrayBuffer(len);
-  const view = new DataView(arr);
-  const writeStr = (o, s) => { for (let i = 0; i < s.length; i++) view.setUint8(o+i, s.charCodeAt(i)); };
-  writeStr(0, 'RIFF'); view.setUint32(4, len - 8, true);
-  writeStr(8, 'WAVE'); writeStr(12, 'fmt ');
-  view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, numCh, true);
-  view.setUint32(24, buffer.sampleRate, true);
-  view.setUint32(28, buffer.sampleRate * numCh * 2, true);
-  view.setUint16(32, numCh * 2, true); view.setUint16(34, 16, true);
-  writeStr(36, 'data'); view.setUint32(40, len - 44, true);
-  let offset = 44;
-  const channels = [];
-  for (let c = 0; c < numCh; c++) channels.push(buffer.getChannelData(c));
-  for (let i = 0; i < buffer.length; i++) {
-    for (let c = 0; c < numCh; c++) {
-      let sample = Math.max(-1, Math.min(1, channels[c][i]));
-      sample = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
-      view.setInt16(offset, sample, true);
-      offset += 2;
-    }
-  }
-  return arr;
+  // Offline render used to walk the whole song through a WebAudio graph.
+  // With the engine owning playback that path is gone — real bounce-to-
+  // disk needs an engine-side render command, which doesn't exist yet.
+  alert('Export WAV is temporarily disabled — the audio engine bounce path is not wired up yet.');
 }
 
 // ============================================================
@@ -4583,43 +4057,29 @@ function getActiveInputChannel() {
   return song.channels.find(c => c.armed);
 }
 
-// Handles for sustained built-in-synth notes triggered by MIDI hardware,
-// keyed by `${channelId}:${pitch}` so we can release on note-off.
-const midiHardwareActive = {};
-
 function onMidiMessage(e) {
   const [status, data1, data2] = e.data;
   const type = status & 0xf0;
   const ch = getActiveInputChannel();
   if (type === 0x90 && data2 > 0) {
     const velocity = data2 / 127;
-    if (ch) {
-      if (ch.instrument === 'plugin' && window.nasty && window.nasty.engine) {
-        window.nasty.engine.send({ cmd: 'note_on', channelId: ch.id, pitch: data1, velocity });
-      } else {
-        // Hold-to-sustain — key stays down, note stays on.
-        const key = ch.id + ':' + data1;
-        if (midiHardwareActive[key]) stopSustainedNote(midiHardwareActive[key]);
-        midiHardwareActive[key] = startSustainedNote(ch, data1, velocity);
-      }
+    if (ch && ch.instrument === 'plugin' && window.nasty && window.nasty.engine) {
+      window.nasty.engine.send({ cmd: 'note_on', channelId: ch.id, pitch: data1, velocity });
     }
     if (midiRecording && ch) {
-      const t = ctx.currentTime - midiRecording.startTime;
+      // Engine clock is authoritative for recording timestamps; before the
+      // engine has started playing (rare — recording always calls play
+      // first) fall back to 0.
+      const t = engineTransport.isPlaying ? engineTransport.elapsedSecondsLive() : 0;
       midiRecording.active[data1] = { pitch: data1, velocity, tStart: t, channelId: ch.id };
     }
   } else if (type === 0x80 || (type === 0x90 && data2 === 0)) {
     if (ch && ch.instrument === 'plugin' && window.nasty && window.nasty.engine) {
       window.nasty.engine.send({ cmd: 'note_off', channelId: ch.id, pitch: data1 });
-    } else if (ch) {
-      const key = ch.id + ':' + data1;
-      if (midiHardwareActive[key]) {
-        stopSustainedNote(midiHardwareActive[key]);
-        delete midiHardwareActive[key];
-      }
     }
     if (midiRecording && midiRecording.active[data1]) {
       const start = midiRecording.active[data1];
-      const t = ctx.currentTime - midiRecording.startTime;
+      const t = engineTransport.isPlaying ? engineTransport.elapsedSecondsLive() : 0;
       commitRecordedNote(midiRecording, start.channelId, start.pitch, start.velocity, start.tStart, t);
       delete midiRecording.active[data1];
       render();
@@ -4647,15 +4107,17 @@ function startMidiRecording() {
     initialLengthBars: pat.lengthBars,
     pendingTimeouts: [],
   };
-  // Engine handles everything: push pattern, set linear loop, seek back by
-  // the count-in duration, and start. The engine metronome fires clicks at
-  // each beat boundary — including the negative count-in beats — while the
-  // pattern walker naturally skips because iterations at negative offsets
-  // don't overlap the audio buffer.
+  // Engine handles everything. Session Transport seeks negative for
+  // count-in — engine metronome fires beats leading up to zero, and the
+  // PatternPlayer stays gated (its beginBuffer only advances when
+  // transport is past 0), so no pattern notes fire during count-in.
+  // Linear-record: pattern loop is essentially unbounded so the position
+  // never wraps and the pattern can grow past its current end.
   engineTransport.pushPattern(pat);
-  engineTransport.send({ cmd: 'transport_set_loop_length', samples: 1e12 });
+  engineTransport.send({ cmd: 'pattern_set_loop_length', samples: 1e12 });
   engineTransport.setMetronomeEnabled(metronomeEnabled || countInBeats > 0);
   engineTransport.seek(-countInSamples);
+  engineTransport.seekPattern(0);
   engineTransport.play();
   animatePlayhead();
   const status = document.getElementById('rec-status');
@@ -4755,28 +4217,15 @@ document.addEventListener('keydown', (e) => {
   if (typingActive[lk]) { e.preventDefault(); return; }
   e.preventDefault();
   const pitch = TYPING_BASE_PITCH + TYPING_MAP[lk] + typingOctave * 12;
-  initAudio();
-  if (ctx.state === 'suspended') ctx.resume();
-  let handle = null;
-  if (ch.instrument === 'plugin') {
+  if (ch.instrument === 'plugin' && window.nasty && window.nasty.engine) {
     // Real note-on/note-off — hold-to-sustain like FL Studio.
-    if (window.nasty && window.nasty.engine) {
-      window.nasty.engine.send({ cmd: 'note_on', channelId: ch.id, pitch, velocity: 0.8 });
-    }
-  } else {
-    // Built-in synths: real hold-to-sustain via Web Audio envelope.
-    handle = startSustainedNote(ch, pitch, 0.8);
+    window.nasty.engine.send({ cmd: 'note_on', channelId: ch.id, pitch, velocity: 0.8 });
   }
-  typingActive[lk] = { pitch, channelId: ch.id, tStart: ctx.currentTime, handle };
+  typingActive[lk] = { pitch, channelId: ch.id };
   if (midiRecording) {
-    // Use the engine's own transport clock for recording timestamps —
-    // otherwise IPC/start-up drift between WebAudio time and engine time
-    // (a few ms) accumulates as a shift between where you played the note
-    // and where it plays back. Fall back to ctx during count-in (engine
-    // isn't playing yet), so negative t values get filtered by the commit.
-    const t = engineTransport.isPlaying
-      ? engineTransport.elapsedSecondsLive()
-      : (ctx.currentTime - midiRecording.startTime);
+    // Engine clock is authoritative for recording timestamps. Falls back to
+    // 0 during count-in (engine will report negative time; commit filters).
+    const t = engineTransport.isPlaying ? engineTransport.elapsedSecondsLive() : 0;
     midiRecording.active[pitch] = { pitch, velocity: 0.8, tStart: t, channelId: ch.id };
   }
 });
@@ -4788,16 +4237,10 @@ document.addEventListener('keyup', (e) => {
   const ch = song.channels.find(c => c.id === st.channelId);
   if (ch && ch.instrument === 'plugin' && window.nasty && window.nasty.engine) {
     window.nasty.engine.send({ cmd: 'note_off', channelId: ch.id, pitch: st.pitch });
-  } else if (st.handle) {
-    stopSustainedNote(st.handle);
   }
   if (midiRecording && midiRecording.active[st.pitch]) {
     const start = midiRecording.active[st.pitch];
-    // Same clock the keydown used — engine time when playing, ctx during
-    // count-in — so noteOn and noteOff sit in the same frame of reference.
-    const t = engineTransport.isPlaying
-      ? engineTransport.elapsedSecondsLive()
-      : (ctx.currentTime - midiRecording.startTime);
+    const t = engineTransport.isPlaying ? engineTransport.elapsedSecondsLive() : 0;
     commitRecordedNote(midiRecording, start.channelId, start.pitch, start.velocity, start.tStart, t);
     delete midiRecording.active[st.pitch];
     render();
@@ -4815,15 +4258,11 @@ document.getElementById('play-btn').addEventListener('click', () => {
   else playSong();
 });
 document.getElementById('stop-btn').addEventListener('click', () => {
-  if (isMicRecording) stopMicRecording();
-  else stopSong();
+  stopSong();
 });
 document.getElementById('loop-btn').addEventListener('click', () => {
   loopEnabled = !loopEnabled;
   document.getElementById('loop-btn').classList.toggle('active', loopEnabled);
-});
-document.getElementById('mic-rec-btn').addEventListener('click', () => {
-  if (isMicRecording) stopMicRecording(); else startMicRecording();
 });
 document.getElementById('rec-btn').addEventListener('click', () => {
   recArmed = !recArmed;
@@ -4853,7 +4292,6 @@ document.getElementById('clear-btn').addEventListener('click', () => {
   if (!confirm('Clear the song? (channels, patterns, and playlist all reset)')) return;
   song = { bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] }, transportMode: 'song' };
   chatHistory = [];
-  audioBuffers.clear();
   currentPatternId = null;
   ensureDefaults();
   // Load the freshly-created default channels into the engine so audio flows.
@@ -4877,22 +4315,29 @@ document.getElementById('new-channel-cancel').addEventListener('click', () => {
 document.getElementById('new-channel-ok').addEventListener('click', () => {
   const name = document.getElementById('new-channel-name').value.trim() || 'Channel';
   const raw = document.getElementById('new-channel-inst').value;
-  // "drums:36" → instrument=drums, drumPitch=36
-  let instrument = raw, drumPitch = null;
+  // Modal only offers drum options now, formatted as "drums:<pitch>".
+  // Map each to a sample-plugin channel so the engine plays it.
+  const drumPitchToSample = {
+    36: 'Kick.wav', 38: 'Snare.wav', 39: 'Clap.wav',
+    42: 'HiHat.wav', 46: 'HiHat.wav',
+  };
+  let sample = 'Kick.wav';
   if (raw.includes(':')) {
-    const [inst, p] = raw.split(':');
-    instrument = inst;
-    drumPitch = parseInt(p);
+    const [, p] = raw.split(':');
+    sample = drumPitchToSample[parseInt(p)] || 'Kick.wav';
   }
-  const id = 'ch_' + instrument + '_' + Date.now().toString(36);
+  const id = 'ch_drum_' + Date.now().toString(36);
   for (const c of song.channels) c.armed = false;
   song.channels.push({
-    id, name, instrument, drumPitch,
+    id, name,
+    instrument: 'plugin', pluginId: 'drum:' + sample,
+    drumSample: sample, drumRootNote: 60,
     volume: 0.8, effects: [],
     muted: false, solo: false, armed: true,
     color: PALETTE[song.channels.length % PALETTE.length],
     insertId: 'master',
   });
+  hydratePluginChannels();
   document.getElementById('add-channel-modal').classList.add('hidden');
   render();
 });
@@ -4988,7 +4433,6 @@ function runCmd(cmd) {
     case 'clear':              return document.getElementById('clear-btn').click();
     case 'add-channel':        return document.getElementById('add-channel-btn').click();
     case 'add-pattern':        return document.getElementById('add-pattern-btn').click();
-    case 'mic-rec':            return document.getElementById('mic-rec-btn').click();
     case 'midi-rec':           return startMidiRecording();
     case 'toggle-playlist':    return toggleWindow('playlist');
     case 'toggle-rack':        return toggleWindow('rack');
@@ -5079,7 +4523,7 @@ document.addEventListener('keydown', (e) => {
   }
   if (e.key === ' ' && !inField && !e.target.closest('#piano-roll')) {
     e.preventDefault();
-    if (scheduledSources && scheduledSources.length) stopSong();
+    if (animationFrame) stopSong();
     else playSong();
   }
 });
@@ -5135,18 +4579,12 @@ function renderBrowser() {
   tree.innerHTML = '';
   if (browserTab === 'instruments') {
     const instFolders = [
-      { name: 'Nasty Synths', instruments: [
-        { name: 'Piano', inst: 'piano', pitch: null },
-        { name: 'Bass',  inst: 'bass',  pitch: null },
-        { name: 'Lead',  inst: 'lead',  pitch: null },
-        { name: 'Pad',   inst: 'pad',   pitch: null },
-      ]},
       { name: 'Drums', instruments: [
-        { name: 'Kick',     inst: 'drums', pitch: 36 },
-        { name: 'Snare',    inst: 'drums', pitch: 38 },
-        { name: 'Clap',     inst: 'drums', pitch: 39 },
-        { name: 'Hi-Hat',   inst: 'drums', pitch: 42 },
-        { name: 'Open Hat', inst: 'drums', pitch: 46 },
+        { name: 'Kick',     sample: 'Kick.wav'  },
+        { name: 'Snare',    sample: 'Snare.wav' },
+        { name: 'Clap',     sample: 'Clap.wav'  },
+        { name: 'Hi-Hat',   sample: 'HiHat.wav' },
+        { name: 'Open Hat', sample: 'HiHat.wav' },
       ]},
     ];
     instFolders.forEach(f => {
@@ -5162,16 +4600,18 @@ function renderBrowser() {
         itEl.textContent = inst.name;
         itEl.title = `Double-click to add "${inst.name}" as a channel`;
         itEl.addEventListener('dblclick', () => {
-          const id = 'ch_' + inst.inst + '_' + Date.now().toString(36);
+          const id = 'ch_drum_' + Date.now().toString(36);
           for (const c of song.channels) c.armed = false;
           song.channels.push({
-            id, name: inst.name, instrument: inst.inst,
-            drumPitch: inst.pitch ?? null,
+            id, name: inst.name,
+            instrument: 'plugin', pluginId: 'drum:' + inst.sample,
+            drumSample: inst.sample, drumRootNote: 60,
             volume: 0.8, effects: [],
             muted: false, solo: false, armed: true,
             color: PALETTE[song.channels.length % PALETTE.length],
             insertId: 'master',
           });
+          hydratePluginChannels();
           render();
         });
         wrap.appendChild(itEl);
@@ -5631,17 +5071,23 @@ if (window.nasty && window.nasty.engine) {
       hydratePluginChannels();
     } else if (msg.event === 'transport_position') {
       // The engine emits these at ~60 Hz while playing. Store the latest
-      // sample AND the wall-clock instant we received it so the playhead
-      // renderer can extrapolate between events for sub-frame smoothness.
+      // pattern position AND the wall-clock instant we received it so the
+      // playhead renderer can extrapolate between events for sub-frame
+      // smoothness. Both the monotonic Transport sample and the PatternPlayer
+      // position come through so the playhead can read the loop state and
+      // recording can read session time for count-in.
       engineTransport.currentSample     = msg.currentSample;
       engineTransport.sampleRate        = msg.sampleRate;
       engineTransport.isPlaying         = msg.isPlaying;
+      if (msg.patternPosition != null)    engineTransport.patternPosition = msg.patternPosition;
+      if (msg.patternLoopSamples != null) engineTransport.loopSamples     = msg.patternLoopSamples;
       engineTransport.lastEventPerfMs   = performance.now();
     } else if (msg.event === 'transport_state') {
       engineTransport.currentSample = msg.currentSample;
       engineTransport.sampleRate    = msg.sampleRate;
       engineTransport.isPlaying     = msg.isPlaying;
-      engineTransport.loopSamples   = msg.loopSamples;
+      if (msg.patternPosition != null)    engineTransport.patternPosition = msg.patternPosition;
+      if (msg.patternLoopSamples != null) engineTransport.loopSamples     = msg.patternLoopSamples;
     } else if (msg.event === 'plugin_list') {
       enginePluginsList = msg.plugins || [];
       enginePluginsError = null;
@@ -5733,7 +5179,7 @@ function renderFlShell() {
   }
   // Rec LED
   const led = document.getElementById('rec-led');
-  if (led) led.classList.toggle('on', isMicRecording || !!midiRecording);
+  if (led) led.classList.toggle('on', !!midiRecording);
   // PAT / SONG mode buttons
   document.querySelectorAll('.patsong .ps-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.mode === (song.transportMode || 'song'));
@@ -5741,7 +5187,7 @@ function renderFlShell() {
   // Browser
   renderBrowser();
   // Time LCD default when stopped
-  if (!ctx || !scheduledSources || !scheduledSources.length) updateTimeLcd(0);
+  if (!engineTransport.isPlaying) updateTimeLcd(0);
 }
 
 // ============================================================
@@ -5944,7 +5390,6 @@ loadFromStorage();
 ensureDefaults();
 render();
 initMIDI();
-initAudioDrop();
 initPianoRollDrop();
 updateTimeLcd(0);
 </script>

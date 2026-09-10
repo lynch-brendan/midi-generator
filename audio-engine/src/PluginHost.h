@@ -10,6 +10,7 @@
 #include <mutex>
 
 #include "Transport.h"
+#include "PatternPlayer.h"
 #include "Metronome.h"
 
 namespace nasty {
@@ -23,6 +24,7 @@ public:
     // The engine's single time source. Public read/write API on the Transport
     // itself is thread-safe (atomic).
     Transport& getTransport() noexcept { return transport; }
+    PatternPlayer& getPatternPlayer() noexcept { return patternPlayer; }
 
     // Enable / disable the engine-hosted metronome. Sample-accurate against
     // the Transport — clicks land on beat boundaries in the same audio
@@ -208,6 +210,11 @@ private:
 
     // Single source of truth for time. Advanced by the audio callback below.
     Transport transport;
+
+    // Per-pattern loop state. Owns its own position counter that advances +
+    // wraps in the audio callback; the walker + visual playhead read from
+    // this so loop-length changes don't teleport the playhead.
+    PatternPlayer patternPlayer;
 
     // Engine-hosted metronome. Added to the graph as a node routed straight
     // to the master output. Enabled/disabled via setMetronomeEnabled().

@@ -9,16 +9,20 @@ StdioBridge::~StdioBridge() { stop(); }
 
 void StdioBridge::PositionBroadcaster::timerCallback() {
     auto& tr = bridge.host.getTransport();
+    auto& pp = bridge.host.getPatternPlayer();
     // Emit while playing; also emit on the tick after stop so the UI sees a
     // final "resting" position instead of a stale intermediate value.
     static thread_local bool lastPlaying = false;
     const bool playing = tr.getIsPlaying();
     if (playing || lastPlaying) {
         bridge.sendEvent({
-            {"event",         juce::var("transport_position")},
-            {"currentSample", juce::var((double) tr.getCurrentSample())},
-            {"sampleRate",    juce::var(tr.getSampleRate())},
-            {"isPlaying",     juce::var(playing)},
+            {"event",           juce::var("transport_position")},
+            {"currentSample",   juce::var((double) tr.getCurrentSample())},
+            {"sampleRate",      juce::var(tr.getSampleRate())},
+            {"isPlaying",       juce::var(playing)},
+            // Pattern-loop state — playhead reads position directly, no mod.
+            {"patternPosition", juce::var((double) pp.getPositionSample())},
+            {"patternLoopSamples", juce::var((double) pp.getLoopLengthSamples())},
         });
     }
     lastPlaying = playing;
@@ -268,9 +272,17 @@ juce::var StdioBridge::handleCommand(const juce::var& msg) {
         return {};
     }
 
-    if (cmd == "transport_set_loop_length") {
-        host.getTransport().setLoopLengthSamples(
+    if (cmd == "transport_set_loop_length" || cmd == "pattern_set_loop_length") {
+        // Routes to the PatternPlayer — the walker + visual playhead read
+        // from there. The Transport itself is now purely session time.
+        // transport_set_loop_length kept as an alias for the old JS name.
+        host.getPatternPlayer().setLoopLengthSamples(
             (juce::int64) (double) msg["samples"]);
+        return {};
+    }
+
+    if (cmd == "pattern_seek") {
+        host.getPatternPlayer().seek((juce::int64) (double) msg["sample"]);
         return {};
     }
 
@@ -303,13 +315,16 @@ juce::var StdioBridge::handleCommand(const juce::var& msg) {
 
     if (cmd == "transport_get") {
         auto& tr = host.getTransport();
+        auto& pp = host.getPatternPlayer();
         auto* o = new juce::DynamicObject();
-        o->setProperty("event",         "transport_state");
-        o->setProperty("currentSample", (double) tr.getCurrentSample());
-        o->setProperty("isPlaying",     tr.getIsPlaying());
-        o->setProperty("tempo",         tr.getTempoBpm());
-        o->setProperty("loopSamples",   (double) tr.getLoopLengthSamples());
-        o->setProperty("sampleRate",    tr.getSampleRate());
+        o->setProperty("event",              "transport_state");
+        o->setProperty("currentSample",      (double) tr.getCurrentSample());
+        o->setProperty("isPlaying",          tr.getIsPlaying());
+        o->setProperty("tempo",              tr.getTempoBpm());
+        o->setProperty("sampleRate",         tr.getSampleRate());
+        // Pattern-loop state (playhead reads this, not the Transport).
+        o->setProperty("patternPosition",    (double) pp.getPositionSample());
+        o->setProperty("patternLoopSamples", (double) pp.getLoopLengthSamples());
         return juce::var(o);
     }
 

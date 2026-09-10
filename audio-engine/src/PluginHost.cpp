@@ -38,9 +38,10 @@ class MidiInjector : public juce::AudioProcessor {
 public:
     juce::MidiMessageCollector collector;
 
-    // Non-owning pointer to the engine's Transport. Read on the audio thread
-    // to decide which loop iteration + sample offsets the pattern maps to.
-    const Transport* transport = nullptr;
+    // Non-owning pointers to the engine's clock + pattern-loop state. Read on
+    // the audio thread to decide which sample offsets the pattern maps to.
+    const Transport*      transport      = nullptr;
+    const PatternPlayer*  patternPlayer  = nullptr;
 
     // MIDI channel used for pattern-injected notes (1..16). Matches the
     // channel used for UI-triggered noteOn calls.
@@ -100,43 +101,68 @@ public:
 
 private:
     // Walk the pattern and inject any noteOn/noteOff falling in this buffer.
-    // Called on the audio thread, real-time safe. Try-locks the pattern; on
-    // contention (rare — UI writes are user-clicks-per-second at most) skips
-    // this buffer's pattern events. The MidiMessageCollector path above
-    // still drains normally so live-played notes aren't affected.
+    // Called on the audio thread, real-time safe.
+    //
+    // Position comes from PatternPlayer — a state-based counter that
+    // advances + wraps in its own beginBuffer/endBuffer. So the walker just
+    // needs to answer "which notes are in [bufPos, bufPos + numSamples)?",
+    // with a small extra check for buffers that span the wrap boundary
+    // (rare — only when a buffer straddles the loop end).
     void injectPattern(juce::MidiBuffer& midi, int numSamples) {
-        if (transport == nullptr) return;
-        if (!transport->getIsPlaying()) return;
-        const std::int64_t loopLen = transport->getLoopLengthSamples();
+        if (patternPlayer == nullptr) return;
+        if (transport == nullptr || !transport->getIsPlaying()) return;
+        // During count-in the Transport rides at negative samples but the
+        // PatternPlayer stays parked at 0. Without this guard the walker
+        // would re-fire whatever's at pattern position 0 on every audio
+        // buffer of the count-in → the rapid-fire high-pitched noise.
+        if (transport->getBufferStartSample() < 0) return;
+        const std::int64_t loopLen = patternPlayer->getLoopLengthSamples();
         if (loopLen <= 0) return;
 
-        const std::int64_t bufferStart = transport->getBufferStartSample();
-        const std::int64_t bufferEnd   = bufferStart + numSamples;
+        const std::int64_t bufPos = patternPlayer->getBufferStartPosition();
+        const std::int64_t bufEnd = bufPos + numSamples;
 
         const juce::SpinLock::ScopedTryLockType tryLock(patternLock);
         if (!tryLock.isLocked()) return;
 
-        // bufferStart lives somewhere in [iterStart, iterStart + loopLen).
-        // Walk the current, previous, and next iterations so we catch:
-        //   * noteOffs from notes started in the previous iteration
-        //   * standard note onsets in the current iteration
-        //   * note onsets whose absolute time sits in the buffer tail after
-        //     a loop boundary crossing
-        const std::int64_t iterStart = (bufferStart / loopLen) * loopLen;
-        for (int iterOffset = -1; iterOffset <= 1; ++iterOffset) {
-            const std::int64_t base = iterStart + (std::int64_t) iterOffset * loopLen;
+        // Fire notes that land in [bufPos, min(bufEnd, loopLen)) at their
+        // natural offset within the buffer.
+        const std::int64_t firstSegEnd = juce::jmin(bufEnd, loopLen);
+        for (const auto& [_, note] : patternNotes) {
+            if (note.atSample >= loopLen) continue; // past pattern content
+            const std::int64_t onPos  = note.atSample;
+            const std::int64_t offPos = note.atSample + note.durationSamples;
+            if (onPos >= bufPos && onPos < firstSegEnd) {
+                midi.addEvent(juce::MidiMessage::noteOn(
+                    patternMidiChannel, note.pitch, note.velocity),
+                    (int) (onPos - bufPos));
+            }
+            if (offPos >= bufPos && offPos < firstSegEnd) {
+                midi.addEvent(juce::MidiMessage::noteOff(
+                    patternMidiChannel, note.pitch),
+                    (int) (offPos - bufPos));
+            }
+        }
+
+        // Buffer straddles the wrap: fire notes that land in [0, bufEnd - loopLen)
+        // at offsets shifted by the "distance to wrap" so they sit at the
+        // correct sample within this buffer.
+        if (bufEnd > loopLen) {
+            const std::int64_t wrappedEnd = bufEnd - loopLen;
+            const std::int64_t offsetAfterWrap = loopLen - bufPos;
             for (const auto& [_, note] : patternNotes) {
-                const std::int64_t onAbs  = base + note.atSample;
-                const std::int64_t offAbs = onAbs + note.durationSamples;
-                if (onAbs >= bufferStart && onAbs < bufferEnd) {
+                if (note.atSample >= loopLen) continue;
+                const std::int64_t onPos  = note.atSample;
+                const std::int64_t offPos = note.atSample + note.durationSamples;
+                if (onPos >= 0 && onPos < wrappedEnd) {
                     midi.addEvent(juce::MidiMessage::noteOn(
                         patternMidiChannel, note.pitch, note.velocity),
-                        (int) (onAbs - bufferStart));
+                        (int) (onPos + offsetAfterWrap));
                 }
-                if (offAbs >= bufferStart && offAbs < bufferEnd) {
+                if (offPos >= 0 && offPos < wrappedEnd) {
                     midi.addEvent(juce::MidiMessage::noteOff(
                         patternMidiChannel, note.pitch),
-                        (int) (offAbs - bufferStart));
+                        (int) (offPos + offsetAfterWrap));
                 }
             }
         }
@@ -275,14 +301,10 @@ PluginHost::PluginHost() {
     graph.addNode(std::make_unique<Graph::AudioGraphIOProcessor>(
         Graph::AudioGraphIOProcessor::midiOutputNode));
 
-    // Engine-hosted metronome, added to the graph up front. It reads the
-    // Transport directly in its audio callback, so its clicks are locked
-    // sample-accurate to whatever the pattern walker is playing.
+    // Engine-hosted metronome node added to the graph. The metronome->out
+    // connection is deferred to startAudio() — before the audio device
+    // opens, outNode reports zero output channels and addConnection fails.
     metronomeNode = graph.addNode(std::make_unique<Metronome>(transport));
-    for (int ch = 0; ch < 2; ++ch) {
-        graph.addConnection({ { metronomeNode->nodeID, ch },
-                              { outNode->nodeID,       ch } });
-    }
 }
 
 PluginHost::~PluginHost() { stopAudio(); }
@@ -297,11 +319,13 @@ void PluginHost::audioDeviceIOCallbackWithContext(const float* const* inputChann
                                                   int numSamples,
                                                   const juce::AudioIODeviceCallbackContext& context) {
     transport.beginBuffer(numSamples);
+    patternPlayer.beginBuffer(numSamples, transport);
     juce::AudioProcessorPlayer::audioDeviceIOCallbackWithContext(
         inputChannelData, numInputChannels,
         outputChannelData, numOutputChannels,
         numSamples, context);
     transport.endBuffer();
+    patternPlayer.endBuffer();
 }
 
 void PluginHost::audioDeviceAboutToStart(juce::AudioIODevice* device) {
@@ -328,6 +352,7 @@ void PluginHost::setMetronomeEnabled(bool v) {
 juce::AudioProcessorGraph::Node::Ptr PluginHost::addInjectorNode() {
     auto injector = std::make_unique<MidiInjector>();
     injector->transport = &transport;
+    injector->patternPlayer = &patternPlayer;
     injector->patternMidiChannel = 1;
     return graph.addNode(std::move(injector));
 }
@@ -445,6 +470,19 @@ void PluginHost::startAudio() {
     setProcessor(&graph);
     deviceManager.addAudioCallback(this);
     deviceManager.addMidiInputDeviceCallback({}, this);
+
+    // Wire the metronome to the master output — now that the device is
+    // open, outNode has valid output channels (before this point addConnection
+    // silently fails because outNode reports 0 channels).
+    if (metronomeNode) {
+        auto outNode = graph.getNodeForId(Graph::NodeID(2));
+        if (outNode) {
+            for (int ch = 0; ch < 2; ++ch) {
+                graph.addConnection({ { metronomeNode->nodeID, ch },
+                                      { outNode->nodeID,       ch } });
+            }
+        }
+    }
     // Listen for device changes so we can reconnect when macOS wakes from
     // sleep, or the user unplugs and replugs an interface. Without this the
     // engine holds a stale device handle and stays silent after wake.
