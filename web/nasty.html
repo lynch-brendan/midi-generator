@@ -2388,6 +2388,11 @@ function applyToolCalls(calls) {
             patternId: input.pattern_id, startBar: input.start_bar,
             lengthBars: input.length_bars || pat.lengthBars,
           });
+          // The AI just placed content on the playlist — that means SONG.
+          // Silent no-op if we're already there. Prevents the confusing
+          // "AI arranged a song but hitting play gives me the old empty
+          // pattern" trap: PAT plays currentPatternId, not the playlist.
+          song.transportMode = 'song';
           summaries.push(`+ clip ${pat.name} @ bar ${input.start_bar+1}`);
         }
       } else if (name === 'move_clip') {
