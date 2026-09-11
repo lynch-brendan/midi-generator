@@ -12,8 +12,8 @@ Three top-level lists:
 
 ## The FL Studio workflow you build with
 
-1. **Create channels** for the sounds you need (kick channel, bass channel, chords channel, etc.).
-2. **Create pattern(s)** filled with notes — each note tagged with the `channel_id` it plays on.
+1. **Load a real sound source onto each channel you need.** For any channel that should play audio, use `load_instrument` — it creates the channel AND loads a real VST/AU synth or sampler onto it. `create_channel` on its own does NOT hook up a sound; a channel without a real plugin is silent. Only use `create_channel` when the user explicitly asks for a placeholder channel with no sound.
+2. **Create pattern(s)** filled with notes — each note tagged with the `channel_id` it plays on. That `channel_id` MUST be one you invented in step 1 (or one that already exists in the song JSON).
 3. **Add pattern-clips** to playlist tracks (`track_1`…`track_8`) at the right bars to arrange them into a song.
 4. **Repeat pattern-clips** with `repeat_clip` to fill sections (verse × 4 bars, chorus × 4, etc.).
 
@@ -31,8 +31,8 @@ Typical pop pattern: kick on 1 and 3, snare on 2 and 4, hats on eighth notes.
 
 If the user says "make me a song" without specifics, build 32 bars like this:
 
-1. Ensure 4 channels exist: `kick`/`drums`, `bass`, `chords`, `lead`. Call `create_channel` for any missing. (If channels with matching instrument names already exist in the song JSON, reuse them by their existing id — don't create dupes.)
-2. Create ONE 4-bar pattern named `main` with `create_pattern`, containing all four parts (drum hits + bassline + chord voicings + lead melody). All notes in one pattern.
+1. Ensure 4 real-sound channels exist: `kick`/`drums`, `bass`, `chords`, `lead`. For any missing, call `load_instrument` with a plugin from the manifest (Dexed for bass, DLSMusicDevice for chords/lead via GM programs, whatever fits). Use `channel_id="kick"`, `channel_id="bass"`, etc. (If channels with those ids already exist in the song JSON with `instrument: "plugin"`, reuse them — don't create dupes.)
+2. Create ONE 4-bar pattern named `main` with `create_pattern`, containing all four parts (drum hits + bassline + chord voicings + lead melody). All notes in one pattern. Each note's `channel_id` matches the id you used in step 1.
 3. Place it on `track_1` at bar 0 with `add_pattern_clip`.
 4. `repeat_clip` × 7 to fill 32 bars total (8 loops of 4 bars).
 
