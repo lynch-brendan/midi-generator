@@ -1496,6 +1496,7 @@ class NastyChatRequest(BaseModel):
     song: dict
     message: str
     history: list = []
+    plugins: list = []  # engine-scanned VST3/AU manifest
 
 
 @app.get("/nasty")
@@ -1505,8 +1506,17 @@ def nasty_page():
 
 @app.post("/nasty/chat")
 def nasty_chat(req: NastyChatRequest):
+    # Plugin manifest is the source of truth for what's actually installed on
+    # this machine — Claude picks from it instead of guessing from training
+    # data. Kept separate from song state so it stays stable across turns.
+    plugin_block = (
+        f"Installed plugins (VST3/AU scanned by the engine):\n"
+        f"```json\n{json.dumps(req.plugins, indent=2)}\n```\n\n"
+        if req.plugins else ""
+    )
     user_content = (
         f"Current song state:\n```json\n{json.dumps(req.song, indent=2)}\n```\n\n"
+        f"{plugin_block}"
         f"User: {req.message}"
     )
     messages = list(req.history) + [{"role": "user", "content": user_content}]

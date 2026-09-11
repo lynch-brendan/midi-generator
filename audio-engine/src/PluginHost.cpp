@@ -27,11 +27,9 @@ struct PatternNote {
 };
 
 // SONG mode: one placement of a pattern on a channel's arrangement lane.
-// The pattern's notes tile inside the clip to fill lengthSamples — a 1-bar
-// pattern stretched to 4 bars plays four times, a 2-bar pattern truncated
-// to 1 bar plays just its first half. patternRefSample is where in the
-// pattern the first iteration starts (usually 0; reserved for future
-// clip-offset support).
+// The pattern plays ONCE starting at songStartSample. If lengthSamples >
+// patternLoopLenSamples, the tail is silence (FL behavior). If it's shorter,
+// the pattern is truncated at the clip's end.
 struct ArrangementClip {
     std::int64_t songStartSample;         // absolute Transport sample
     std::int64_t lengthSamples;           // how far the clip extends in song time
@@ -71,8 +69,9 @@ public:
     //                              patterns can live in the injector at once
     //                              and clips can reference them by ID.
     //   * arrangement            — SONG mode. Ordered clips on this channel's
-    //                              lane; the walker tiles each clip's referenced
-    //                              pattern across its lengthSamples.
+    //                              lane; the walker plays each clip's pattern
+    //                              once at clip start, silence after pattern
+    //                              end (matches FL).
     juce::SpinLock patternLock;
     std::map<juce::String, PatternNote> patternNotes;
     std::map<juce::String, std::map<juce::String, PatternNote>> notesByPattern;
@@ -235,9 +234,8 @@ private:
         }
     }
 
-    // SONG mode. Walk this channel's arrangement, tile each clip's pattern to
-    // fill the clip's lengthSamples, and inject any noteOn/noteOff falling in
-    // this buffer.
+    // SONG mode. Walk this channel's arrangement and inject any noteOn/noteOff
+    // falling in this buffer.
     //
     // Position comes from PatternPlayer — same source as PAT mode. In SONG
     // mode, JS sets PatternPlayer.loopLength to the full arrangement length,
@@ -245,10 +243,11 @@ private:
     // reset-on-wrap needed). Clip positions in `arrangement` are relative to
     // this same "song-local" origin.
     //
-    // Tiling: a 1-bar pattern on a 4-bar clip plays four times. A 2-bar
-    // pattern on a 1-bar clip plays only its first bar. We walk iterations of
-    // the pattern within the clip and clip each iteration's pattern-local
-    // range against the buffer overlap.
+    // Playback shape (FL Studio): the pattern plays ONCE from the start of
+    // the clip. If the clip is longer than the pattern, the tail is silence.
+    // If the clip is shorter than the pattern, playback is truncated. No
+    // tiling — a 1-bar pattern on a 4-bar clip plays for one bar, then three
+    // bars of silence.
     void injectSongMode(juce::MidiBuffer& midi, int numSamples) {
         if (patternPlayer == nullptr) return;
         if (!transport->getIsPlaying()) return;
@@ -280,45 +279,36 @@ private:
             const std::int64_t clipLocalEnd   = overlapEnd   - clip.songStartSample;
             const std::int64_t patLen = clip.patternLoopLenSamples;
 
-            // Iterate every tiled pattern iteration that intersects the overlap.
-            // firstIter = iteration containing clipLocalStart. We advance until
-            // the iteration's start is past clipLocalEnd.
-            std::int64_t iter = clipLocalStart / patLen;
-            while (iter * patLen < clipLocalEnd) {
-                const std::int64_t iterStartInClip = iter * patLen;
-                // Pattern-local overlap for this iteration.
-                const std::int64_t patStart = juce::jmax((std::int64_t) 0,
-                                                         clipLocalStart - iterStartInClip);
-                const std::int64_t patEnd   = juce::jmin(patLen,
-                                                         clipLocalEnd - iterStartInClip);
+            // Single-play: pattern starts at clipStart, ends at min(clipEnd,
+            // clipStart + patLen). Nothing tiled. If we're past the pattern's
+            // own length inside this clip, everything is silence — skip.
+            if (clipLocalStart >= patLen) continue;
+            const std::int64_t patStart = clipLocalStart;
+            const std::int64_t patEnd   = juce::jmin(patLen, clipLocalEnd);
 
-                for (const auto& [_, note] : notes) {
-                    if (note.atSample >= patLen) continue; // beyond pattern content
-                    const std::int64_t onPat  = note.atSample;
-                    const std::int64_t offPat = note.atSample + note.durationSamples;
+            for (const auto& [_, note] : notes) {
+                if (note.atSample >= patLen) continue; // beyond pattern content
+                const std::int64_t onPat  = note.atSample;
+                const std::int64_t offPat = note.atSample + note.durationSamples;
 
-                    if (onPat >= patStart && onPat < patEnd) {
-                        const std::int64_t songPos =
-                            clip.songStartSample + iterStartInClip + onPat;
-                        midi.addEvent(juce::MidiMessage::noteOn(
-                            patternMidiChannel, note.pitch, note.velocity),
+                if (onPat >= patStart && onPat < patEnd) {
+                    const std::int64_t songPos = clip.songStartSample + onPat;
+                    midi.addEvent(juce::MidiMessage::noteOn(
+                        patternMidiChannel, note.pitch, note.velocity),
+                        (int) (songPos - bufStart));
+                }
+                // noteOff fires if it falls before pattern-end AND before the
+                // clip-end. Notes whose duration exceeds the pattern length
+                // are dropped; the piano roll doesn't let you draw past
+                // pattern end so this is only an edge case.
+                if (offPat >= patStart && offPat < patEnd) {
+                    const std::int64_t songPos = clip.songStartSample + offPat;
+                    if (songPos < clipEndSong) {
+                        midi.addEvent(juce::MidiMessage::noteOff(
+                            patternMidiChannel, note.pitch),
                             (int) (songPos - bufStart));
                     }
-                    // noteOff only fires if it falls inside this iteration's
-                    // pattern range. Matches PAT-mode semantics — notes whose
-                    // duration exceeds the pattern length are dropped, not
-                    // dragged into the next tile.
-                    if (offPat >= patStart && offPat < patEnd) {
-                        const std::int64_t songPos =
-                            clip.songStartSample + iterStartInClip + offPat;
-                        if (songPos < clipEndSong) {
-                            midi.addEvent(juce::MidiMessage::noteOff(
-                                patternMidiChannel, note.pitch),
-                                (int) (songPos - bufStart));
-                        }
-                    }
                 }
-                ++iter;
             }
         }
     }
