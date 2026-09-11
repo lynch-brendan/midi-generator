@@ -2335,6 +2335,49 @@ function applyToolCalls(calls) {
             : `+ instrument "${plug.name}" on "${input.channel_name}"`;
           summaries.push(label);
         }
+      } else if (name === 'set_plugin_param') {
+        // Owner can be either a channel (tweaking its instrument's params)
+        // or a mixer bus (tweaking an effect on the bus). slot_id empty
+        // means "the instrument on the channel"; non-empty targets an
+        // effect slot in that owner's chain. Fuzzy substring match on the
+        // param name so "wet" hits "Wet Dry" or "Dry/Wet Mix" or "Mix".
+        const owner = song.channels.find(c => c.id === input.owner_id)
+                   || (song.mixer && song.mixer.busses || []).find(b => b.id === input.owner_id);
+        let paramsList = null;
+        if (owner) {
+          if (input.slot_id) {
+            const slot = (owner.effects || []).find(e => e.slotId === input.slot_id);
+            paramsList = slot && slot.params;
+          } else {
+            paramsList = owner.params;
+          }
+        }
+        const target = String(input.param_name || '').toLowerCase().trim();
+        let match = null;
+        if (Array.isArray(paramsList) && target) {
+          match = paramsList.find(p => (p.name || '').toLowerCase().trim() === target)
+               || paramsList.find(p => (p.name || '').toLowerCase().includes(target));
+        }
+        if (!owner) {
+          summaries.push(`× set_plugin_param: owner "${input.owner_id}" not found`);
+        } else if (!paramsList) {
+          summaries.push(`× set_plugin_param: no param list on that ${input.slot_id ? 'slot' : 'channel'}`);
+        } else if (!match) {
+          summaries.push(`× set_plugin_param: no param matching "${input.param_name}"`);
+        } else {
+          const value = Math.max(0, Math.min(1, Number(input.value)));
+          const engineId = engineOwnerId(input.owner_id);
+          if (window.nasty && window.nasty.engine) {
+            window.nasty.engine.send({
+              cmd: 'set_param', channelId: engineId,
+              slotId: input.slot_id || '',
+              paramIndex: match.index, value,
+            });
+          }
+          // Update the cached value so Claude sees the new state next turn.
+          match.value = value;
+          summaries.push(`~ ${match.name} → ${value.toFixed(2)} (${owner.name || input.owner_id})`);
+        }
       } else if (name === 'remove_plugin_effect') {
         // Owner can be a channel OR a mixer bus. removeEffectFromChannel
         // handles both since it looks up via findEffectOwner internally
@@ -5488,11 +5531,35 @@ if (window.nasty && window.nasty.engine) {
       // Re-query so the dropdown reflects what the engine actually settled on.
       window.nasty.engine.send({ cmd: 'list_audio_devices' });
     } else if (msg.event === 'plugin_loaded') {
+      // Stash the plugin's params on the channel so Claude reads them in
+      // the next chat turn — that's how set_plugin_param becomes possible.
+      if (Array.isArray(msg.params)) {
+        const ch = song.channels.find(c => c.id === msg.channelId);
+        if (ch) { ch.params = msg.params; persist(); }
+      }
       // Only auto-pop the plugin window if the user explicitly added it in
       // this session — not on song-restore re-loads (which would spam windows).
       if (msg.channelId && autoShowOnLoad.has(msg.channelId)) {
         autoShowOnLoad.delete(msg.channelId);
         window.nasty.engine.send({ cmd: 'show_plugin_ui', channelId: msg.channelId });
+      }
+    } else if (msg.event === 'effect_added') {
+      // Attach params to the specific effect slot on whichever owner
+      // (channel or bus) holds it. Same reasoning as plugin_loaded above.
+      if (Array.isArray(msg.params)) {
+        // engineOwnerId translates 'master' → 'master_bus' before sending;
+        // here msg.channelId is the engine id, so we look up on either side.
+        const findOwner = (id) =>
+          song.channels.find(c => c.id === id)
+          || (song.mixer && song.mixer.busses || []).find(b => b.id === id)
+          || (id === 'master_bus'
+              ? (song.mixer && song.mixer.busses || []).find(b => b.id === 'master')
+              : null);
+        const owner = findOwner(msg.channelId);
+        if (owner) {
+          const slot = (owner.effects || []).find(e => e.slotId === msg.slotId);
+          if (slot) { slot.params = msg.params; persist(); }
+        }
       }
     } else if (msg.event === 'plugin_states_snapshot') {
       latestPluginStates = msg.states || {};

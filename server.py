@@ -1400,6 +1400,35 @@ _NASTY_TOOLS = [
         },
     },
     {
+        "name": "set_plugin_param",
+        "description": (
+            "Tweak a single parameter on a loaded plugin. Use this for 'turn "
+            "down the reverb' (target the reverb's Wet/Mix param), 'make the "
+            "filter darker' (Cutoff param on the synth), 'more decay' (Decay/"
+            "Time param), etc. `owner_id` is the id of the channel (to tweak "
+            "its instrument) OR the mixer bus (to tweak an effect on the bus). "
+            "`slot_id` empty targets the instrument; non-empty targets the "
+            "effect slot with that id. `param_name` is fuzzy-matched (case-"
+            "insensitive substring) against the plugin's param list — see "
+            "`params` on song.channels[*] (instrument) or on "
+            "song.channels[*].effects[*] / song.mixer.busses[*].effects[*]. "
+            "`value` is 0.0-1.0 in normalised parameter space (0 = min, "
+            "1 = max). For 'turn it down' start around 0.3; 'make it huge' "
+            "around 0.85. Preferable to remove+re-add whenever the user just "
+            "wants to nudge something they already have."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "owner_id": {"type": "string"},
+                "slot_id": {"type": "string"},
+                "param_name": {"type": "string"},
+                "value": {"type": "number", "minimum": 0, "maximum": 1},
+            },
+            "required": ["owner_id", "param_name", "value"],
+        },
+    },
+    {
         "name": "remove_plugin_effect",
         "description": (
             "Remove a specific plugin effect slot. Use when the user asks to "

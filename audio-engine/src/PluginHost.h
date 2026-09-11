@@ -196,8 +196,21 @@ public:
     // they get out of the way. Re-shown by show_plugin_ui.
     void hideAllPluginUIs();
 
-    // Parameter automation.
-    void setParam(const juce::String& channelId, int paramIndex, float value01);
+    // Parameter automation. `slotId` empty targets the channel's instrument;
+    // non-empty targets the effect chain slot with that id (as returned from
+    // addEffect). Silent no-op if either the channel, slot, or index is out
+    // of range — Claude's job to send a valid index, not the engine's to
+    // apologise.
+    void setParam(const juce::String& channelId,
+                  const juce::String& slotId,
+                  int paramIndex, float value01);
+
+    // Enumerate the parameters of the plugin at `channelId::slotId` as a
+    // JSON-array of {index, name, value}. slotId empty = channel's instrument;
+    // non-empty = effect slot. Empty array if nothing's loaded there. This
+    // is what the AI reads to know what knobs it can turn.
+    juce::var paramsForOwner(const juce::String& channelId,
+                             const juce::String& slotId = {}) const;
 
 private:
     juce::AudioPluginFormatManager formatManager;

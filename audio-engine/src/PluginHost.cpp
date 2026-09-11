@@ -1515,16 +1515,56 @@ void PluginHost::setPluginWindowsFloating(bool floating) {
     });
 }
 
-void PluginHost::setParam(const juce::String& channelId, int paramIndex, float value01) {
+void PluginHost::setParam(const juce::String& channelId,
+                          const juce::String& slotId,
+                          int paramIndex, float value01) {
     std::lock_guard<std::mutex> lock(mutex);
     auto it = channels.find(channelId);
     if (it == channels.end()) return;
-    if (auto node = graph.getNodeForId(it->second.pluginNodeId)) {
+    juce::AudioProcessorGraph::NodeID nodeId;
+    if (slotId.isEmpty()) {
+        nodeId = it->second.pluginNodeId;
+    } else {
+        for (const auto& e : it->second.effects) {
+            if (e.slotId == slotId) { nodeId = e.nodeId; break; }
+        }
+    }
+    if (auto node = graph.getNodeForId(nodeId)) {
         auto& params = node->getProcessor()->getParameters();
         if (paramIndex >= 0 && paramIndex < params.size()) {
             params[paramIndex]->setValueNotifyingHost(value01);
         }
     }
+}
+
+juce::var PluginHost::paramsForOwner(const juce::String& channelId,
+                                     const juce::String& slotId) const {
+    juce::Array<juce::var> arr;
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = channels.find(channelId);
+    if (it == channels.end()) return juce::var(arr);
+    juce::AudioProcessorGraph::NodeID nodeId;
+    if (slotId.isEmpty()) {
+        nodeId = it->second.pluginNodeId;
+    } else {
+        for (const auto& e : it->second.effects) {
+            if (e.slotId == slotId) { nodeId = e.nodeId; break; }
+        }
+    }
+    // graph.getNodeForId is not marked const in JUCE, but reading a node's
+    // param list is safe — bounce through a const_cast.
+    if (auto node = const_cast<juce::AudioProcessorGraph&>(graph).getNodeForId(nodeId)) {
+        auto& params = node->getProcessor()->getParameters();
+        for (int i = 0; i < params.size(); ++i) {
+            auto* p = params[i];
+            auto* o = new juce::DynamicObject();
+            o->setProperty("index", i);
+            o->setProperty("name", p->getName(48));
+            o->setProperty("value", p->getValue());
+            arr.add(juce::var(o));
+        }
+    }
+    return juce::var(arr);
 }
 
 } // namespace nasty

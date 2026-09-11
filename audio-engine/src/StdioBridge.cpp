@@ -88,7 +88,14 @@ juce::var StdioBridge::handleCommand(const juce::var& msg) {
         auto* o = new juce::DynamicObject();
         o->setProperty("event",     err.isEmpty() ? "plugin_loaded" : "error");
         o->setProperty("channelId", msg["channelId"]);
-        if (err.isNotEmpty()) o->setProperty("error", err);
+        if (err.isNotEmpty()) {
+            o->setProperty("error", err);
+        } else {
+            // Include the fresh-off-the-plugin param list so the UI can
+            // stash it on the channel — that's what Claude reads to know
+            // what knobs it can turn.
+            o->setProperty("params", host.paramsForOwner(msg["channelId"].toString()));
+        }
         return juce::var(o);
     }
 
@@ -164,7 +171,10 @@ juce::var StdioBridge::handleCommand(const juce::var& msg) {
     }
 
     if (cmd == "set_param") {
+        // slotId empty targets the channel's main plugin (instrument);
+        // non-empty targets a specific effect slot in the FX chain.
         host.setParam(msg["channelId"].toString(),
+                      msg["slotId"].toString(),
                       (int) msg["paramIndex"], (float) msg["value"]);
         return {};
     }
@@ -189,7 +199,27 @@ juce::var StdioBridge::handleCommand(const juce::var& msg) {
         o->setProperty("event",     err.isEmpty() ? "effect_added" : "error");
         o->setProperty("channelId", msg["channelId"]);
         o->setProperty("slotId",    msg["slotId"]);
-        if (err.isNotEmpty()) o->setProperty("error", err);
+        if (err.isNotEmpty()) {
+            o->setProperty("error", err);
+        } else {
+            // Same idea as load_plugin — include the effect's param list.
+            o->setProperty("params", host.paramsForOwner(
+                msg["channelId"].toString(),
+                msg["slotId"].toString()));
+        }
+        return juce::var(o);
+    }
+
+    if (cmd == "get_plugin_params") {
+        // On-demand param query. Useful if the UI ever needs to refresh
+        // (params can change when a plugin loads a preset internally).
+        auto* o = new juce::DynamicObject();
+        o->setProperty("event", "plugin_params");
+        o->setProperty("channelId", msg["channelId"]);
+        o->setProperty("slotId", msg["slotId"]);
+        o->setProperty("params", host.paramsForOwner(
+            msg["channelId"].toString(),
+            msg["slotId"].toString()));
         return juce::var(o);
     }
 
