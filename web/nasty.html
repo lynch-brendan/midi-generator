@@ -2323,8 +2323,14 @@ function applyToolCalls(calls) {
         } else if (!plug.isInstrument) {
           summaries.push(`× load_instrument: ${plug.name} is not an instrument`);
         } else {
-          addChannelFromInstrument({ name: input.channel_name, pluginId: plug.id });
-          summaries.push(`+ instrument "${plug.name}" on "${input.channel_name}"`);
+          addChannelFromInstrument({
+            name: input.channel_name, pluginId: plug.id,
+            presetName: input.preset_name,
+          });
+          const label = input.preset_name
+            ? `+ instrument "${plug.name}" / "${input.preset_name}" on "${input.channel_name}"`
+            : `+ instrument "${plug.name}" on "${input.channel_name}"`;
+          summaries.push(label);
         }
       } else if (name === 'add_plugin_effect') {
         const plug = (enginePluginsList || []).find(p => p.id === input.plugin_id);
@@ -2336,8 +2342,11 @@ function applyToolCalls(calls) {
         } else if (!ch) {
           summaries.push(`× add_plugin_effect: channel ${input.channel_id} not found`);
         } else {
-          addEffectToChannel(ch.id, plug);
-          summaries.push(`+ ${plug.name} on ${ch.name}`);
+          addEffectToChannel(ch.id, plug, null, input.preset_name);
+          const label = input.preset_name
+            ? `+ ${plug.name} / "${input.preset_name}" on ${ch.name}`
+            : `+ ${plug.name} on ${ch.name}`;
+          summaries.push(label);
         }
       } else if (name === 'create_pattern') {
         if (!song.patterns.find(p => p.id === input.id)) {
@@ -2996,7 +3005,7 @@ function engineOwnerId(ownerId) {
   return ownerId === 'master' ? 'master_bus' : ownerId;
 }
 
-function addEffectToChannel(channelId, plugin, targetIdx) {
+function addEffectToChannel(channelId, plugin, targetIdx, presetName) {
   const owner = findEffectOwner(channelId);
   if (!owner) return;
   owner.effects = owner.effects || [];
@@ -3016,6 +3025,7 @@ function addEffectToChannel(channelId, plugin, targetIdx) {
     const engineId = engineOwnerId(channelId);
     window.nasty.engine.send({
       cmd: 'add_effect', channelId: engineId, slotId, pluginId: plugin.id,
+      presetName: presetName || '',
     });
     sendEffectOrder(owner);
     // Auto-open the plugin UI (FL's "drop, edit" flow).
@@ -3370,7 +3380,7 @@ function renderInstPicker(query) {
   }
 }
 
-async function addChannelFromInstrument({ name, pluginId, gmProgram, drumPitch }) {
+async function addChannelFromInstrument({ name, pluginId, gmProgram, drumPitch, presetName }) {
   const id = 'ch_' + Math.random().toString(36).slice(2, 10);
   for (const c of song.channels) c.armed = false;
   // Auto-assign the next-free insert number so this channel gets its own
@@ -3391,7 +3401,8 @@ async function addChannelFromInstrument({ name, pluginId, gmProgram, drumPitch }
   song.channels.push(ch);
   // Hydrate into the engine so notes actually play and the mixer can attach
   // effects to it. GM channels take a special command; VST/AU channels use
-  // the normal plugin loader.
+  // the normal plugin loader. `presetName` is optional — the engine does a
+  // fuzzy match against the plugin's program list; unmatched = silent no-op.
   if (window.nasty && window.nasty.engine) {
     if (typeof pluginId === 'string' && pluginId.startsWith('gm-')) {
       const sf2 = window.nasty.sf2Path ? await window.nasty.sf2Path() : '';
@@ -3400,7 +3411,10 @@ async function addChannelFromInstrument({ name, pluginId, gmProgram, drumPitch }
       });
     } else {
       autoShowOnLoad.add(id);
-      window.nasty.engine.send({ cmd: 'load_plugin', channelId: id, pluginId });
+      window.nasty.engine.send({
+        cmd: 'load_plugin', channelId: id, pluginId,
+        presetName: presetName || '',
+      });
     }
     // Route the new channel into its auto-assigned insert.
     window.nasty.engine.send({

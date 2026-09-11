@@ -1358,13 +1358,17 @@ _NASTY_TOOLS = [
             "'give me a Rhodes'. Pick a `plugin_id` from the Installed plugins "
             "manifest — MUST be a plugin with isInstrument=true. Invent a short "
             "channel name (e.g. 'bass', 'lead', 'pluck'). Do not use this for "
-            "effects like reverb/compressor — those go through add_plugin_effect."
+            "effects like reverb/compressor — those go through add_plugin_effect. "
+            "Optionally pass `preset_name` (must match one of the entries in the "
+            "plugin's `presets` array from the manifest) to load a specific patch "
+            "at the same time. Fuzzy substring match — 'wobble' hits 'Wobble Bass'."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "plugin_id": {"type": "string"},
                 "channel_name": {"type": "string"},
+                "preset_name": {"type": "string"},
             },
             "required": ["plugin_id", "channel_name"],
         },
@@ -1375,13 +1379,16 @@ _NASTY_TOOLS = [
             "Add a VST3/AU effect plugin onto an existing channel's effect chain. "
             "Use for 'add reverb to chords', 'put a compressor on the bass', etc. "
             "Pick a `plugin_id` from the Installed plugins manifest — MUST have "
-            "isInstrument=false. Channel must already exist."
+            "isInstrument=false. Channel must already exist. Optionally pass "
+            "`preset_name` from the plugin's `presets` array to select a specific "
+            "factory preset (e.g. 'Cathedral' for a reverb)."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "channel_id": {"type": "string"},
                 "plugin_id": {"type": "string"},
+                "preset_name": {"type": "string"},
             },
             "required": ["channel_id", "plugin_id"],
         },

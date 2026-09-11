@@ -42,6 +42,13 @@ int main(int /*argc*/, char** /*argv*/) {
     // for quickly reproducing bugs without the ~30s VST3/AU discovery pass.
     const char* skipScanEnv = std::getenv("NASTY_SKIP_SCAN");
     const bool skipScan = skipScanEnv && skipScanEnv[0] == '1';
+
+    // Cache files (JSON + XML). Same dir the plugin-scan dead-mans list uses.
+    auto supportDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+        .getChildFile("nasty");
+    supportDir.createDirectory();
+    auto presetCacheFile = supportDir.getChildFile("plugin-presets.json");
+
     if (!skipScan) {
         host.scanDefaultPaths([&](const juce::String& name, int idx, int total) {
             bridge.sendEvent({
@@ -51,6 +58,21 @@ int main(int /*argc*/, char** /*argv*/) {
                 {"total", juce::var(total)},
             });
         });
+
+        // Load the preset (program) cache from disk BEFORE the fresh scan so
+        // pluginsAlreadyKnown short-circuits. First launch does the full
+        // instantiation pass (~30-90s for a large plugin library); every
+        // launch after that is instant because cache keys stay valid.
+        host.loadPresetCache(presetCacheFile);
+        host.scanAllPluginPresets([&](const juce::String& name, int idx, int total) {
+            bridge.sendEvent({
+                {"event", juce::var("scanning_presets")},
+                {"name",  juce::var(name)},
+                {"index", juce::var(idx)},
+                {"total", juce::var(total)},
+            });
+        });
+        host.savePresetCache(presetCacheFile);
     }
 
     bridge.sendEvent({

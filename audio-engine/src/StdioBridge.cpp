@@ -83,7 +83,8 @@ juce::var StdioBridge::handleCommand(const juce::var& msg) {
     if (cmd == "load_plugin") {
         auto err = host.loadPlugin(msg["channelId"].toString(),
                                    msg["pluginId"].toString(),
-                                   msg["state"].toString());
+                                   msg["state"].toString(),
+                                   msg["presetName"].toString());
         auto* o = new juce::DynamicObject();
         o->setProperty("event",     err.isEmpty() ? "plugin_loaded" : "error");
         o->setProperty("channelId", msg["channelId"]);
@@ -182,7 +183,8 @@ juce::var StdioBridge::handleCommand(const juce::var& msg) {
         auto err = host.addEffect(msg["channelId"].toString(),
                                   msg["slotId"].toString(),
                                   msg["pluginId"].toString(),
-                                  msg["state"].toString());
+                                  msg["state"].toString(),
+                                  msg["presetName"].toString());
         auto* o = new juce::DynamicObject();
         o->setProperty("event",     err.isEmpty() ? "effect_added" : "error");
         o->setProperty("channelId", msg["channelId"]);

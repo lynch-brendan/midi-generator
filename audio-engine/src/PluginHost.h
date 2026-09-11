@@ -48,6 +48,15 @@ public:
     // Write the current plugin list to disk for the next boot.
     void savePluginCache(const juce::File& cacheFile) const;
 
+    // Read each installed plugin's factory-preset list. Instantiates every
+    // plugin briefly to query `getNumPrograms()` + `getProgramName()`. Any
+    // pluginId already present in `presetsByPluginId` is skipped, so this is
+    // cheap after the first call once the disk cache is populated. The AI
+    // uses this manifest to pick "Wobble Bass" style patches by name.
+    void scanAllPluginPresets(const ScanProgress& onProgress = {});
+    bool loadPresetCache(const juce::File& cacheFile);
+    void savePresetCache(const juce::File& cacheFile) const;
+
     // Serialise the discovered plugin catalog as JSON-array-of-objects for the UI.
     juce::var pluginListAsJson() const;
 
@@ -59,9 +68,13 @@ public:
     // If base64State is non-empty, applies it via setStateInformation after
     // instantiation so plugins reload with their last-known state (Serato's
     // loaded sample, Serum patch, etc.).
+    // If presetName is non-empty, does a case-insensitive fuzzy match against
+    // the plugin's program list and calls setCurrentProgram. Silent no-op if
+    // the plugin has no matching program.
     juce::String loadPlugin(const juce::String& channelId,
                             const juce::String& pluginId,
-                            const juce::String& base64State = {});
+                            const juce::String& base64State = {},
+                            const juce::String& presetName = {});
     void unloadPlugin(const juce::String& channelId);
 
     // Create a General MIDI channel using the bundled FluidSynth + SoundFont.
@@ -91,7 +104,8 @@ public:
     juce::String addEffect(const juce::String& channelId,
                            const juce::String& slotId,
                            const juce::String& pluginId,
-                           const juce::String& base64State = {});
+                           const juce::String& base64State = {},
+                           const juce::String& presetName = {});
     void removeEffect(const juce::String& channelId, const juce::String& slotId);
     void reorderEffects(const juce::String& channelId, const juce::StringArray& newOrder);
     void bypassEffect(const juce::String& channelId, const juce::String& slotId, bool bypassed);
@@ -213,6 +227,12 @@ private:
     mutable std::mutex mutex;
     std::map<juce::String, ChannelSlot> channels; // by channelId
     bool audioRunning = false;
+
+    // Preset (program) names per plugin, filled by scanAllPluginPresets and
+    // persisted via loadPresetCache/savePresetCache. Empty StringArray means
+    // "we've checked; this plugin has no exposed programs" — different from
+    // "not scanned yet." A missing key means "not scanned yet."
+    std::map<juce::String, juce::StringArray> presetsByPluginId;
 
     // Rewire a channel's audio graph: instrument → active effects → master out.
     // Called after any effect chain mutation. Must be called under `mutex`.

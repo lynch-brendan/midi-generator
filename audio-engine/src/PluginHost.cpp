@@ -558,15 +558,88 @@ juce::var PluginHost::pluginListAsJson() const {
     juce::Array<juce::var> arr;
     for (const auto& t : knownPlugins.getTypes()) {
         auto* o = new juce::DynamicObject();
-        o->setProperty("id",           t.createIdentifierString());
+        const auto id = t.createIdentifierString();
+        o->setProperty("id",           id);
         o->setProperty("name",         t.name);
         o->setProperty("format",       t.pluginFormatName);
         o->setProperty("manufacturer", t.manufacturerName);
         o->setProperty("category",     t.category);
         o->setProperty("isInstrument", t.isInstrument);
+        // Preset (program) names — the AI reads these to pick "Wobble Bass"
+        // style patches by name. Missing key = "not scanned yet"; empty
+        // array = "scanned; plugin exposes no programs via the standard API
+        // (its own patch browser is in the GUI, we can't see it from here)."
+        juce::Array<juce::var> presets;
+        auto it = presetsByPluginId.find(id);
+        if (it != presetsByPluginId.end()) {
+            for (const auto& p : it->second) presets.add(juce::var(p));
+        }
+        o->setProperty("presets", juce::var(presets));
         arr.add(juce::var(o));
     }
     return juce::var(arr);
+}
+
+void PluginHost::scanAllPluginPresets(const ScanProgress& onProgress) {
+    // Instantiate each plugin once, query its factory program list, cache the
+    // names, destroy the instance. On subsequent boots the disk cache short-
+    // circuits this loop — only genuinely-new plugins take the cost.
+    //
+    // Called on the main thread AFTER scanDefaultPaths and BEFORE the message
+    // loop starts. This is the same window scanDefaultPaths runs in, so if
+    // that works this does too. A plugin that crashes during instantiation
+    // would be caught by the deadMansFile from the earlier plugin scan pass.
+    const int total = (int) knownPlugins.getNumTypes();
+    int idx = 0;
+    for (const auto& t : knownPlugins.getTypes()) {
+        ++idx;
+        const auto id = t.createIdentifierString();
+        if (presetsByPluginId.count(id)) {
+            // Already cached from a previous boot (or a previous pass).
+            if (onProgress) onProgress(t.name + " (cached)", idx, total);
+            continue;
+        }
+        if (onProgress) onProgress(t.name, idx, total);
+
+        juce::String err;
+        auto inst = formatManager.createPluginInstance(
+            t, /*sampleRate*/ 44100.0, /*blockSize*/ 512, err);
+        juce::StringArray names;
+        if (inst != nullptr) {
+            const int n = inst->getNumPrograms();
+            for (int i = 0; i < n; ++i) names.add(inst->getProgramName(i));
+        }
+        // Store even the empty result — the key acts as a "scanned" marker
+        // so we don't retry on every boot.
+        presetsByPluginId[id] = names;
+    }
+}
+
+bool PluginHost::loadPresetCache(const juce::File& cacheFile) {
+    if (!cacheFile.existsAsFile()) return false;
+    auto root = juce::JSON::parse(cacheFile);
+    if (!root.isObject()) return false;
+    auto* obj = root.getDynamicObject();
+    if (obj == nullptr) return false;
+    for (const auto& kv : obj->getProperties()) {
+        juce::StringArray names;
+        if (auto* arr = kv.value.getArray()) {
+            for (const auto& v : *arr) names.add(v.toString());
+        }
+        presetsByPluginId[kv.name.toString()] = names;
+    }
+    return true;
+}
+
+void PluginHost::savePresetCache(const juce::File& cacheFile) const {
+    cacheFile.getParentDirectory().createDirectory();
+    auto* obj = new juce::DynamicObject();
+    for (const auto& [id, names] : presetsByPluginId) {
+        juce::Array<juce::var> arr;
+        for (const auto& n : names) arr.add(juce::var(n));
+        obj->setProperty(id, juce::var(arr));
+    }
+    cacheFile.replaceWithText(juce::JSON::toString(juce::var(obj)));
 }
 
 void PluginHost::startAudio() {
@@ -656,9 +729,28 @@ void PluginHost::stopAudio() {
     audioRunning = false;
 }
 
+// Case-insensitive fuzzy match: exact match wins over substring, first
+// substring hit wins over later ones. Returns -1 if nothing matches. Kept
+// simple deliberately — better mismatch behaviour is Claude's job, not the
+// engine's (Claude sees the whole preset list in the manifest).
+static int matchPresetIndex(juce::AudioPluginInstance& inst,
+                            const juce::String& presetName) {
+    if (presetName.isEmpty()) return -1;
+    const auto target = presetName.toLowerCase().trim();
+    const int n = inst.getNumPrograms();
+    int fallback = -1;
+    for (int i = 0; i < n; ++i) {
+        const auto p = inst.getProgramName(i).toLowerCase().trim();
+        if (p == target) return i;
+        if (fallback < 0 && p.contains(target)) fallback = i;
+    }
+    return fallback;
+}
+
 juce::String PluginHost::loadPlugin(const juce::String& channelId,
                                     const juce::String& pluginId,
-                                    const juce::String& base64State) {
+                                    const juce::String& base64State,
+                                    const juce::String& presetName) {
     startAudio(); // lazy-init audio device on first plugin load
 
     // Find description
@@ -685,6 +777,16 @@ juce::String PluginHost::loadPlugin(const juce::String& channelId,
         if (juce::Base64::convertFromBase64(decoded, base64State) && decoded.getDataSize() > 0) {
             instance->setStateInformation(decoded.getData(), (int) decoded.getDataSize());
         }
+    }
+
+    // Preset selection AFTER any saved state (a chosen preset overrides
+    // whatever the state blob restored). Silent no-op if nothing matches —
+    // Claude already knows the plugin's preset list from the manifest, so
+    // a "no match" here means Claude passed something the plugin doesn't
+    // actually expose.
+    if (presetName.isNotEmpty()) {
+        const int idx = matchPresetIndex(*instance, presetName);
+        if (idx >= 0) instance->setCurrentProgram(idx);
     }
 
     unloadPlugin(channelId); // replace if exists
@@ -902,7 +1004,8 @@ void PluginHost::setChannelTarget(const juce::String& channelId, const juce::Str
 juce::String PluginHost::addEffect(const juce::String& channelId,
                                    const juce::String& slotId,
                                    const juce::String& pluginId,
-                                   const juce::String& base64State) {
+                                   const juce::String& base64State,
+                                   const juce::String& presetName) {
     const juce::PluginDescription* desc = nullptr;
     for (const auto& t : knownPlugins.getTypes()) {
         if (t.createIdentifierString() == pluginId) { desc = &t; break; }
@@ -920,6 +1023,11 @@ juce::String PluginHost::addEffect(const juce::String& channelId,
         if (juce::Base64::convertFromBase64(decoded, base64State) && decoded.getDataSize() > 0) {
             instance->setStateInformation(decoded.getData(), (int) decoded.getDataSize());
         }
+    }
+
+    if (presetName.isNotEmpty()) {
+        const int idx = matchPresetIndex(*instance, presetName);
+        if (idx >= 0) instance->setCurrentProgram(idx);
     }
 
     auto effectNode = graph.addNode(std::move(instance));
