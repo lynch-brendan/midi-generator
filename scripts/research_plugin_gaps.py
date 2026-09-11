@@ -134,20 +134,34 @@ def read_gap_log(path: Path) -> list[dict]:
     return entries
 
 
-def rank_gaps(entries: list[dict], have_names: set[str]) -> list[tuple[int, dict]]:
-    counter: Counter[str] = Counter()
-    canonical: dict[str, dict] = {}
+def rank_gaps(entries: list[dict], have_names: set[str]) -> tuple[list[tuple[int, dict]], list[tuple[int, dict]]]:
+    """Split into (fresh_gaps, stale_entries).
+
+    fresh_gaps = plugins not in have_names.
+    stale_entries = plugins that ARE in have_names but have `stale: true`
+                    reports — cheatsheet exists but its claims turned out
+                    to be wrong on real machines, so we should re-research.
+    """
+    missing_counter: Counter[str] = Counter()
+    missing_canonical: dict[str, dict] = {}
+    stale_counter: Counter[str] = Counter()
+    stale_canonical: dict[str, dict] = {}
     for e in entries:
         name = (e.get("name") or "").strip()
         if not name:
             continue
-        if name.lower() in have_names:
-            continue
-        counter[name] += 1
-        # Keep the first occurrence's metadata (manufacturer, format).
-        if name not in canonical:
-            canonical[name] = e
-    return [(counter[n], canonical[n]) for n, _ in counter.most_common()]
+        key = name.lower()
+        if e.get("stale") and key in have_names:
+            stale_counter[name] += 1
+            if name not in stale_canonical:
+                stale_canonical[name] = e
+        elif key not in have_names:
+            missing_counter[name] += 1
+            if name not in missing_canonical:
+                missing_canonical[name] = e
+    missing = [(missing_counter[n], missing_canonical[n]) for n, _ in missing_counter.most_common()]
+    stale = [(stale_counter[n], stale_canonical[n]) for n, _ in stale_counter.most_common()]
+    return missing, stale
 
 
 def research_one(client: Anthropic, entry: dict, today: str) -> str:
@@ -209,17 +223,23 @@ def main() -> int:
             return 0
 
     have = existing_names(args.out)
-    ranked = rank_gaps(entries, have)
+    fresh, stale = rank_gaps(entries, have)
     if args.top > 0:
-        ranked = ranked[: args.top]
+        fresh = fresh[: args.top]
+        stale = stale[: args.top]
 
-    if not ranked:
-        print("no missing plugins to research (all logged plugins already have cheatsheets)")
+    if not fresh and not stale:
+        print("no missing plugins and no stale cheatsheets — nothing to do")
         return 0
 
-    print(f"planned research: {len(ranked)} plugin(s)")
-    for count, e in ranked:
-        print(f"  {count:3d}× {e.get('name')}  ({e.get('manufacturer') or 'unknown mfg'}, {e.get('format') or 'unknown fmt'})")
+    if fresh:
+        print(f"\nMISSING cheatsheets ({len(fresh)}):")
+        for count, e in fresh:
+            print(f"  {count:3d}× {e.get('name')}  ({e.get('manufacturer') or 'unknown mfg'})")
+    if stale:
+        print(f"\nSTALE cheatsheets to REPLACE ({len(stale)}):")
+        for count, e in stale:
+            print(f"  {count:3d}× {e.get('name')}  ({e.get('manufacturer') or 'unknown mfg'})  — {e.get('reason', '')}")
 
     if args.dry_run:
         print("\n(dry-run — no API calls made)")
@@ -231,27 +251,35 @@ def main() -> int:
         return 1
     client = Anthropic(api_key=api_key)
 
-    for count, e in ranked:
+    def do_one(count: int, e: dict, replacing: bool) -> None:
         name = e.get("name", "")
         slug = slugify(name)
         target = args.out / f"{slug}.md"
-        if target.exists():
-            print(f"skip {name}: {target.name} already exists")
-            continue
-        print(f"\nresearching: {name} ({count} miss(es))...")
+        # For fresh gaps, skip if a file (perhaps with a different slug) already
+        # exists for this name. For stale, we EXPECT a file to exist and are
+        # replacing it, so we don't skip.
+        if not replacing:
+            if target.exists():
+                print(f"skip {name}: {target.name} already exists")
+                return
+        print(f"\n{'RE-researching (stale)' if replacing else 'researching'}: {name} ({count} report(s))...")
         try:
             md = research_one(client, e, today)
         except Exception as exc:
             print(f"  FAILED: {exc}", file=sys.stderr)
-            continue
+            return
         if not md.startswith("---"):
-            # Model didn't follow instructions — wrap it defensively.
             md = f"---\nname: {name}\nverified: false\nlast_updated: {today}\n---\n\n" + md
         target.write_text(md, encoding="utf-8")
         print(f"  wrote {target}")
 
-    print("\ndone. review the new files, edit as needed, then commit + push.")
-    print("railway autodeploys → users get the cheatsheets on their next chat.")
+    for count, e in stale:
+        do_one(count, e, replacing=True)
+    for count, e in fresh:
+        do_one(count, e, replacing=False)
+
+    print("\ndone. review the new/replaced files, edit as needed, then commit + push.")
+    print("railway autodeploys → users get the fresh cheatsheets on their next chat.")
     return 0
 
 

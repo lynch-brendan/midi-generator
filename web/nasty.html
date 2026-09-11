@@ -5370,7 +5370,26 @@ async function augmentPluginPresetsFromDisk() {
         if (!(base in discovered)) discovered[base] = fpath;
       }
     }
-    if (Object.keys(discovered).length === 0) continue;
+    if (Object.keys(discovered).length === 0) {
+      // Cheatsheet CLAIMED preset_paths but none of them contain files on
+      // this machine. Tell the server the entry is stale so the batched
+      // research script can re-do it with web search. Fire-and-forget —
+      // failures here are silent.
+      try {
+        const apiBase = (window.nasty && window.nasty.apiBase) || '';
+        fetch(apiBase + '/nasty/plugin-knowledge-stale', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: p.name || '',
+            manufacturer: p.manufacturer || '',
+            format: p.format || '',
+            reason: 'preset_paths_empty',
+          }),
+        });
+      } catch {}
+      continue;
+    }
     // Merge into the plugin's presets list (skip duplicates of API-exposed
     // ones). Claude sees a unified list of preset names in the manifest.
     const existing = new Set(

@@ -1397,6 +1397,35 @@ def nasty_plugin_knowledge():
     return _PLUGIN_KNOWLEDGE_PARSED
 
 
+class NastyStaleReport(BaseModel):
+    name: str
+    manufacturer: str = ""
+    format: str = ""
+    reason: str = "preset_paths_empty"  # extensible for other failure modes later
+
+
+@app.post("/nasty/plugin-knowledge-stale")
+def nasty_plugin_knowledge_stale(req: NastyStaleReport):
+    # Client-side signal: "I scanned this plugin's declared preset_paths and
+    # got zero files, so the cheatsheet is probably wrong." Gets added to the
+    # same gap log as missing plugins, but with `stale: true` so the research
+    # script knows to REPLACE the existing entry instead of skipping it.
+    import time
+    try:
+        with _GAP_LOG_PATH.open("a", encoding="utf-8") as f:
+            f.write(json.dumps({
+                "name": req.name.strip(),
+                "manufacturer": req.manufacturer,
+                "format": req.format,
+                "stale": True,
+                "reason": req.reason,
+                "ts": int(time.time()),
+            }) + "\n")
+    except Exception:
+        pass
+    return {"ok": True}
+
+
 @app.get("/nasty/plugin-gaps")
 def nasty_plugin_gaps():
     # Maintainer endpoint — dumps the currently-logged gap entries so the
