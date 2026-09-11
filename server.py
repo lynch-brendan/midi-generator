@@ -1356,21 +1356,27 @@ _NASTY_TOOLS = [
             "Create a new channel and load a VST3/AU instrument plugin onto it. "
             "Use for user requests like 'put a synth on channel 2', 'add Serum', "
             "'give me a Rhodes'. Pick a `plugin_id` from the Installed plugins "
-            "manifest — MUST be a plugin with isInstrument=true. Invent a short "
-            "channel name (e.g. 'bass', 'lead', 'pluck'). Do not use this for "
-            "effects like reverb/compressor — those go through add_plugin_effect. "
-            "Optionally pass `preset_name` (must match one of the entries in the "
-            "plugin's `presets` array from the manifest) to load a specific patch "
-            "at the same time. Fuzzy substring match — 'wobble' hits 'Wobble Bass'."
+            "manifest — MUST be a plugin with isInstrument=true. YOU invent both "
+            "`channel_id` (short lowercase slug like `bass`, `lead`, `pluck` — "
+            "same convention as create_channel) AND `channel_name` (display "
+            "label). Use the same `channel_id` when writing notes for this "
+            "channel in the same turn's create_pattern call — otherwise the "
+            "notes reference a channel that doesn't exist and the pattern is "
+            "silent. Do not use this for effects — those go through "
+            "add_plugin_effect. Optionally pass `preset_name` (must match one "
+            "of the entries in the plugin's `presets` array from the manifest) "
+            "to load a specific patch at the same time. Fuzzy substring match "
+            "— 'wobble' hits 'Wobble Bass'."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "plugin_id": {"type": "string"},
+                "channel_id": {"type": "string"},
                 "channel_name": {"type": "string"},
+                "plugin_id": {"type": "string"},
                 "preset_name": {"type": "string"},
             },
-            "required": ["plugin_id", "channel_name"],
+            "required": ["channel_id", "channel_name", "plugin_id"],
         },
     },
     {

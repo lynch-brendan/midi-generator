@@ -2322,8 +2322,11 @@ function applyToolCalls(calls) {
           summaries.push(`× load_instrument: plugin ${input.plugin_id} not installed`);
         } else if (!plug.isInstrument) {
           summaries.push(`× load_instrument: ${plug.name} is not an instrument`);
+        } else if (song.channels.find(c => c.id === input.channel_id)) {
+          summaries.push(`× load_instrument: channel_id "${input.channel_id}" already exists`);
         } else {
           addChannelFromInstrument({
+            id: input.channel_id,
             name: input.channel_name, pluginId: plug.id,
             presetName: input.preset_name,
           });
@@ -3385,8 +3388,12 @@ function renderInstPicker(query) {
   }
 }
 
-async function addChannelFromInstrument({ name, pluginId, gmProgram, drumPitch, presetName }) {
-  const id = 'ch_' + Math.random().toString(36).slice(2, 10);
+async function addChannelFromInstrument({ id, name, pluginId, gmProgram, drumPitch, presetName }) {
+  // Callers can pass an explicit id (AI tools invent a slug like `bass` so
+  // it can reference the channel by the same id in a follow-up create_pattern
+  // call). UI paths omit id and get a random one so keyboard-driven "add
+  // channel" clicks never collide.
+  id = id || ('ch_' + Math.random().toString(36).slice(2, 10));
   for (const c of song.channels) c.armed = false;
   // Auto-assign the next-free insert number so this channel gets its own
   // mixer strip out of the box — FL-style.
