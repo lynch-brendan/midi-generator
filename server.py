@@ -1509,10 +1509,12 @@ def nasty_chat(req: NastyChatRequest):
     # Plugin manifest is the source of truth for what's actually installed on
     # this machine — Claude picks from it instead of guessing from training
     # data. Kept separate from song state so it stays stable across turns.
+    # Always send the block (with count) so Claude can distinguish "scan not
+    # done yet" from "user has no plugins" from "user has N plugins."
+    plugins = req.plugins or []
     plugin_block = (
-        f"Installed plugins (VST3/AU scanned by the engine):\n"
-        f"```json\n{json.dumps(req.plugins, indent=2)}\n```\n\n"
-        if req.plugins else ""
+        f"Installed plugins (VST3/AU scanned by the engine — count: {len(plugins)}):\n"
+        f"```json\n{json.dumps(plugins, indent=2)}\n```\n\n"
     )
     user_content = (
         f"Current song state:\n```json\n{json.dumps(req.song, indent=2)}\n```\n\n"

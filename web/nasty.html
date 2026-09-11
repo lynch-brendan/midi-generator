@@ -4233,8 +4233,9 @@ async function sendMessage() {
         // Manifest of the user's actually-installed VST3/AU plugins. Engine
         // scans them at launch and pushes a plugin_list event; we forward it
         // so Claude knows what's available on THIS machine, not what it
-        // remembers from training data.
-        plugins: enginePluginsList,
+        // remembers from training data. Coerce null → [] so the server sees
+        // "empty" instead of "missing" (scan not done vs. no plugins).
+        plugins: Array.isArray(enginePluginsList) ? enginePluginsList : [],
       }),
     });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
