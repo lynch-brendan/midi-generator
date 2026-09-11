@@ -2311,6 +2311,34 @@ function applyToolCalls(calls) {
       // old 3-effect WebAudio system. Effects now live in the mixer via
       // Surge XT Effects / AU plugins — Claude can add them via the mixer,
       // not with these ad-hoc tools.
+      } else if (name === 'load_instrument') {
+        // Claude picks a plugin_id from the scanned VST/AU manifest and asks
+        // for a new channel to hold it. addChannelFromInstrument does the
+        // full setup: song.channels entry, engine load_plugin IPC, auto
+        // mixer routing. Only pluginId + name are required; the rest of the
+        // pipeline is identical to what the "add channel" UI button does.
+        const plug = (enginePluginsList || []).find(p => p.id === input.plugin_id);
+        if (!plug) {
+          summaries.push(`× load_instrument: plugin ${input.plugin_id} not installed`);
+        } else if (!plug.isInstrument) {
+          summaries.push(`× load_instrument: ${plug.name} is not an instrument`);
+        } else {
+          addChannelFromInstrument({ name: input.channel_name, pluginId: plug.id });
+          summaries.push(`+ instrument "${plug.name}" on "${input.channel_name}"`);
+        }
+      } else if (name === 'add_plugin_effect') {
+        const plug = (enginePluginsList || []).find(p => p.id === input.plugin_id);
+        const ch = song.channels.find(c => c.id === input.channel_id);
+        if (!plug) {
+          summaries.push(`× add_plugin_effect: plugin ${input.plugin_id} not installed`);
+        } else if (plug.isInstrument) {
+          summaries.push(`× add_plugin_effect: ${plug.name} is an instrument, not an effect`);
+        } else if (!ch) {
+          summaries.push(`× add_plugin_effect: channel ${input.channel_id} not found`);
+        } else {
+          addEffectToChannel(ch.id, plug);
+          summaries.push(`+ ${plug.name} on ${ch.name}`);
+        }
       } else if (name === 'create_pattern') {
         if (!song.patterns.find(p => p.id === input.id)) {
           const idx = song.patterns.length;

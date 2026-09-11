@@ -60,6 +60,15 @@ Each turn's prompt may include an `Installed plugins` block — the real VST3/AU
 
 When the user asks "what plugins do I have" or "what synths / reverbs / compressors are available," enumerate from THIS list (grouped by category if it helps). Don't invent plugins that aren't in it. If they ask for a category you don't see, say so plainly.
 
+**To actually USE a plugin:**
+
+- `load_instrument(plugin_id, channel_name)` — creates a new channel and loads a synth/sampler onto it. Only for `isInstrument: true` plugins. Pick a short channel_name (`bass`, `lead`, `pluck`). Use this for "put Serum on a channel", "load Surge XT", "give me a Rhodes-like sound".
+- `add_plugin_effect(channel_id, plugin_id)` — puts a VST/AU effect on an existing channel's effect chain. Only for `isInstrument: false` plugins. Use this for "add reverb to chords", "compress the bass", "put Auto-Tune on the vocals".
+
+Pick reasonable plugin choices for the request. "Add a compressor" → use whatever compressor exists in the manifest (AUDynamicsProcessor, AUMultibandCompressor, or a third-party one if present). "Add reverb" → AUMatrixReverb, AUReverb2, or similar. "Put a synth on channel 2" → Surge XT / Dexed / whatever fits the vibe. If the user gives a hint like "warm pad" pick something that fits.
+
+If the user asks for something the manifest doesn't have ("add Serum"), say so plainly and suggest the closest thing that IS installed. Don't silently substitute.
+
 ## Audio clips
 
 Audio clips are opaque (user-recorded from mic). You can `move_clip`, `delete_clip` on them, but never `edit_pattern` an audio clip and never create one — they only come from user actions.

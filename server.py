@@ -1351,6 +1351,42 @@ _NASTY_TOOLS = [
         },
     },
     {
+        "name": "load_instrument",
+        "description": (
+            "Create a new channel and load a VST3/AU instrument plugin onto it. "
+            "Use for user requests like 'put a synth on channel 2', 'add Serum', "
+            "'give me a Rhodes'. Pick a `plugin_id` from the Installed plugins "
+            "manifest — MUST be a plugin with isInstrument=true. Invent a short "
+            "channel name (e.g. 'bass', 'lead', 'pluck'). Do not use this for "
+            "effects like reverb/compressor — those go through add_plugin_effect."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "plugin_id": {"type": "string"},
+                "channel_name": {"type": "string"},
+            },
+            "required": ["plugin_id", "channel_name"],
+        },
+    },
+    {
+        "name": "add_plugin_effect",
+        "description": (
+            "Add a VST3/AU effect plugin onto an existing channel's effect chain. "
+            "Use for 'add reverb to chords', 'put a compressor on the bass', etc. "
+            "Pick a `plugin_id` from the Installed plugins manifest — MUST have "
+            "isInstrument=false. Channel must already exist."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "channel_id": {"type": "string"},
+                "plugin_id": {"type": "string"},
+            },
+            "required": ["channel_id", "plugin_id"],
+        },
+    },
+    {
         "name": "apply_effect",
         "description": (
             "Add or update an effect on a channel. "
