@@ -1298,6 +1298,43 @@ import anthropic as _nasty_anthropic
 
 _NASTY_SYSTEM_PROMPT = (Path(__file__).parent / "prompts" / "nasty_system.md").read_text()
 
+
+# Load the community plugin-knowledge registry. Each markdown file is one
+# plugin cheatsheet — where its presets live, notable params, quirks. Matched
+# by frontmatter `name:` against the user's actually-installed plugin manifest,
+# so Claude only sees entries for plugins that are on THIS user's machine.
+# The registry is a plain-markdown git-versioned folder — the whole point is
+# that it's community-maintained and shareable across users, not a per-user
+# thing that has to be re-researched every launch.
+_PLUGIN_KNOWLEDGE_DIR = Path(__file__).parent / "plugin-knowledge"
+
+
+def _load_plugin_knowledge() -> dict[str, str]:
+    entries: dict[str, str] = {}
+    if not _PLUGIN_KNOWLEDGE_DIR.is_dir():
+        return entries
+    for md in _PLUGIN_KNOWLEDGE_DIR.glob("*.md"):
+        if md.name.lower() == "readme.md":
+            continue
+        try:
+            content = md.read_text(encoding="utf-8")
+        except Exception:
+            continue
+        m = re.match(r"^---\s*\n(.*?)\n---\s*\n", content, re.DOTALL)
+        if not m:
+            continue
+        name_match = re.search(r"^name:\s*(.+)$", m.group(1), re.MULTILINE)
+        if not name_match:
+            continue
+        # Store under lowercased name for case-insensitive matching.
+        entries[name_match.group(1).strip().lower()] = content
+    return entries
+
+
+# Cached at module import — Railway redeploys on every push, so cache
+# lifetime = deploy lifetime. That's the right freshness knob.
+_PLUGIN_KNOWLEDGE = _load_plugin_knowledge()
+
 _NASTY_TOOLS = [
     {
         "name": "set_tempo",
@@ -1636,9 +1673,29 @@ def nasty_chat(req: NastyChatRequest):
         f"Installed plugins (VST3/AU scanned by the engine — count: {len(plugins)}):\n"
         f"```json\n{json.dumps(plugins, indent=2)}\n```\n\n"
     )
+
+    # Match community plugin-knowledge entries against the user's installed
+    # plugins. Only include entries that correspond to a plugin they actually
+    # have. Community-maintained cheatsheets tell Claude where preset files
+    # live on disk, notable quirks, common recipes — for plugins where the
+    # standard VST3/AU program API doesn't expose the real patch browser.
+    knowledge_matches: list[str] = []
+    for p in plugins:
+        name = (p.get("name") or "").strip().lower() if isinstance(p, dict) else ""
+        if name and name in _PLUGIN_KNOWLEDGE:
+            knowledge_matches.append(_PLUGIN_KNOWLEDGE[name])
+    knowledge_block = ""
+    if knowledge_matches:
+        knowledge_block = (
+            "Community plugin knowledge (cheatsheets for plugins you have installed — "
+            "read these BEFORE reasoning about how to use those plugins):\n\n"
+            + "\n\n---\n\n".join(knowledge_matches)
+            + "\n\n"
+        )
     user_content = (
         f"Current song state:\n```json\n{json.dumps(req.song, indent=2)}\n```\n\n"
         f"{plugin_block}"
+        f"{knowledge_block}"
         f"User: {req.message}"
     )
     messages = list(req.history) + [{"role": "user", "content": user_content}]

@@ -60,6 +60,10 @@ Each turn's prompt may include an `Installed plugins` block — the real VST3/AU
 
 When the user asks "what plugins do I have" or "what synths / reverbs / compressors are available," enumerate from THIS list (grouped by category if it helps). Don't invent plugins that aren't in it. If they ask for a category you don't see, say so plainly.
 
+## Community plugin knowledge
+
+Some turns include a `Community plugin knowledge` block — community-maintained cheatsheets for specific plugins the user has installed. These tell you things the standard VST/AU API can't: where a plugin's real preset files live on disk, what its parameters actually mean, common recipes, quirks (e.g. "Serato Sample is silent until a sample is loaded"). **Read the entries for the plugin you're about to use before you use it.** They will save you from dumb mistakes and let you recommend the right plugin for the job.
+
 **Two ways to make a sound-making channel — pick the right one:**
 
 - `load_gm_instrument(channel_id, channel_name, gm_program)` — **use this whenever the user asks for a realistic instrument by name** (piano, trumpet, violin, cello, guitar, flute, oboe, organ, harp, brass, strings, choir, etc.). GM has 128 canonical programs, always available via the bundled SoundFont, and they actually sound like the real instrument. Way better than trying to make Surge XT sound like a trumpet. You know the GM program map (0=Piano, 24=Nylon Guitar, 40=Violin, 48=Strings, 56=Trumpet, 65=Alto Sax, 73=Flute, etc.).
