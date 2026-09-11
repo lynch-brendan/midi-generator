@@ -2335,6 +2335,22 @@ function applyToolCalls(calls) {
             : `+ instrument "${plug.name}" on "${input.channel_name}"`;
           summaries.push(label);
         }
+      } else if (name === 'remove_plugin_effect') {
+        // Owner can be a channel OR a mixer bus. removeEffectFromChannel
+        // handles both since it looks up via findEffectOwner internally
+        // when the owner is a channel; for busses we route through the
+        // same code path with the bus id.
+        const owner = song.channels.find(c => c.id === input.owner_id)
+                   || (song.mixer && song.mixer.busses || []).find(b => b.id === input.owner_id);
+        if (!owner) {
+          summaries.push(`× remove_plugin_effect: owner "${input.owner_id}" not found`);
+        } else if (!(owner.effects || []).find(e => e.slotId === input.slot_id)) {
+          summaries.push(`× remove_plugin_effect: slot "${input.slot_id}" not on ${owner.name || input.owner_id}`);
+        } else {
+          const removed = owner.effects.find(e => e.slotId === input.slot_id);
+          removeEffectFromChannel(input.owner_id, input.slot_id);
+          summaries.push(`− ${removed.name || removed.pluginId} from ${owner.name || input.owner_id}`);
+        }
       } else if (name === 'add_plugin_effect') {
         const plug = (enginePluginsList || []).find(p => p.id === input.plugin_id);
         const ch = song.channels.find(c => c.id === input.channel_id);

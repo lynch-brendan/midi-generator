@@ -1400,6 +1400,25 @@ _NASTY_TOOLS = [
         },
     },
     {
+        "name": "remove_plugin_effect",
+        "description": (
+            "Remove a specific plugin effect slot. Use when the user asks to "
+            "delete/clear an existing effect, or when you want to replace one "
+            "effect with another (remove then add). `owner_id` is the id of the "
+            "channel or mixer bus that owns the slot — look at song.channels[*] "
+            "and song.mixer.busses[*] for effects[*].slotId. `slot_id` is the "
+            "slotId string of the effect to remove."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "owner_id": {"type": "string"},
+                "slot_id": {"type": "string"},
+            },
+            "required": ["owner_id", "slot_id"],
+        },
+    },
+    {
         "name": "apply_effect",
         "description": (
             "Add or update an effect on a channel. "

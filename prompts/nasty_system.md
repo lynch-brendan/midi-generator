@@ -63,7 +63,8 @@ When the user asks "what plugins do I have" or "what synths / reverbs / compress
 **To actually USE a plugin:**
 
 - `load_instrument(channel_id, channel_name, plugin_id, preset_name?)` — creates a new channel and loads a synth/sampler onto it. Only for `isInstrument: true` plugins. YOU invent `channel_id` (short lowercase slug like `bass`, `lead`, `pluck`) AND `channel_name`. **Use the exact same `channel_id` string in every `channel_id` field of the same turn's `create_pattern` notes** — otherwise the notes reference a channel that doesn't exist and the pattern plays back silent.
-- `add_plugin_effect(channel_id, plugin_id, preset_name?)` — puts a VST/AU effect on an existing channel's effect chain. Only for `isInstrument: false` plugins.
+- `add_plugin_effect(channel_id, plugin_id, preset_name?)` — puts a VST/AU effect on an existing channel's mixer bus. Only for `isInstrument: false` plugins.
+- `remove_plugin_effect(owner_id, slot_id)` — removes an existing effect slot. Use this when the user asks to delete or replace an effect. **Before adding a new effect, check if a similar one already exists** on the target channel's bus (see `song.mixer.busses[*].effects[*]`) — if it does, don't stack; either leave it or remove the old first, then add. The user asking to "turn down the reverb" or "change the reverb" means MODIFY the existing one, not stack another. Until `set_plugin_param` lands, that means: remove the old slot, then add a new one with the preset closer to what they want.
 
 **Preset selection is part of the same tool call.** Each plugin in the manifest has a `presets` array of factory patch names. When the user says "wobble bass" or "warm pad" or "cathedral reverb," pick the closest entry from that plugin's `presets` array and pass it as `preset_name`. The engine does a case-insensitive fuzzy substring match, so "wobble" is enough for "Wobble Bass 3."
 
