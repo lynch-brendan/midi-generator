@@ -1351,6 +1351,29 @@ _NASTY_TOOLS = [
         },
     },
     {
+        "name": "load_gm_instrument",
+        "description": (
+            "Create a channel using a General MIDI program from the bundled "
+            "SoundFont. Use this when the user asks for a realistic instrument "
+            "by name (piano, trumpet, violin, flute, cello, guitar, organ, "
+            "harp, brass, strings, choir, etc.) — GM has 128 canonical programs "
+            "and they sound like the real instrument. Cheaper and more reliable "
+            "than trying to coax a subtractive synth into being a trumpet. "
+            "`gm_program` is 0-127 (0=Acoustic Grand Piano, 40=Violin, 56=Trumpet, "
+            "73=Flute, etc. — you know GM). YOU invent `channel_id` (short slug "
+            "like `trumpet`, `piano`) — use the same id in create_pattern notes."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "channel_id": {"type": "string"},
+                "channel_name": {"type": "string"},
+                "gm_program": {"type": "integer", "minimum": 0, "maximum": 127},
+            },
+            "required": ["channel_id", "channel_name", "gm_program"],
+        },
+    },
+    {
         "name": "load_instrument",
         "description": (
             "Create a new channel and load a VST3/AU instrument plugin onto it. "

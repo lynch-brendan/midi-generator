@@ -2335,6 +2335,20 @@ function applyToolCalls(calls) {
             : `+ instrument "${plug.name}" on "${input.channel_name}"`;
           summaries.push(label);
         }
+      } else if (name === 'load_gm_instrument') {
+        // GM path — bundled SoundFont, no plugin scan, always available.
+        // For realistic named instruments (piano, trumpet, violin...) GM is
+        // almost always the right answer.
+        if (song.channels.find(c => c.id === input.channel_id)) {
+          summaries.push(`× load_gm_instrument: channel_id "${input.channel_id}" already exists`);
+        } else {
+          const prog = Math.max(0, Math.min(127, parseInt(input.gm_program, 10) || 0));
+          addChannelFromInstrument({
+            id: input.channel_id, name: input.channel_name,
+            pluginId: 'gm-' + prog, gmProgram: prog,
+          });
+          summaries.push(`+ GM program ${prog} on "${input.channel_name}"`);
+        }
       } else if (name === 'set_plugin_param') {
         // Owner can be either a channel (tweaking its instrument's params)
         // or a mixer bus (tweaking an effect on the bus). slot_id empty

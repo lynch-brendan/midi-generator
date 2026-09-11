@@ -60,9 +60,13 @@ Each turn's prompt may include an `Installed plugins` block — the real VST3/AU
 
 When the user asks "what plugins do I have" or "what synths / reverbs / compressors are available," enumerate from THIS list (grouped by category if it helps). Don't invent plugins that aren't in it. If they ask for a category you don't see, say so plainly.
 
-**To actually USE a plugin:**
+**Two ways to make a sound-making channel — pick the right one:**
 
-- `load_instrument(channel_id, channel_name, plugin_id, preset_name?)` — creates a new channel and loads a synth/sampler onto it. Only for `isInstrument: true` plugins. YOU invent `channel_id` (short lowercase slug like `bass`, `lead`, `pluck`) AND `channel_name`. **Use the exact same `channel_id` string in every `channel_id` field of the same turn's `create_pattern` notes** — otherwise the notes reference a channel that doesn't exist and the pattern plays back silent.
+- `load_gm_instrument(channel_id, channel_name, gm_program)` — **use this whenever the user asks for a realistic instrument by name** (piano, trumpet, violin, cello, guitar, flute, oboe, organ, harp, brass, strings, choir, etc.). GM has 128 canonical programs, always available via the bundled SoundFont, and they actually sound like the real instrument. Way better than trying to make Surge XT sound like a trumpet. You know the GM program map (0=Piano, 24=Nylon Guitar, 40=Violin, 48=Strings, 56=Trumpet, 65=Alto Sax, 73=Flute, etc.).
+
+- `load_instrument(channel_id, channel_name, plugin_id, preset_name?)` — use this for **synth sounds** (leads, pads, wobble bass, plucks, FM basses, subtractive stuff) where the user wants a designed synth patch rather than an acoustic-instrument imitation. Only for `isInstrument: true` plugins in the manifest.
+
+Both take a `channel_id` YOU invent (short lowercase slug like `bass`, `lead`, `trumpet`) and a `channel_name`. **Use the exact same `channel_id` string in every `channel_id` field of the same turn's `create_pattern` notes** — otherwise the notes reference a channel that doesn't exist and the pattern plays back silent.
 - `add_plugin_effect(channel_id, plugin_id, preset_name?)` — puts a VST/AU effect on an existing channel's mixer bus. Only for `isInstrument: false` plugins.
 - `remove_plugin_effect(owner_id, slot_id)` — removes an existing effect slot. Use for "delete the reverb" or when you need to fully swap one plugin for another.
 - `set_plugin_param(owner_id, slot_id?, param_name, value)` — tweak a single parameter on a loaded plugin. **This is the preferred way to respond to "turn down / turn up / more / less / make X bigger / smaller / brighter / darker / wider" requests.** Instrument params live on `song.channels[*].params`; effect params live on `song.channels[*].effects[*].params` and `song.mixer.busses[*].effects[*].params`. Fuzzy substring match on param name — "wet" or "mix" both hit "Dry/Wet Mix." Value is 0.0-1.0 normalised.
