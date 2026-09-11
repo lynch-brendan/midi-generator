@@ -2345,10 +2345,21 @@ function applyToolCalls(calls) {
         } else if (!ch) {
           summaries.push(`× add_plugin_effect: channel ${input.channel_id} not found`);
         } else {
-          addEffectToChannel(ch.id, plug, null, input.preset_name);
+          // FL convention: effects go on the mixer INSERT the channel is
+          // routed to, not on the channel itself. That way the mixer UI
+          // shows the effect on the right insert strip and it's visible
+          // where the user expects it. Falls back to the channel's own
+          // effect chain if the channel isn't routed to a bus.
+          const busNum = ch.targetInsertNum || 0;
+          const bus = busNum > 0
+            ? (song.mixer && song.mixer.busses || []).find(b => b.num === busNum)
+            : null;
+          const ownerId = bus ? bus.id : ch.id;
+          const ownerLabel = bus ? `Insert ${busNum}` : ch.name;
+          addEffectToChannel(ownerId, plug, null, input.preset_name);
           const label = input.preset_name
-            ? `+ ${plug.name} / "${input.preset_name}" on ${ch.name}`
-            : `+ ${plug.name} on ${ch.name}`;
+            ? `+ ${plug.name} / "${input.preset_name}" on ${ownerLabel} (routed from ${ch.name})`
+            : `+ ${plug.name} on ${ownerLabel} (routed from ${ch.name})`;
           summaries.push(label);
         }
       } else if (name === 'create_pattern') {
