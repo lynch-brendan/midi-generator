@@ -2,6 +2,10 @@
 name: Surge XT
 verified: true
 last_updated: 2026-09-11
+preset_paths:
+  - "~/Library/Application Support/Surge XT/patches_factory:fxp"
+  - "~/Library/Application Support/Surge XT/patches_3rdparty:fxp"
+  - "~/Documents/Surge XT/Patches:fxp"
 ---
 
 # Surge XT

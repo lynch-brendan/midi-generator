@@ -13,6 +13,14 @@ contextBridge.exposeInMainWorld('nasty', {
   // Path to the bundled General MIDI SoundFont on disk.
   sf2Path: () => ipcRenderer.invoke('nasty-sf2-path'),
 
+  // File-system reach for plugin-knowledge preset loading. Renderer asks
+  // main for a directory of preset files (recursive) or the raw bytes of
+  // a specific file. Both go through IPC — renderer has no direct fs.
+  fs: {
+    listPresets: (dir, ext) => ipcRenderer.invoke('nasty-list-presets', { dir, ext }),
+    readAsBase64: (filePath) => ipcRenderer.invoke('nasty-read-base64', filePath),
+  },
+
   // Audio engine bridge (VST/AU plugin hosting).
   engine: {
     // Send a command to the audio engine (JSON serialisable).

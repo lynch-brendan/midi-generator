@@ -1309,10 +1309,11 @@ _NASTY_SYSTEM_PROMPT = (Path(__file__).parent / "prompts" / "nasty_system.md").r
 _PLUGIN_KNOWLEDGE_DIR = Path(__file__).parent / "plugin-knowledge"
 
 
-def _load_plugin_knowledge() -> dict[str, str]:
+def _load_plugin_knowledge() -> tuple[dict[str, str], dict[str, dict]]:
     entries: dict[str, str] = {}
+    parsed: dict[str, dict] = {}
     if not _PLUGIN_KNOWLEDGE_DIR.is_dir():
-        return entries
+        return entries, parsed
     for md in _PLUGIN_KNOWLEDGE_DIR.glob("*.md"):
         if md.name.lower() == "readme.md":
             continue
@@ -1323,17 +1324,99 @@ def _load_plugin_knowledge() -> dict[str, str]:
         m = re.match(r"^---\s*\n(.*?)\n---\s*\n", content, re.DOTALL)
         if not m:
             continue
-        name_match = re.search(r"^name:\s*(.+)$", m.group(1), re.MULTILINE)
+        fm = m.group(1)
+        name_match = re.search(r"^name:\s*(.+)$", fm, re.MULTILINE)
         if not name_match:
             continue
-        # Store under lowercased name for case-insensitive matching.
-        entries[name_match.group(1).strip().lower()] = content
-    return entries
+        name = name_match.group(1).strip()
+        key = name.lower()
+        entries[key] = content
+        # Pull structured `preset_paths` (list under the yaml key). Each entry
+        # is "<dir>:<ext>" — one directory to scan recursively, one extension
+        # to match. Client-side (Electron) does the actual disk walk.
+        preset_paths: list[str] = []
+        pp_match = re.search(
+            r"^preset_paths:\s*\n((?:  - .+\n?)+)", fm, re.MULTILINE)
+        if pp_match:
+            for line in pp_match.group(1).splitlines():
+                s = line.strip()
+                if s.startswith("- "):
+                    preset_paths.append(s[2:].strip().strip('"').strip("'"))
+        parsed[key] = {"name": name, "preset_paths": preset_paths}
+    return entries, parsed
 
 
 # Cached at module import — Railway redeploys on every push, so cache
 # lifetime = deploy lifetime. That's the right freshness knob.
-_PLUGIN_KNOWLEDGE = _load_plugin_knowledge()
+_PLUGIN_KNOWLEDGE, _PLUGIN_KNOWLEDGE_PARSED = _load_plugin_knowledge()
+
+
+# Persistent gap log — plugins users have on their machines that we don't
+# have a cheatsheet for yet. Written to disk (Railway ephemeral, but the
+# batched research script drains it every run before the next redeploy).
+_GAP_LOG_PATH = Path("/tmp/nasty-plugin-gaps.jsonl")
+
+
+def _log_plugin_gaps(plugins: list) -> None:
+    if not plugins:
+        return
+    missing = []
+    for p in plugins:
+        if not isinstance(p, dict):
+            continue
+        name = (p.get("name") or "").strip()
+        if not name:
+            continue
+        if name.lower() in _PLUGIN_KNOWLEDGE:
+            continue
+        missing.append({
+            "name": name,
+            "manufacturer": p.get("manufacturer") or "",
+            "format": p.get("format") or "",
+            "is_instrument": p.get("isInstrument"),
+        })
+    if not missing:
+        return
+    # Append newline-delimited JSON — trivial to parse from the research
+    # script, cheap to write, no db dependency.
+    import time
+    try:
+        with _GAP_LOG_PATH.open("a", encoding="utf-8") as f:
+            for m in missing:
+                f.write(json.dumps({**m, "ts": int(time.time())}) + "\n")
+    except Exception:
+        pass
+
+
+@app.get("/nasty/plugin-knowledge")
+def nasty_plugin_knowledge():
+    # Renderer fetches this on startup to know which of the user's installed
+    # plugins have preset_paths on disk it should scan. Returned as a dict
+    # keyed by the lowercase plugin name so the client can look up by
+    # manifest name directly.
+    return _PLUGIN_KNOWLEDGE_PARSED
+
+
+@app.get("/nasty/plugin-gaps")
+def nasty_plugin_gaps():
+    # Maintainer endpoint — dumps the currently-logged gap entries so the
+    # batched research script can be pointed at production. Not a secret
+    # (only plugin names + counts), but not linked from anywhere either.
+    if not _GAP_LOG_PATH.exists():
+        return {"entries": []}
+    entries: list[dict] = []
+    try:
+        for line in _GAP_LOG_PATH.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entries.append(json.loads(line))
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return {"entries": entries}
 
 _NASTY_TOOLS = [
     {
@@ -1679,6 +1762,10 @@ def nasty_chat(req: NastyChatRequest):
     # have. Community-maintained cheatsheets tell Claude where preset files
     # live on disk, notable quirks, common recipes — for plugins where the
     # standard VST3/AU program API doesn't expose the real patch browser.
+    # Log any of this user's plugins we don't yet have a cheatsheet for —
+    # the batched research script drains this to auto-generate entries.
+    _log_plugin_gaps(plugins)
+
     knowledge_matches: list[str] = []
     for p in plugins:
         name = (p.get("name") or "").strip().lower() if isinstance(p, dict) else ""

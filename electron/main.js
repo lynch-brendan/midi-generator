@@ -138,6 +138,46 @@ ipcMain.handle('engine-status', () => ({
   ready: engineReady,
 }));
 
+// Plugin-knowledge preset loading. Renderer asks main to list all files
+// of a given extension under a directory (recursive, ~-expanded), or to
+// read the raw bytes of a single file as base64. Used so cheatsheets can
+// point at real preset folders on disk (Surge XT .fxp, Serum .fxp, etc.)
+// and Claude can pick one by name.
+ipcMain.handle('nasty-list-presets', async (_evt, { dir, ext }) => {
+  const os = require('os');
+  const expandHome = (p) => p.startsWith('~')
+    ? path.join(os.homedir(), p.slice(1))
+    : p;
+  const target = expandHome(dir);
+  const wantExt = '.' + String(ext || 'fxp').toLowerCase();
+  const results = [];
+  const walk = async (d) => {
+    let entries;
+    try { entries = await fs.promises.readdir(d, { withFileTypes: true }); }
+    catch { return; }
+    for (const e of entries) {
+      const full = path.join(d, e.name);
+      if (e.isDirectory()) { await walk(full); }
+      else if (e.name.toLowerCase().endsWith(wantExt)) { results.push(full); }
+    }
+  };
+  await walk(target);
+  return results;
+});
+
+ipcMain.handle('nasty-read-base64', async (_evt, filePath) => {
+  const os = require('os');
+  const expandHome = (p) => p.startsWith('~')
+    ? path.join(os.homedir(), p.slice(1))
+    : p;
+  try {
+    const buf = await fs.promises.readFile(expandHome(filePath));
+    return buf.toString('base64');
+  } catch (e) {
+    return '';
+  }
+});
+
 // Renderer reads this to send the SF2 path along with GM channel creation.
 ipcMain.handle('nasty-sf2-path', () => {
   const devInstruments  = path.join(__dirname, '..', 'audio-engine', 'bundled-instruments');

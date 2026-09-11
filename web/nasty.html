@@ -2284,7 +2284,7 @@ const pluginNoteTimeouts = new Set();
 // ============================================================
 // AI tool calls (FL model)
 // ============================================================
-function applyToolCalls(calls) {
+async function applyToolCalls(calls) {
   const summaries = [];
   for (const call of calls) {
     const { name, input } = call;
@@ -2325,13 +2325,33 @@ function applyToolCalls(calls) {
         } else if (song.channels.find(c => c.id === input.channel_id)) {
           summaries.push(`× load_instrument: channel_id "${input.channel_id}" already exists`);
         } else {
+          // Preset selection has two paths:
+          //   1) Standard VST/AU program API → engine matches by name.
+          //   2) File-based (cheatsheet exposes .fxp/.vstpreset on disk) →
+          //      we read the file bytes here, base64, hand off as `state`.
+          //      Engine calls setStateInformation, plugin becomes that patch.
+          //   The file path was cached on the plugin's _diskPresets map when
+          //   the manifest was augmented on startup.
+          let base64State = '';
+          if (input.preset_name && plug._diskPresets) {
+            const wanted = String(input.preset_name).toLowerCase().trim();
+            const key = Object.keys(plug._diskPresets).find(
+              k => k.toLowerCase().trim() === wanted
+                || k.toLowerCase().includes(wanted));
+            if (key && window.nasty && window.nasty.fs) {
+              try {
+                base64State = await window.nasty.fs.readAsBase64(plug._diskPresets[key]);
+              } catch { /* fall through — engine will use default patch */ }
+            }
+          }
           addChannelFromInstrument({
             id: input.channel_id,
             name: input.channel_name, pluginId: plug.id,
             presetName: input.preset_name,
+            base64State,
           });
           const label = input.preset_name
-            ? `+ instrument "${plug.name}" / "${input.preset_name}" on "${input.channel_name}"`
+            ? `+ instrument "${plug.name}" / "${input.preset_name}"${base64State ? ' (from disk)' : ''} on "${input.channel_name}"`
             : `+ instrument "${plug.name}" on "${input.channel_name}"`;
           summaries.push(label);
         }
@@ -3472,7 +3492,7 @@ function renderInstPicker(query) {
   }
 }
 
-async function addChannelFromInstrument({ id, name, pluginId, gmProgram, drumPitch, presetName }) {
+async function addChannelFromInstrument({ id, name, pluginId, gmProgram, drumPitch, presetName, base64State }) {
   // Callers can pass an explicit id (AI tools invent a slug like `bass` so
   // it can reference the channel by the same id in a follow-up create_pattern
   // call). UI paths omit id and get a random one so keyboard-driven "add
@@ -3510,6 +3530,7 @@ async function addChannelFromInstrument({ id, name, pluginId, gmProgram, drumPit
       window.nasty.engine.send({
         cmd: 'load_plugin', channelId: id, pluginId,
         presetName: presetName || '',
+        state: base64State || '',
       });
     }
     // Route the new channel into its auto-assigned insert.
@@ -4361,6 +4382,10 @@ async function sendMessage() {
   const thinking = addChatMessage('assistant', '');
   thinking.classList.add('thinking');
   thinking.textContent = 'thinking...';
+  // Make sure disk-based presets have been merged into the plugin manifest
+  // before Claude sees it. Cheap on subsequent calls (idempotent — augment
+  // walks the same folders and skips already-known entries).
+  await augmentPluginPresetsFromDisk();
   try {
     const apiBase = (window.nasty && window.nasty.apiBase) || '';
     const resp = await fetch(apiBase + '/nasty/chat', {
@@ -4379,7 +4404,7 @@ async function sendMessage() {
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
     thinking.remove();
-    const summaries = applyToolCalls(data.tool_calls || []);
+    const summaries = await applyToolCalls(data.tool_calls || []);
     addChatMessage('assistant', data.text || '(done)', summaries);
     render();
     chatHistory.push({ role: 'user', content: text });
@@ -5304,6 +5329,61 @@ function renderBrowser() {
 
 // State for the plugins tab, populated by engine events
 let enginePluginsList = null;
+
+// Community plugin-knowledge, fetched once from the server. Maps
+// lowercase plugin name → { name, preset_paths: ["dir:ext", ...] }.
+// Used to know which plugins have preset files on disk we can scan.
+let pluginKnowledgeParsed = null;
+
+async function fetchPluginKnowledge() {
+  try {
+    const apiBase = (window.nasty && window.nasty.apiBase) || '';
+    const resp = await fetch(apiBase + '/nasty/plugin-knowledge');
+    if (resp.ok) pluginKnowledgeParsed = await resp.json();
+  } catch { /* offline / dev — no big deal, just no disk preset augmentation */ }
+}
+
+// For each installed plugin whose cheatsheet declares preset_paths, walk
+// those directories and add any preset files as named entries in the
+// plugin's `presets` array. Also stash a filename → absolute path map on
+// the plugin as `_diskPresets` so the load_instrument tool handler can
+// find the file to read when Claude picks one by name.
+async function augmentPluginPresetsFromDisk() {
+  if (!pluginKnowledgeParsed) await fetchPluginKnowledge();
+  if (!pluginKnowledgeParsed || !window.nasty || !window.nasty.fs) return;
+  if (!Array.isArray(enginePluginsList)) return;
+  for (const p of enginePluginsList) {
+    const key = (p.name || '').toLowerCase().trim();
+    const know = pluginKnowledgeParsed[key];
+    if (!know || !Array.isArray(know.preset_paths) || !know.preset_paths.length) continue;
+    const discovered = {}; // presetName → absolutePath
+    for (const spec of know.preset_paths) {
+      const idx = spec.lastIndexOf(':');
+      const dir = idx > 0 ? spec.slice(0, idx) : spec;
+      const ext = idx > 0 ? spec.slice(idx + 1) : 'fxp';
+      let files = [];
+      try { files = await window.nasty.fs.listPresets(dir, ext); }
+      catch { files = []; }
+      for (const fpath of files) {
+        const base = fpath.split('/').pop().replace(/\.[^.]+$/, '');
+        // First one wins if two folders both have "Wobble Bass 3.fxp".
+        if (!(base in discovered)) discovered[base] = fpath;
+      }
+    }
+    if (Object.keys(discovered).length === 0) continue;
+    // Merge into the plugin's presets list (skip duplicates of API-exposed
+    // ones). Claude sees a unified list of preset names in the manifest.
+    const existing = new Set(
+      (p.presets || []).map(x => (typeof x === 'string' ? x : (x && x.name) || '')));
+    for (const name of Object.keys(discovered)) {
+      if (!existing.has(name)) {
+        (p.presets = p.presets || []).push(name);
+        existing.add(name);
+      }
+    }
+    p._diskPresets = discovered;
+  }
+}
 let enginePluginsError = null;
 let engineScanning = null;
 
@@ -5538,6 +5618,11 @@ if (window.nasty && window.nasty.engine) {
     } else if (msg.event === 'plugin_list') {
       enginePluginsList = msg.plugins || [];
       enginePluginsError = null;
+      // Kick off a disk scan for plugins with cheatsheet preset_paths. This
+      // fills in file-based presets (Surge XT .fxp, etc.) that the standard
+      // VST/AU program API doesn't expose. Runs async — the browser stays
+      // usable and results merge in when ready.
+      augmentPluginPresetsFromDisk();
       if (browserTab === 'plugins') renderBrowser();
     } else if (msg.event === 'audio_devices') {
       renderAudioDeviceDropdown(msg.devices || {});
