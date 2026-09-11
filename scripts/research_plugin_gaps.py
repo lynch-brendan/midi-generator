@@ -164,6 +164,27 @@ def rank_gaps(entries: list[dict], have_names: set[str]) -> tuple[list[tuple[int
     return missing, stale
 
 
+def _sanitize_output(md: str, name: str, today: str) -> str:
+    """The model sometimes adds preamble ('I'll research...') and wraps its
+    real output in a ```markdown``` code fence. Strip both. Also ensure the
+    final content has a proper frontmatter block."""
+    # 1) Prefer any ```markdown fenced block if present — that's where the
+    #    model actually put the intended cheatsheet.
+    fence_m = re.search(r"```(?:markdown|md)?\s*\n(.*?)```", md, re.DOTALL)
+    if fence_m:
+        md = fence_m.group(1)
+    # 2) Strip anything before the first `---` (preamble).
+    idx = md.find("---")
+    if idx > 0:
+        md = md[idx:]
+    md = md.strip() + "\n"
+    # 3) Guarantee minimum frontmatter — if the model returned bare prose,
+    #    wrap it defensively.
+    if not md.startswith("---"):
+        md = f"---\nname: {name}\nverified: false\nlast_updated: {today}\n---\n\n" + md
+    return md
+
+
 def research_one(client: Anthropic, entry: dict, today: str) -> str:
     prompt = RESEARCH_PROMPT_TEMPLATE.format(
         name=entry.get("name", ""),
@@ -207,7 +228,10 @@ def main() -> int:
         import urllib.request
         url = args.from_server.rstrip("/") + "/nasty/plugin-gaps"
         try:
-            with urllib.request.urlopen(url, timeout=30) as resp:
+            # Cloudflare (in front of museaimusician.com) blocks the default
+            # Python urllib User-Agent. Pretend to be a real client.
+            req = urllib.request.Request(url, headers={"User-Agent": "nasty-research-script/1.0"})
+            with urllib.request.urlopen(req, timeout=30) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
             entries = data.get("entries", [])
         except Exception as exc:
@@ -268,8 +292,7 @@ def main() -> int:
         except Exception as exc:
             print(f"  FAILED: {exc}", file=sys.stderr)
             return
-        if not md.startswith("---"):
-            md = f"---\nname: {name}\nverified: false\nlast_updated: {today}\n---\n\n" + md
+        md = _sanitize_output(md, name, today)
         target.write_text(md, encoding="utf-8")
         print(f"  wrote {target}")
 

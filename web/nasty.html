@@ -5360,7 +5360,10 @@ async function augmentPluginPresetsFromDisk() {
     for (const spec of know.preset_paths) {
       const idx = spec.lastIndexOf(':');
       const dir = idx > 0 ? spec.slice(0, idx) : spec;
-      const ext = idx > 0 ? spec.slice(idx + 1) : 'fxp';
+      // Cheatsheets sometimes write ".fxp" (with dot) and sometimes "fxp"
+      // (no dot). Normalise both to the no-dot form the walker expects.
+      const rawExt = idx > 0 ? spec.slice(idx + 1) : 'fxp';
+      const ext = rawExt.startsWith('.') ? rawExt.slice(1) : rawExt;
       let files = [];
       try { files = await window.nasty.fs.listPresets(dir, ext); }
       catch { files = []; }
