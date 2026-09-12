@@ -60,20 +60,46 @@ void StdioBridge::stop() {
     if (readThread.joinable()) readThread.join();
 }
 
+// Commands that mutate the audio graph topology (add/remove nodes,
+// add/remove connections, replace processors). Only these need to hold the
+// MessageManagerLock — hot-path commands (transport_get every buffer, piano-
+// roll edits, set_channel_gain) skip the lock to avoid starving the
+// message-thread timer that drives the playhead broadcaster.
+static bool commandMutatesGraph(const juce::String& cmd) {
+    return cmd == "load_plugin"
+        || cmd == "unload_plugin"
+        || cmd == "add_gm_channel"
+        || cmd == "add_drum_channel"
+        || cmd == "add_effect"
+        || cmd == "remove_effect"
+        || cmd == "reorder_effects"
+        || cmd == "bypass_effect"
+        || cmd == "set_channel_target"
+        || cmd == "create_bus"
+        || cmd == "show_plugin_ui"
+        || cmd == "hide_plugin_ui"
+        || cmd == "set_output_device";
+}
+
 void StdioBridge::handleLine(const std::string& line) {
     juce::var msg = juce::JSON::parse(juce::String(line));
     if (!msg.isObject()) return;
-    // Every command here mutates PluginHost state (graph nodes, connections,
-    // channels map). Those mutations race with the JUCE AudioProcessorGraph's
-    // async render-sequence rebuild, which runs on the message thread. Take
-    // the MessageManagerLock so we're the ONLY writer while we do the work —
-    // the async updater can't fire mid-mutation and walk a half-built node
-    // list. This was the pre-existing intermittent crash: `nullptr` node
-    // pointer in `RenderSequenceSignature::getNodeMap` while hydration was
-    // still adding channels.
-    juce::MessageManagerLock mml;
-    if (!mml.lockWasGained()) return;
-    auto reply = handleCommand(msg);
+    const auto cmd = msg["cmd"].toString();
+    juce::var reply;
+    if (commandMutatesGraph(cmd)) {
+        // Graph mutations race with JUCE's async render-sequence rebuild (also
+        // on the message thread) — that's the intermittent nullptr crash in
+        // RenderSequenceSignature::getNodeMap. Hold the lock so the updater
+        // can't run mid-mutation.
+        juce::MessageManagerLock mml;
+        if (!mml.lockWasGained()) return;
+        reply = handleCommand(msg);
+    } else {
+        // Hot path: transport, pattern edits, gain, queries. No graph mutation
+        // so no lock needed — and holding one here would starve the position
+        // broadcaster timer, freezing the playhead.
+        reply = handleCommand(msg);
+    }
     if (!reply.isVoid()) {
         auto json = juce::JSON::toString(reply, /*allOnOneLine*/ true);
         std::cout << json.toStdString() << "\n" << std::flush;
