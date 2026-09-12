@@ -147,13 +147,6 @@ public:
     // instrument (all synths + drum samplers).
     void setChannelGain(const juce::String& channelId, float gain01);
 
-    // Enable/disable pattern playback for a channel. Client sets this to the
-    // composed mute/solo result (`!muted && (!anySolo || soloed)`), so the
-    // engine stays agnostic about solo semantics — it just plays or doesn't.
-    // When toggling to inactive mid-playback, we allNotesOff the injector so
-    // held notes don't stick on the plugin.
-    void setChannelActive(const juce::String& channelId, bool active);
-
     // Fire allNotesOff on every registered channel. Used by transport stop
     // so notes held mid-pattern don't get stuck when playback halts before
     // their noteOff was injected.

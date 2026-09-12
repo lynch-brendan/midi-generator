@@ -1,5 +1,4 @@
 #include "PluginHost.h"
-#include "PluginProxy.h"
 #include "GmSynth.h"
 #include "SampleDrum.h"
 #include <iostream>
@@ -65,13 +64,6 @@ public:
     // and drum samplers. Written from the UI thread, read from the audio
     // thread every buffer. Default 1.0 = pass-through.
     std::atomic<float> gain{1.0f};
-
-    // False = channel silenced by mute/solo. Both pattern walkers early-return
-    // when this is false, so no pattern-driven noteOn reaches the plugin. UI-
-    // triggered notes (PluginHost::noteOn — keyboard preview, step preview)
-    // ignore this flag: FL behaviour is that clicking a step on a muted channel
-    // still auditions it, only playback is silenced.
-    std::atomic<bool> active{true};
 
     // Helper: clamp + scale a MIDI velocity (0..127 float) by gain.
     float scaleVel(float v) const noexcept {
@@ -199,7 +191,6 @@ private:
     void injectPatMode(juce::MidiBuffer& midi, int numSamples) {
         if (patternPlayer == nullptr) return;
         if (!transport->getIsPlaying()) return;
-        if (!active.load(std::memory_order_relaxed)) return;
         // During count-in the Transport rides at negative samples but the
         // PatternPlayer stays parked at 0. Without this guard the walker
         // would re-fire whatever's at pattern position 0 on every audio
@@ -275,7 +266,6 @@ private:
         if (patternPlayer == nullptr) return;
         if (!transport->getIsPlaying()) return;
         if (transport->getBufferStartSample() < 0) return;  // count-in
-        if (!active.load(std::memory_order_relaxed)) return;
         const std::int64_t bufStart = patternPlayer->getBufferStartPosition();
         const std::int64_t bufEnd = bufStart + numSamples;
 
@@ -784,77 +774,39 @@ juce::String PluginHost::loadPlugin(const juce::String& channelId,
     }
     if (!desc) return "Plugin not found: " + pluginId;
 
-    // Sandbox path: spawn a worker subprocess and install a ProxyProcessor
-    // in the graph instead of the real plugin. Opt-in via env var while
-    // the control channel (params/state/preset/GUI) isn't there yet — with
-    // sandbox on, state restore + preset select + GUI don't work. Default
-    // stays on the in-process path so nothing regresses.
-    const char* sandboxEnv = std::getenv("NASTY_PLUGIN_SANDBOX");
-    const bool useSandbox = sandboxEnv && sandboxEnv[0] == '1';
+    juce::String err;
+    auto instance = formatManager.createPluginInstance(
+        *desc, graph.getSampleRate(), graph.getBlockSize(), err);
+    if (!instance) return err.isNotEmpty() ? err : juce::String("Instantiation failed");
 
-    std::unique_ptr<juce::AudioProcessor> instance;
-    if (useSandbox) {
-        // Locate the worker binary next to the engine binary. In dev the
-        // engine sits at nasty-audio-engine_artefacts/, the worker at
-        // nasty-plugin-worker_artefacts/. In a shipped .dmg they'd be
-        // co-located in Contents/MacOS/.
-        auto exeFile = juce::File::getSpecialLocation(juce::File::currentExecutableFile);
-        juce::File workerBin = exeFile.getParentDirectory()
-            .getSiblingFile("nasty-plugin-worker_artefacts")
-            .getChildFile("nasty-plugin-worker");
-        if (!workerBin.existsAsFile()) {
-            workerBin = exeFile.getSiblingFile("nasty-plugin-worker");
+    // Publish host tempo to the plugin directly (not all wrappers pick it up
+    // through the graph forwarding path — VST3 in particular reads from the
+    // processor's playhead at first processBlock).
+    instance->setPlayHead(playHead.get());
+
+    // Apply previously-saved plugin state (Serato's loaded sample, Serum
+    // patch, etc.). Failure is silent — a corrupt blob shouldn't block load.
+    if (base64State.isNotEmpty()) {
+        juce::MemoryOutputStream decoded;
+        if (juce::Base64::convertFromBase64(decoded, base64State) && decoded.getDataSize() > 0) {
+            instance->setStateInformation(decoded.getData(), (int) decoded.getDataSize());
         }
-
-        juce::String spawnErr;
-        auto proxy = sandbox::spawnWorkerAndBuildProxy(
-            *desc, graph.getSampleRate(), graph.getBlockSize(),
-            workerBin, presetName, base64State, spawnErr);
-        if (!proxy) return "sandbox: " + spawnErr;
-        std::cerr << "[PluginHost] sandbox-loaded " << desc->name.toRawUTF8()
-                  << " for ch=" << channelId.toRawUTF8() << std::endl;
-        instance = std::move(proxy);
-    } else {
-        juce::String err;
-        auto real = formatManager.createPluginInstance(
-            *desc, graph.getSampleRate(), graph.getBlockSize(), err);
-        if (!real) return err.isNotEmpty() ? err : juce::String("Instantiation failed");
-
-        // Publish host tempo to the plugin directly (not all wrappers pick it up
-        // through the graph forwarding path — VST3 in particular reads from the
-        // processor's playhead at first processBlock).
-        real->setPlayHead(playHead.get());
-
-        // Apply previously-saved plugin state (Serato's loaded sample, Serum
-        // patch, etc.). Failure is silent — a corrupt blob shouldn't block load.
-        if (base64State.isNotEmpty()) {
-            juce::MemoryOutputStream decoded;
-            if (juce::Base64::convertFromBase64(decoded, base64State) && decoded.getDataSize() > 0) {
-                real->setStateInformation(decoded.getData(), (int) decoded.getDataSize());
-            }
-        }
-
-        // Preset selection AFTER any saved state (a chosen preset overrides
-        // whatever the state blob restored). Silent no-op if nothing matches —
-        // Claude already knows the plugin's preset list from the manifest, so
-        // a "no match" here means Claude passed something the plugin doesn't
-        // actually expose.
-        if (presetName.isNotEmpty()) {
-            const int idx = matchPresetIndex(*real, presetName);
-            if (idx >= 0) real->setCurrentProgram(idx);
-        }
-        instance = std::move(real);
     }
 
-    std::cerr << "[loadPlugin] pre unloadPlugin" << std::endl;
+    // Preset selection AFTER any saved state (a chosen preset overrides
+    // whatever the state blob restored). Silent no-op if nothing matches —
+    // Claude already knows the plugin's preset list from the manifest, so
+    // a "no match" here means Claude passed something the plugin doesn't
+    // actually expose.
+    if (presetName.isNotEmpty()) {
+        const int idx = matchPresetIndex(*instance, presetName);
+        if (idx >= 0) instance->setCurrentProgram(idx);
+    }
+
     unloadPlugin(channelId); // replace if exists
-    std::cerr << "[loadPlugin] pre addInjectorNode" << std::endl;
 
     auto injectorNode = addInjectorNode();
-    std::cerr << "[loadPlugin] pre addNode(instance)" << std::endl;
     auto pluginNode   = graph.addNode(std::move(instance));
-    std::cerr << "[loadPlugin] addNode returned "
-              << (pluginNode ? "OK" : "NULL") << std::endl;
     // JUCE returns null if the graph rejects the node — happens with a few
     // pathological plugins. If we skipped this check the null Node reference
     // would sit in the graph until the next async render-sequence rebuild
@@ -866,20 +818,15 @@ juce::String PluginHost::loadPlugin(const juce::String& channelId,
     }
 
     // MIDI: injector → plugin.
-    std::cerr << "[loadPlugin] pre MIDI addConnection" << std::endl;
     graph.addConnection({{injectorNode->nodeID, Graph::midiChannelIndex},
                          {pluginNode->nodeID,   Graph::midiChannelIndex}});
-    std::cerr << "[loadPlugin] post MIDI addConnection" << std::endl;
 
     {
         std::lock_guard<std::mutex> lock(mutex);
         ChannelSlot slot{ pluginNode->nodeID, injectorNode->nodeID, 1, {}, {}, false };
         channels[channelId] = slot;
-        std::cerr << "[loadPlugin] pre rewireChannelUnlocked" << std::endl;
         rewireChannelUnlocked(channels[channelId]); // instrument → output
-        std::cerr << "[loadPlugin] post rewireChannelUnlocked" << std::endl;
     }
-    std::cerr << "[loadPlugin] returning success" << std::endl;
     return {};
 }
 
@@ -1099,44 +1046,22 @@ juce::String PluginHost::addEffect(const juce::String& channelId,
     }
     if (!desc) return "Plugin not found: " + pluginId;
 
-    // Effects funnel through the sandbox when NASTY_PLUGIN_SANDBOX=1, same
-    // as the instrument path. A crashy effect (e.g. some old x86 reverb
-    // recompiled to arm64) can no longer take out the whole engine.
-    const char* sandboxEnv = std::getenv("NASTY_PLUGIN_SANDBOX");
-    const bool useSandbox = sandboxEnv && sandboxEnv[0] == '1';
+    juce::String err;
+    auto instance = formatManager.createPluginInstance(
+        *desc, graph.getSampleRate(), graph.getBlockSize(), err);
+    if (!instance) return err.isNotEmpty() ? err : juce::String("Instantiation failed");
+    instance->setPlayHead(playHead.get());
 
-    std::unique_ptr<juce::AudioProcessor> instance;
-    if (useSandbox) {
-        auto exeFile = juce::File::getSpecialLocation(juce::File::currentExecutableFile);
-        juce::File workerBin = exeFile.getParentDirectory()
-            .getSiblingFile("nasty-plugin-worker_artefacts")
-            .getChildFile("nasty-plugin-worker");
-        if (!workerBin.existsAsFile()) workerBin = exeFile.getSiblingFile("nasty-plugin-worker");
-
-        juce::String spawnErr;
-        auto proxy = sandbox::spawnWorkerAndBuildProxy(
-            *desc, graph.getSampleRate(), graph.getBlockSize(),
-            workerBin, presetName, base64State, spawnErr);
-        if (!proxy) return "sandbox: " + spawnErr;
-        instance = std::move(proxy);
-    } else {
-        juce::String err;
-        auto real = formatManager.createPluginInstance(
-            *desc, graph.getSampleRate(), graph.getBlockSize(), err);
-        if (!real) return err.isNotEmpty() ? err : juce::String("Instantiation failed");
-        real->setPlayHead(playHead.get());
-
-        if (base64State.isNotEmpty()) {
-            juce::MemoryOutputStream decoded;
-            if (juce::Base64::convertFromBase64(decoded, base64State) && decoded.getDataSize() > 0) {
-                real->setStateInformation(decoded.getData(), (int) decoded.getDataSize());
-            }
+    if (base64State.isNotEmpty()) {
+        juce::MemoryOutputStream decoded;
+        if (juce::Base64::convertFromBase64(decoded, base64State) && decoded.getDataSize() > 0) {
+            instance->setStateInformation(decoded.getData(), (int) decoded.getDataSize());
         }
-        if (presetName.isNotEmpty()) {
-            const int idx = matchPresetIndex(*real, presetName);
-            if (idx >= 0) real->setCurrentProgram(idx);
-        }
-        instance = std::move(real);
+    }
+
+    if (presetName.isNotEmpty()) {
+        const int idx = matchPresetIndex(*instance, presetName);
+        if (idx >= 0) instance->setCurrentProgram(idx);
     }
 
     auto effectNode = graph.addNode(std::move(instance));
@@ -1239,13 +1164,7 @@ void PluginHost::showEffectUI(const juce::String& channelId, const juce::String&
                 }
             }
         }
-        if (!proc) return;
-        // Sandboxed effect: worker owns the editor. Forward and return.
-        if (auto* proxy = dynamic_cast<sandbox::PluginProxy*>(proc)) {
-            proxy->showEditor();
-            return;
-        }
-        if (!proc->hasEditor()) return;
+        if (!proc || !proc->hasEditor()) return;
 
         auto key = effectKey(channelId, slotId);
         auto existing = effectWindows.find(key);
@@ -1271,22 +1190,6 @@ void PluginHost::showEffectUI(const juce::String& channelId, const juce::String&
 
 void PluginHost::hideEffectUI(const juce::String& channelId, const juce::String& slotId) {
     juce::MessageManager::callAsync([this, channelId, slotId]() {
-        sandbox::PluginProxy* proxy = nullptr;
-        {
-            std::lock_guard<std::mutex> lock(mutex);
-            auto it = channels.find(channelId);
-            if (it != channels.end()) {
-                for (const auto& e : it->second.effects) {
-                    if (e.slotId == slotId) {
-                        if (auto node = graph.getNodeForId(e.nodeId)) {
-                            proxy = dynamic_cast<sandbox::PluginProxy*>(node->getProcessor());
-                        }
-                        break;
-                    }
-                }
-            }
-        }
-        if (proxy) proxy->hideEditor();
         effectWindows.erase(effectKey(channelId, slotId));
     });
 }
@@ -1299,16 +1202,8 @@ juce::var PluginHost::snapshotEffectStates() {
         for (const auto& e : slot.effects) {
             auto node = graph.getNodeForId(e.nodeId);
             if (!node || !node->getProcessor()) continue;
-            auto* proc = node->getProcessor();
-            // Sandboxed effect: same shape as instrument state — ask over
-            // the control channel and grab the base64.
-            if (auto* proxy = dynamic_cast<sandbox::PluginProxy*>(proc)) {
-                auto b64 = proxy->queryState(2000);
-                if (b64.isNotEmpty()) perChannel->setProperty(e.slotId, b64);
-                continue;
-            }
             juce::MemoryBlock state;
-            proc->getStateInformation(state);
+            node->getProcessor()->getStateInformation(state);
             if (state.getSize() == 0) continue;
             perChannel->setProperty(e.slotId, juce::Base64::toBase64(state.getData(), state.getSize()));
         }
@@ -1354,26 +1249,6 @@ void PluginHost::setChannelGain(const juce::String& channelId, float gain01) {
         std::cerr << "[PluginHost] gain " << channelId << " -> " << clamped << std::endl;
     } else {
         std::cerr << "[PluginHost] set_channel_gain " << channelId << " injector wrong type" << std::endl;
-    }
-}
-
-void PluginHost::setChannelActive(const juce::String& channelId, bool active) {
-    std::lock_guard<std::mutex> lock(mutex);
-    auto it = channels.find(channelId);
-    if (it == channels.end()) return;
-    auto node = graph.getNodeForId(it->second.injectorNodeId);
-    if (!node) return;
-    auto* inj = dynamic_cast<MidiInjector*>(node->getProcessor());
-    if (!inj) return;
-    const bool prev = inj->active.exchange(active, std::memory_order_relaxed);
-    if (prev && !active) {
-        // Flip active → inactive mid-playback: fire allNotesOff so any note
-        // whose noteOff was still queued in the walker's future doesn't hang
-        // on the plugin.
-        for (int p = 0; p < 128; ++p) {
-            inj->collector.addMessageToQueue(
-                juce::MidiMessage::noteOff(it->second.midiChannel, p));
-        }
     }
 }
 
@@ -1570,13 +1445,6 @@ void PluginHost::showPluginUI(const juce::String& channelId) {
             }
         }
         if (!proc) { std::cerr << "[PluginHost] no processor" << std::endl; return; }
-        // Sandboxed plugin: the real editor lives in the worker process, so
-        // there's no in-process editor to open. Forward as a control-channel
-        // message and return.
-        if (auto* proxy = dynamic_cast<sandbox::PluginProxy*>(proc)) {
-            proxy->showEditor();
-            return;
-        }
         if (!proc->hasEditor()) { std::cerr << "[PluginHost] plugin has no editor" << std::endl; return; }
 
         // Bring existing window to front if already open.
@@ -1610,19 +1478,6 @@ void PluginHost::showPluginUI(const juce::String& channelId) {
 
 void PluginHost::hidePluginUI(const juce::String& channelId) {
     juce::MessageManager::callAsync([this, channelId]() {
-        // Sandboxed plugin: forward hide to the worker; no local window
-        // to erase. Non-sandboxed plugin: standard erase-window path.
-        sandbox::PluginProxy* proxy = nullptr;
-        {
-            std::lock_guard<std::mutex> lock(mutex);
-            auto it = channels.find(channelId);
-            if (it != channels.end()) {
-                if (auto node = graph.getNodeForId(it->second.pluginNodeId)) {
-                    proxy = dynamic_cast<sandbox::PluginProxy*>(node->getProcessor());
-                }
-            }
-        }
-        if (proxy) proxy->hideEditor();
         pluginWindows.erase(channelId);
     });
 }
@@ -1697,17 +1552,8 @@ juce::var PluginHost::snapshotPluginStates() {
     for (const auto& [chId, slot] : channels) {
         auto node = graph.getNodeForId(slot.pluginNodeId);
         if (!node || !node->getProcessor()) continue;
-        auto* proc = node->getProcessor();
-        // Sandboxed plugin: state lives in the worker. Round-trip query
-        // through the control channel. Short timeout — worker's message
-        // thread turns this around in milliseconds for typical plugins.
-        if (auto* proxy = dynamic_cast<sandbox::PluginProxy*>(proc)) {
-            auto b64 = proxy->queryState(2000);
-            if (b64.isNotEmpty()) obj->setProperty(chId, b64);
-            continue;
-        }
         juce::MemoryBlock state;
-        proc->getStateInformation(state);
+        node->getProcessor()->getStateInformation(state);
         if (state.getSize() == 0) continue;
         obj->setProperty(chId, juce::Base64::toBase64(state.getData(), state.getSize()));
     }
@@ -1759,15 +1605,7 @@ void PluginHost::setParam(const juce::String& channelId,
         }
     }
     if (auto node = graph.getNodeForId(nodeId)) {
-        auto* proc = node->getProcessor();
-        // Sandboxed plugin: forward as a control message to the worker; the
-        // real plugin's setValueNotifyingHost runs on the worker's message
-        // thread, matching the in-process contract.
-        if (auto* proxy = dynamic_cast<sandbox::PluginProxy*>(proc)) {
-            proxy->setParam(paramIndex, value01);
-            return;
-        }
-        auto& params = proc->getParameters();
+        auto& params = node->getProcessor()->getParameters();
         if (paramIndex >= 0 && paramIndex < params.size()) {
             params[paramIndex]->setValueNotifyingHost(value01);
         }
@@ -1791,14 +1629,7 @@ juce::var PluginHost::paramsForOwner(const juce::String& channelId,
     // graph.getNodeForId is not marked const in JUCE, but reading a node's
     // param list is safe — bounce through a const_cast.
     if (auto node = const_cast<juce::AudioProcessorGraph&>(graph).getNodeForId(nodeId)) {
-        auto* proc = node->getProcessor();
-        // Sandboxed plugin: real params live in the worker. Return the
-        // cached snapshot taken at load time (spawn primes this so Claude
-        // has knob names synchronously without a round-trip per query).
-        if (auto* proxy = dynamic_cast<sandbox::PluginProxy*>(proc)) {
-            return proxy->cachedParams();
-        }
-        auto& params = proc->getParameters();
+        auto& params = node->getProcessor()->getParameters();
         for (int i = 0; i < params.size(); ++i) {
             auto* p = params[i];
             auto* o = new juce::DynamicObject();

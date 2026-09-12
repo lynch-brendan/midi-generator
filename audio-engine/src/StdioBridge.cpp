@@ -456,11 +456,6 @@ juce::var StdioBridge::handleCommand(const juce::var& msg) {
         return {};
     }
 
-    if (cmd == "set_channel_active") {
-        host.setChannelActive(msg["channelId"].toString(), (bool) msg["active"]);
-        return {};
-    }
-
     if (cmd == "set_output_device") {
         auto err = host.setOutputDevice(msg["name"].toString());
         auto* o = new juce::DynamicObject();

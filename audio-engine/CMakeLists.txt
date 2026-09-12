@@ -30,7 +30,6 @@ juce_add_console_app(nasty-audio-engine
 target_sources(nasty-audio-engine PRIVATE
     src/main.cpp
     src/PluginHost.cpp
-    src/PluginProxy.cpp
     src/StdioBridge.cpp
     src/GmSynth.cpp
     src/SampleDrum.cpp
@@ -62,45 +61,6 @@ target_compile_definitions(nasty-audio-engine PRIVATE
 )
 
 target_link_libraries(nasty-audio-engine PRIVATE
-    juce::juce_audio_utils
-    juce::juce_audio_processors
-    juce::juce_audio_plugin_client
-    juce::juce_core
-    juce::juce_data_structures
-    juce::juce_events
-    juce::juce_recommended_config_flags
-    juce::juce_recommended_lto_flags
-    juce::juce_recommended_warning_flags
-)
-
-# ---- Plugin worker binary ----
-# One instance per loaded VST/AU, spawned by the main engine. Hosts a
-# single plugin behind a shared-memory ring buffer + pipe pair so that
-# plugin crashes don't take the audio engine down with them.
-juce_add_console_app(nasty-plugin-worker
-    PRODUCT_NAME "nasty-plugin-worker"
-)
-
-target_sources(nasty-plugin-worker PRIVATE
-    src/plugin_worker_main.cpp
-    $<$<PLATFORM_ID:Darwin>:src/MacHelpers.mm>
-)
-
-target_compile_definitions(nasty-plugin-worker PRIVATE
-    JUCE_PLUGINHOST_VST3=1
-    JUCE_PLUGINHOST_AU=1
-    JUCE_PLUGINHOST_LADSPA=0
-    JUCE_USE_CURL=0
-    JUCE_WEB_BROWSER=0
-)
-
-if(APPLE)
-    target_link_libraries(nasty-plugin-worker PRIVATE
-        "-framework Cocoa"
-    )
-endif()
-
-target_link_libraries(nasty-plugin-worker PRIVATE
     juce::juce_audio_utils
     juce::juce_audio_processors
     juce::juce_audio_plugin_client
