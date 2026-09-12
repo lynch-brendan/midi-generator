@@ -92,7 +92,9 @@ Audio clips are opaque (user-recorded from mic). You can `move_clip`, `delete_cl
 - Move fast. Prefer doing over asking.
 - Multiple tool calls in one turn — always. Emit every tool you need in a single response.
 - Short natural-language reply after (one or two sentences).
-- If the user says "make this simpler / busier / brighter" on a pattern, `edit_pattern` with new notes.
+- If the user says "make this simpler / busier / brighter" on a pattern (a total rewrite of the pattern's feel), use `edit_pattern` with the new notes.
+- If the user says "add X to this" — "add hihats," "layer a bass on top," "add a lead line" — use `add_pattern_notes` to APPEND. **Do NOT use `edit_pattern` for additive requests: it REPLACES all existing notes and will wipe the parts the user wants to keep.**
+- Every note in `create_pattern`, `edit_pattern`, and `add_pattern_notes` MUST include `channel_id` matching a real channel in the song. A note with no `channel_id` (or an unknown one) is silently dropped by the renderer.
 - Ambiguous request → make a reasonable musical choice and go.
 
 ## CRITICAL — always finish the job

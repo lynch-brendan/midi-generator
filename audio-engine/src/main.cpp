@@ -47,9 +47,17 @@ int main(int /*argc*/, char** /*argv*/) {
     auto supportDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
         .getChildFile("nasty");
     supportDir.createDirectory();
+    auto pluginCacheFile = supportDir.getChildFile("plugin-cache.xml");
     auto presetCacheFile = supportDir.getChildFile("plugin-presets.json");
 
     if (!skipScan) {
+        // Hydrate the discovered-plugins list from disk BEFORE the fresh scan.
+        // Without this, every boot re-walks every VST3/AU on the system, which
+        // pulls each plugin's static init code — for Qt-based plugins like
+        // Serato Sample that means their splash/scenegraph pops for a beat.
+        // With the cache loaded, PluginDirectoryScanner short-circuits any
+        // file that hasn't changed since last scan.
+        host.loadPluginCache(pluginCacheFile);
         host.scanDefaultPaths([&](const juce::String& name, int idx, int total) {
             bridge.sendEvent({
                 {"event", juce::var("scanning")},
@@ -58,6 +66,7 @@ int main(int /*argc*/, char** /*argv*/) {
                 {"total", juce::var(total)},
             });
         });
+        host.savePluginCache(pluginCacheFile);
 
         // Load the preset (program) cache from disk BEFORE the fresh scan so
         // pluginsAlreadyKnown short-circuits. First launch does the full
@@ -86,6 +95,23 @@ int main(int /*argc*/, char** /*argv*/) {
     // playhead frozen until then. Idempotent — subsequent plugin loads reuse
     // the running device.
     host.startAudio();
+
+    // Tell the UI the output device is actually hooked up. `ready` above only
+    // means "plugin scan done"; hitting play before this would silently miss
+    // notes. The UI holds a loading overlay until this event fires.
+    {
+        auto snap = host.currentOutputSnapshot();
+        auto* obj = snap.getDynamicObject();
+        juce::String devName = obj ? obj->getProperty("deviceName").toString() : juce::String();
+        double sr           = obj ? (double) obj->getProperty("sampleRate")   : 0.0;
+        int outCh           = obj ? (int)    obj->getProperty("outputChannels") : 0;
+        bridge.sendEvent({
+            {"event",          juce::var("audio_ready")},
+            {"deviceName",     juce::var(devName)},
+            {"sampleRate",     juce::var(sr)},
+            {"outputChannels", juce::var(outCh)},
+        });
+    }
 
     // Block on JUCE's message loop for plugin UIs, timers, etc.
     // The bridge reads stdin on a background thread and dispatches to us.

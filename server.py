@@ -1684,12 +1684,61 @@ _NASTY_TOOLS = [
     },
     {
         "name": "edit_pattern",
-        "description": "Replace all notes in an existing pattern.",
+        "description": (
+            "REPLACES all notes in an existing pattern with the ones you pass in. "
+            "Use this ONLY when the user wants to rewrite the whole pattern (e.g. "
+            "'make this simpler', 'redo it in D minor'). If they want to ADD a part "
+            "on top of what's already there (e.g. 'add hihats to this'), use "
+            "`add_pattern_notes` instead — otherwise you will wipe the existing parts."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "pattern_id": {"type": "string"},
-                "notes": {"type": "array", "items": {"type": "object"}},
+                "notes": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "channel_id": {"type": "string"},
+                            "pitch": {"type": "number"},
+                            "start_beat": {"type": "number"},
+                            "duration_beats": {"type": "number"},
+                            "velocity": {"type": "number"},
+                        },
+                        "required": ["channel_id", "pitch", "start_beat", "duration_beats"],
+                    },
+                },
+            },
+            "required": ["pattern_id", "notes"],
+        },
+    },
+    {
+        "name": "add_pattern_notes",
+        "description": (
+            "APPEND notes to an existing pattern without touching what's already there. "
+            "Use this for 'add hihats to this', 'layer a bass on top', 'add a lead line to "
+            "the verse' — anywhere the user wants to KEEP the existing parts and add "
+            "something new. Each note needs its own channel_id."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "pattern_id": {"type": "string"},
+                "notes": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "channel_id": {"type": "string"},
+                            "pitch": {"type": "number"},
+                            "start_beat": {"type": "number"},
+                            "duration_beats": {"type": "number"},
+                            "velocity": {"type": "number"},
+                        },
+                        "required": ["channel_id", "pitch", "start_beat", "duration_beats"],
+                    },
+                },
             },
             "required": ["pattern_id", "notes"],
         },
@@ -1808,12 +1857,31 @@ def nasty_chat(req: NastyChatRequest):
             + "\n\n---\n\n".join(knowledge_matches)
             + "\n\n"
         )
+    # Song state changes every turn; manifest + cheatsheets are stable for the
+    # session. Split them so the stable half rides in `system` behind an
+    # ephemeral cache breakpoint (5-min TTL — well within one Nasty session).
     user_content = (
         f"Current song state:\n```json\n{json.dumps(req.song, indent=2)}\n```\n\n"
-        f"{plugin_block}"
-        f"{knowledge_block}"
         f"User: {req.message}"
     )
+    # System prompt as a list of blocks: base prompt (small, always identical
+    # across users) + this user's plugin manifest and matched cheatsheets
+    # (large, stable per session). Cache breakpoint sits on the manifest block,
+    # so the full prefix hits cache from turn 2 onward.
+    system_blocks = [
+        {"type": "text", "text": _NASTY_SYSTEM_PROMPT},
+        {
+            "type": "text",
+            "text": plugin_block + knowledge_block,
+            "cache_control": {"type": "ephemeral"},
+        },
+    ]
+    # Tools JSON is the other big stable chunk — cache_control on the last
+    # tool marks the whole tools list as cacheable.
+    tools = [dict(t) for t in _NASTY_TOOLS]
+    if tools:
+        tools[-1] = {**tools[-1], "cache_control": {"type": "ephemeral"}}
+
     messages = list(req.history) + [{"role": "user", "content": user_content}]
     client = _nasty_anthropic.Anthropic()
 
@@ -1826,8 +1894,8 @@ def nasty_chat(req: NastyChatRequest):
             resp = client.messages.create(
                 model="claude-sonnet-4-6",
                 max_tokens=16000,
-                system=_NASTY_SYSTEM_PROMPT,
-                tools=_NASTY_TOOLS,
+                system=system_blocks,
+                tools=tools,
                 messages=messages,
             )
         except Exception as e:

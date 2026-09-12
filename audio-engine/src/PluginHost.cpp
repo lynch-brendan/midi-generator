@@ -793,6 +793,15 @@ juce::String PluginHost::loadPlugin(const juce::String& channelId,
 
     auto injectorNode = addInjectorNode();
     auto pluginNode   = graph.addNode(std::move(instance));
+    // JUCE returns null if the graph rejects the node — happens with a few
+    // pathological plugins. If we skipped this check the null Node reference
+    // would sit in the graph until the next async render-sequence rebuild
+    // walked it and crashed (EXC_BAD_ACCESS in getNodeMap).
+    if (pluginNode == nullptr || injectorNode == nullptr) {
+        if (injectorNode) graph.removeNode(injectorNode->nodeID);
+        if (pluginNode)   graph.removeNode(pluginNode->nodeID);
+        return "graph rejected plugin: " + pluginId;
+    }
 
     // MIDI: injector → plugin.
     graph.addConnection({{injectorNode->nodeID, Graph::midiChannelIndex},
@@ -823,6 +832,11 @@ juce::String PluginHost::addGmChannel(const juce::String& channelId,
 
     auto injectorNode = addInjectorNode();
     auto gmNode       = graph.addNode(std::move(gm));
+    if (gmNode == nullptr || injectorNode == nullptr) {
+        if (injectorNode) graph.removeNode(injectorNode->nodeID);
+        if (gmNode)       graph.removeNode(gmNode->nodeID);
+        return juce::String("graph rejected GM synth");
+    }
 
     // MIDI: injector → gm.
     graph.addConnection({{injectorNode->nodeID, Graph::midiChannelIndex},
@@ -854,6 +868,11 @@ juce::String PluginHost::addDrumChannel(const juce::String& channelId,
 
     auto injectorNode = addInjectorNode();
     auto drumNode     = graph.addNode(std::move(drum));
+    if (drumNode == nullptr || injectorNode == nullptr) {
+        if (injectorNode) graph.removeNode(injectorNode->nodeID);
+        if (drumNode)     graph.removeNode(drumNode->nodeID);
+        return juce::String("graph rejected drum sampler");
+    }
 
     // MIDI: injector → drum.
     graph.addConnection({{injectorNode->nodeID, Graph::midiChannelIndex},
@@ -956,18 +975,34 @@ void PluginHost::rewireChannelUnlocked(ChannelSlot& slot) {
         graph.removeConnection(c);
     }
 
+    // Wire source → destination on both channels, falling back to dual-mono
+    // if the source only exposes channel 0. Some plugins declare a mono
+    // output bus — without this fallback, ch1 addConnection silently fails
+    // and audio comes out of the left ear only, all the way to the speakers.
+    auto wireStereo = [&](Graph::NodeID src, Graph::NodeID dst, const char* label) {
+        const bool ch0 = graph.addConnection({{src, 0}, {dst, 0}});
+        const bool ch1 = graph.addConnection({{src, 1}, {dst, 1}});
+        if (ch0 && !ch1) {
+            // Mirror ch0 → dst.ch1 so a mono source plays dual-mono instead
+            // of left-only. `dst` may also refuse if it's mono too; that's
+            // still stereo-on-the-output because master output is stereo.
+            const bool mirrored = graph.addConnection({{src, 0}, {dst, 1}});
+            std::cerr << "[PluginHost] mono source at " << label
+                      << " — mirrored ch0 → ch1 (mirror " << (mirrored ? "ok" : "FAILED") << ")"
+                      << std::endl;
+        } else if (!ch0 && !ch1) {
+            std::cerr << "[PluginHost] BOTH connections failed at " << label << std::endl;
+        }
+    };
+
     // Reconnect: source (instrument or bus input) → each active effect → target.
     Graph::NodeID prev = slot.pluginNodeId;
     for (auto& e : slot.effects) {
         if (e.bypassed) continue;
-        for (int ch = 0; ch < 2; ++ch) {
-            graph.addConnection({{prev, ch}, {e.nodeId, ch}});
-        }
+        wireStereo(prev, e.nodeId, "chain");
         prev = e.nodeId;
     }
-    for (int ch = 0; ch < 2; ++ch) {
-        graph.addConnection({{prev, ch}, {targetNodeId, ch}});
-    }
+    wireStereo(prev, targetNodeId, "target");
 
     graph.suspendProcessing(false);
 }
@@ -975,6 +1010,7 @@ void PluginHost::rewireChannelUnlocked(ChannelSlot& slot) {
 juce::String PluginHost::createBusChannel(const juce::String& channelId) {
     startAudio();
     auto node = graph.addNode(std::make_unique<BusPassthrough>());
+    if (node == nullptr) return juce::String("graph rejected bus passthrough");
 
     std::lock_guard<std::mutex> lock(mutex);
     // Replace existing bus with same id (idempotent create).
@@ -1031,6 +1067,9 @@ juce::String PluginHost::addEffect(const juce::String& channelId,
     }
 
     auto effectNode = graph.addNode(std::move(instance));
+    if (effectNode == nullptr) {
+        return "graph rejected effect: " + pluginId;
+    }
 
     std::lock_guard<std::mutex> lock(mutex);
     auto it = channels.find(channelId);
@@ -1450,6 +1489,23 @@ juce::var PluginHost::listAudioDevices() {
     obj->setProperty("currentOutput", juce::var(setup.outputDeviceName));
     if (auto* dev = deviceManager.getCurrentAudioDevice()) {
         obj->setProperty("sampleRate", juce::var(dev->getCurrentSampleRate()));
+    }
+    return juce::var(obj);
+}
+
+juce::var PluginHost::currentOutputSnapshot() const {
+    auto* obj = new juce::DynamicObject();
+    // Cast away const only for the JUCE getter — the device manager doesn't
+    // provide a const accessor, but we only read here.
+    auto* dev = const_cast<juce::AudioDeviceManager&>(deviceManager).getCurrentAudioDevice();
+    if (dev) {
+        obj->setProperty("deviceName",     juce::var(dev->getName()));
+        obj->setProperty("sampleRate",     juce::var(dev->getCurrentSampleRate()));
+        obj->setProperty("outputChannels", juce::var(dev->getActiveOutputChannels().countNumberOfSetBits()));
+    } else {
+        obj->setProperty("deviceName",     juce::var(juce::String()));
+        obj->setProperty("sampleRate",     juce::var(0.0));
+        obj->setProperty("outputChannels", juce::var(0));
     }
     return juce::var(obj);
 }

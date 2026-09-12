@@ -1118,9 +1118,58 @@
   .pr-key.white { background: #e8e8e8; color: #333; }
   .pr-key.black { background: #202428; color: #666; }
   #pr-grid { background: var(--workspace); }
+
+  /* Boot loading overlay — visible until the engine reports audio_ready.
+     Gates play so you can't hit Space and get silence because the output
+     device wasn't hooked up yet. */
+  #boot-overlay {
+    position: fixed; inset: 0; z-index: 9999;
+    background: radial-gradient(circle at 50% 40%, #2a2230 0%, #131015 70%);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 18px;
+    color: var(--text);
+    font-family: inherit;
+    transition: opacity 400ms ease;
+  }
+  #boot-overlay.hidden { opacity: 0; pointer-events: none; }
+  #boot-overlay .brand-lg {
+    font-weight: 900; font-size: 44px; letter-spacing: 3px;
+    background: linear-gradient(135deg, var(--accent) 0%, #ffb0d0 100%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  #boot-overlay .boot-phase {
+    font-size: 13px; color: var(--text-dim); min-height: 16px;
+  }
+  #boot-overlay .boot-sub {
+    font-size: 10px; color: var(--dim); min-height: 12px;
+    max-width: 420px; text-align: center;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  #boot-overlay .boot-bar {
+    width: 220px; height: 3px; background: #2a2530; border-radius: 2px;
+    overflow: hidden; position: relative;
+  }
+  #boot-overlay .boot-bar-fill {
+    position: absolute; inset: 0; width: 30%;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    animation: bootSweep 1.6s linear infinite;
+  }
+  @keyframes bootSweep {
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(400%); }
+  }
 </style>
 </head>
 <body>
+<!-- Boot loading overlay. Removed for the web build (no audio engine) by the
+     boot script below. Shown until engine emits `audio_ready`. -->
+<div id="boot-overlay">
+  <div class="brand-lg">NASTY</div>
+  <div class="boot-bar"><div class="boot-bar-fill"></div></div>
+  <div class="boot-phase" id="boot-phase">warming up…</div>
+  <div class="boot-sub" id="boot-sub"></div>
+</div>
 <div id="app">
 
   <!-- MENU BAR -->
@@ -1824,7 +1873,12 @@ const engineTransport = {
     return base + dtMs / 1000;
   },
   available() {
-    return !!(window.nasty && window.nasty.engine);
+    // Desktop: require the engine AND the output device to be hooked up.
+    // Web build has no engine at all — those users can't play anyway, so
+    // available() stays false and playback silently no-ops. Everything
+    // else (chat, editing, saving) works.
+    if (!(window.nasty && window.nasty.engine)) return false;
+    return !!engineBoot.audioReady;
   },
   send(msg) {
     if (this.available()) window.nasty.engine.send(msg);
@@ -2284,6 +2338,59 @@ const pluginNoteTimeouts = new Set();
 // ============================================================
 // AI tool calls (FL model)
 // ============================================================
+
+// Reject notes with missing / unknown channelIds before they land in a
+// pattern. Historically the AI has dropped notes without a channel_id and
+// they'd get stored as {channelId: undefined} → serialised as null → invisible
+// to the piano roll AND unrouteable at playback (looks like the pattern has
+// notes but nothing plays). Returns the clean note list plus a dropped count
+// for the summary. Order is preserved.
+function sanitizeIncomingNotes(rawNotes) {
+  const known = new Set(song.channels.map(c => c.id));
+  const notes = [];
+  let dropped = 0;
+  for (const n of rawNotes) {
+    const cid = n.channel_id;
+    if (!cid || !known.has(cid)) { dropped++; continue; }
+    notes.push({
+      channelId: cid, pitch: n.pitch,
+      startBeat: n.start_beat, durationBeats: n.duration_beats,
+      velocity: n.velocity ?? 0.8,
+    });
+  }
+  if (dropped > 0) {
+    console.warn('[nasty] dropped', dropped, 'notes with missing/unknown channel_id — known channels:', [...known]);
+  }
+  return { notes, dropped };
+}
+
+// Round-trip through the engine so any earlier queued stdin commands (like
+// add_gm loading a SoundFont) have finished before we return. The engine
+// processes stdin FIFO, so receiving *any* response guarantees everything
+// before it has been handled. transport_get is cheap — just reads atomics.
+// Resolves after 1500ms even if no event comes back so we don't wedge.
+function waitForEngineDrained() {
+  if (!(window.nasty && window.nasty.engine)) return Promise.resolve();
+  return new Promise((resolve) => {
+    let done = false;
+    const unsub = window.nasty.engine.onEvent((msg) => {
+      if (done) return;
+      if (msg.event === 'transport_state') {
+        done = true;
+        try { unsub && unsub(); } catch {}
+        resolve();
+      }
+    });
+    window.nasty.engine.send({ cmd: 'transport_get' });
+    setTimeout(() => {
+      if (done) return;
+      done = true;
+      try { unsub && unsub(); } catch {}
+      resolve();
+    }, 1500);
+  });
+}
+
 async function applyToolCalls(calls) {
   const summaries = [];
   for (const call of calls) {
@@ -2458,28 +2565,28 @@ async function applyToolCalls(calls) {
       } else if (name === 'create_pattern') {
         if (!song.patterns.find(p => p.id === input.id)) {
           const idx = song.patterns.length;
-          const notes = (input.notes || []).map(n => ({
-            channelId: n.channel_id, pitch: n.pitch,
-            startBeat: n.start_beat, durationBeats: n.duration_beats,
-            velocity: n.velocity ?? 0.8,
-          }));
+          const { notes, dropped } = sanitizeIncomingNotes(input.notes || []);
           song.patterns.push({
             id: input.id, name: input.name || 'Pattern ' + (idx+1),
             lengthBars: input.length_bars || 2, notes,
             color: PALETTE[idx % PALETTE.length],
           });
           if (!currentPatternId) currentPatternId = input.id;
-          summaries.push(`+ pattern "${input.name}"`);
+          summaries.push(`+ pattern "${input.name}"` + (dropped ? ` (dropped ${dropped} orphan note${dropped>1?'s':''})` : ''));
         }
       } else if (name === 'edit_pattern') {
         const p = song.patterns.find(p => p.id === input.pattern_id);
         if (p) {
-          p.notes = (input.notes || []).map(n => ({
-            channelId: n.channel_id, pitch: n.pitch,
-            startBeat: n.start_beat, durationBeats: n.duration_beats,
-            velocity: n.velocity ?? 0.8,
-          }));
-          summaries.push(`~ pattern ${input.pattern_id}`);
+          const { notes, dropped } = sanitizeIncomingNotes(input.notes || []);
+          p.notes = notes;
+          summaries.push(`~ pattern ${input.pattern_id}` + (dropped ? ` (dropped ${dropped} orphan note${dropped>1?'s':''})` : ''));
+        }
+      } else if (name === 'add_pattern_notes') {
+        const p = song.patterns.find(p => p.id === input.pattern_id);
+        if (p) {
+          const { notes, dropped } = sanitizeIncomingNotes(input.notes || []);
+          p.notes = (p.notes || []).concat(notes);
+          summaries.push(`+ ${notes.length} note${notes.length===1?'':'s'} → pattern ${input.pattern_id}` + (dropped ? ` (dropped ${dropped} orphan)` : ''));
         }
       } else if (name === 'delete_pattern') {
         song.patterns = song.patterns.filter(p => p.id !== input.pattern_id);
@@ -4410,7 +4517,17 @@ async function sendMessage() {
     chatHistory.push({ role: 'user', content: text });
     chatHistory.push({ role: 'assistant', content: data.text || 'done' });
     if (chatHistory.length > 20) chatHistory = chatHistory.slice(-20);
-    if (document.getElementById('autoplay').checked && song.tracks.some(t => t.clips.length)) playSong();
+    if (document.getElementById('autoplay').checked && song.tracks.some(t => t.clips.length)) {
+      // The AI just fired a bunch of engine commands (add_gm, load_instrument,
+      // pattern edits) over stdin. Those are async — if we hit play right now
+      // the engine may still be loading a SoundFont for a channel that the
+      // pattern is about to fire notes into → silent playback until the next
+      // restart. Round-tripping any request drains the pipe: the engine
+      // processes stdin in order, so a response to *this* command guarantees
+      // every previous command finished too.
+      await waitForEngineDrained();
+      playSong();
+    }
   } catch (e) {
     thinking.textContent = 'error: ' + e.message;
     thinking.classList.remove('thinking');
@@ -5604,20 +5721,114 @@ async function hydratePluginChannels() {
   if (master) hydrateEffects('master_bus', master.effects, master.effectStates);
 }
 
+// Boot state — tracks the audio engine's warm-up progression. The overlay
+// stays visible until audioReady flips true. `engineTransport.available()`
+// gates transport play on this too, so a Spacebar during boot no-ops instead
+// of firing into an empty output device.
+const engineBoot = {
+  phase: 'starting',          // starting | scanning | scanning_presets | ready | audio_ready | error
+  audioReady: false,
+  deviceName: '',
+  sampleRate: 0,
+};
+
+function setBootPhase(text, sub) {
+  const p = document.getElementById('boot-phase');
+  const s = document.getElementById('boot-sub');
+  if (p) p.textContent = text;
+  if (s) s.textContent = sub || '';
+}
+
+function dismissBootOverlay() {
+  const el = document.getElementById('boot-overlay');
+  if (!el) return;
+  el.classList.add('hidden');
+  setTimeout(() => el.remove(), 500);
+}
+
+// Two-note bell chime played from a one-shot AudioContext the moment the
+// engine reports audio_ready. Not the DAW audio path (that lives in the C++
+// engine) — this is a boot UI sound only. Context is created here and
+// closed right after so it doesn't hold audio-device state.
+function playReadyChime() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    const ctx = new AC();
+    const now = ctx.currentTime;
+    const bell = (freq, at, dur, gainPeak) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, now + at);
+      gain.gain.linearRampToValueAtTime(gainPeak, now + at + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + at + dur);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(now + at);
+      osc.stop(now + at + dur + 0.05);
+    };
+    // Perfect-fifth interval, soft. E5 → B5.
+    bell(659.25, 0.00, 0.70, 0.18);
+    bell(987.77, 0.14, 0.90, 0.14);
+    setTimeout(() => ctx.close().catch(() => {}), 1300);
+  } catch (e) { /* audio unavailable — silent boot is fine */ }
+}
+
+// Web build has no audio engine — drop the overlay immediately so the app is
+// usable for chat/editing without waiting on an event that will never arrive.
+if (!(window.nasty && window.nasty.engine)) {
+  engineBoot.phase = 'audio_ready';
+  engineBoot.audioReady = true;
+  const el = document.getElementById('boot-overlay');
+  if (el) el.remove();
+}
+
 // Subscribe to audio-engine events (desktop only)
 if (window.nasty && window.nasty.engine) {
   window.nasty.engine.onEvent((msg) => {
-    if (msg.event === 'scanning') {
+    if (msg.event === 'starting') {
+      engineBoot.phase = 'starting';
+      setBootPhase('starting audio engine…');
+    } else if (msg.event === 'scanning') {
       engineScanning = msg.name;
+      engineBoot.phase = 'scanning';
+      if (msg.index != null && msg.total) {
+        setBootPhase(`scanning plugins (${msg.index}/${msg.total})`, msg.name);
+      } else {
+        setBootPhase('scanning plugins…', msg.name);
+      }
       if (browserTab === 'plugins') renderBrowser();
+    } else if (msg.event === 'scanning_presets') {
+      engineBoot.phase = 'scanning_presets';
+      if (msg.index != null && msg.total) {
+        setBootPhase(`indexing presets (${msg.index}/${msg.total})`, msg.name);
+      } else {
+        setBootPhase('indexing presets…', msg.name);
+      }
     } else if (msg.event === 'ready') {
       engineScanning = null;
+      engineBoot.phase = 'ready';
+      setBootPhase('opening audio device…');
       window.nasty.engine.send({ cmd: 'list_plugins' });
       window.nasty.engine.send({ cmd: 'list_audio_devices' });
       // Ask for the current transport state so we know the sample rate
       // before the user hits play (needed to translate beats → samples).
       window.nasty.engine.send({ cmd: 'transport_get' });
       hydratePluginChannels();
+    } else if (msg.event === 'audio_ready') {
+      // Output device is actually hooked up. Now — and only now — is it safe
+      // to hit play. Chime, dismiss overlay, unlock the transport gate.
+      engineBoot.phase = 'audio_ready';
+      engineBoot.audioReady = !!msg.deviceName && (msg.outputChannels || 0) > 0;
+      engineBoot.deviceName = msg.deviceName || '';
+      engineBoot.sampleRate = msg.sampleRate || 0;
+      if (!engineBoot.audioReady) {
+        setBootPhase('no output device found', 'plug in an output and relaunch');
+        return;
+      }
+      playReadyChime();
+      dismissBootOverlay();
     } else if (msg.event === 'transport_position') {
       // The engine emits these at ~60 Hz while playing. Store the latest
       // pattern position AND the wall-clock instant we received it so the

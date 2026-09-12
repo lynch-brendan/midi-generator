@@ -16,6 +16,7 @@ if (!gotSingleInstanceLock) {
 let mainWindow;
 let audioEngineProc = null;
 let engineReady = false;
+let audioReady = false;
 let engineStdinRl = null;
 
 function findAudioEngineBinary() {
@@ -89,6 +90,7 @@ function startAudioEngine() {
     try { msg = JSON.parse(line); }
     catch { return; }
     if (msg.event === 'ready') engineReady = true;
+    if (msg.event === 'audio_ready') audioReady = !!(msg.deviceName && msg.outputChannels);
     // Forward every engine event to the renderer as 'engine-event'.
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('engine-event', msg);
@@ -104,6 +106,7 @@ function startAudioEngine() {
     console.log('[nasty] audio engine exited', code);
     audioEngineProc = null;
     engineReady = false;
+    audioReady = false;
   });
 }
 
@@ -112,6 +115,7 @@ function stopAudioEngine() {
     try { audioEngineProc.kill('SIGTERM'); } catch {}
     audioEngineProc = null;
     engineReady = false;
+    audioReady = false;
   }
 }
 
@@ -136,6 +140,7 @@ ipcMain.handle('dump-preset-states', (_evt, json) => {
 ipcMain.handle('engine-status', () => ({
   running: !!audioEngineProc,
   ready: engineReady,
+  audioReady,
 }));
 
 // Plugin-knowledge preset loading. Renderer asks main to list all files

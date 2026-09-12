@@ -121,6 +121,11 @@ public:
     juce::var listAudioDevices();
     juce::String setOutputDevice(const juce::String& deviceName);
 
+    // Snapshot of the currently-open output device — name, sample rate, output
+    // channel count. Empty name / rate 0 means no device came up. Used by the
+    // UI's boot loading overlay to gate playback until output is live.
+    juce::var currentOutputSnapshot() const;
+
     // Create an audio-only "bus" — a mixer insert with no instrument, just an
     // input node + effect chain that other channels can route into. Effects
     // are added to it with the same addEffect() API using the bus's channelId.
