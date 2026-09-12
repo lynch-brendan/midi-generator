@@ -2415,9 +2415,15 @@ async function applyToolCalls(calls) {
         const c = song.channels.find(c => c.id === input.channel_id);
         if (c) {
           c.volume = input.volume;
-          // Push to engine so the change is actually audible. Without this,
-          // channel.volume was UI-only — sliders moved, nothing changed.
-          engineTransport.send({ cmd: 'set_channel_gain', channelId: c.id, gain: input.volume });
+          // Compose bus × master so AI changes agree with manual faders. And
+          // rebuild the mixer strips so the UI slider reflects the new value —
+          // otherwise the AI moves the number in the JSON but the fader stays
+          // visually pinned to the old position.
+          const bus = (song.mixer.busses || []).find(b => b.num === (c.targetInsertNum || 0));
+          const busVol = bus ? (bus.volume ?? 1.0) : 1.0;
+          const master = song.mixer.inserts.find(i => i.id === 'master');
+          const masterVol = master ? (master.volume ?? 0.8) : 1.0;
+          engineTransport.send({ cmd: 'set_channel_gain', channelId: c.id, gain: input.volume * busVol * masterVol });
           summaries.push(`vol ${c.name} → ${input.volume}`);
         }
       // (removed) legacy apply_effect / remove_effect tools referenced the
@@ -2681,6 +2687,7 @@ function render() {
   renderPlaylist();
   renderChannelRack();
   renderPatternList();
+  renderMixer();
   if (typeof renderFlShell === 'function') renderFlShell();
   persist();
 }
