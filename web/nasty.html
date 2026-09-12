@@ -3050,15 +3050,27 @@ function renderMixer() {
     const color = routed[0] ? routed[0].color : null;
     const label = routed.length ? routed.map(c => c.name).join(' + ') : b.name;
     strips.appendChild(buildStrip({
-      id: b.id, name: label, volume: 1.0,
+      id: b.id, name: label, volume: b.volume ?? 1.0,
       color, kind: 'bus', fxCount: pluginEffectsCount(b),
       muted: false, solo: false, num: b.num,
     }));
   }
 
+  // Per-channel strips so the mixer shows a fader per instrument. This is
+  // what makes "turn down the hihats" visible — the AI writes ch_hh.volume
+  // and the corresponding strip fader reflects it.
+  for (const c of song.channels) {
+    strips.appendChild(buildStrip({
+      id: c.id, name: c.name, volume: c.volume ?? 0.8,
+      color: c.color, kind: 'channel', fxCount: 0,
+      muted: !!c.muted, solo: !!c.solo,
+    }));
+  }
+
   // Auto-select first available strip if nothing selected.
   const stripExists = (id) => id === 'master'
-    || (song.mixer.busses || []).find(b => b.id === id);
+    || (song.mixer.busses || []).find(b => b.id === id)
+    || song.channels.find(c => c.id === id);
   if (!selectedStripId || !stripExists(selectedStripId)) {
     selectedStripId = 'master';
   }

@@ -39,10 +39,41 @@ Typical pop pattern: kick on 1 and 3, snare on 2 and 4, hats on eighth notes.
 
 If the user says "make me a song" without specifics, build 32 bars like this:
 
-1. Ensure 4 real-sound channels exist: `kick`/`drums`, `bass`, `chords`, `lead`. For any missing, call `load_instrument` with a plugin from the manifest (Dexed for bass, DLSMusicDevice for chords/lead via GM programs, whatever fits). Use `channel_id="kick"`, `channel_id="bass"`, etc. (If channels with those ids already exist in the song JSON with `instrument: "plugin"`, reuse them — don't create dupes.)
-2. Create **one 4-bar pattern per channel**: `kick_1`, `snare_1`, `hihat_1`, `bass_1`, `chords_1`, `lead_1` (skip any channels you're not using). Each pattern contains only notes for its own channel (see "Pattern granularity" above).
-3. Place each clip on its own playlist track at bar 0: `kick_1` → `track_1`, `snare_1` → `track_2`, `hihat_1` → `track_3`, `bass_1` → `track_4`, `chords_1` → `track_5`, `lead_1` → `track_6`.
-4. `repeat_clip` × 7 on each clip to fill 32 bars total.
+### Step 1 — use the drum channels that already exist
+
+Every fresh Nasty song already has these drum channels loaded — you can see them in the `channels` array of the song JSON:
+
+- `ch_kick` — Kick
+- `ch_snare` — Snare
+- `ch_hh` — HiHat
+- `ch_clap` — Clap
+
+**Do NOT create a channel called `drums`. Do NOT combine kick/snare/hats onto one channel.** Reuse the four `ch_*` channels above by their exact ids. Every drum note belongs to the specific `ch_*` channel for that drum.
+
+### Step 2 — add melodic channels
+
+`load_instrument` or `load_gm_instrument` for bass, chords, lead as needed. Use `channel_id="bass"`, `channel_id="chords"`, `channel_id="lead"`. Skip any the user didn't ask for.
+
+### Step 3 — one pattern per channel
+
+Create a separate 4-bar pattern for EACH channel you're using. This is non-negotiable:
+
+- `kick_1` — notes only reference `ch_kick`
+- `snare_1` — notes only reference `ch_snare`
+- `hihat_1` — notes only reference `ch_hh`
+- `clap_1` — notes only reference `ch_clap` (skip if no clap)
+- `bass_1` — notes only reference `bass`
+- `chords_1` — notes only reference `chords`
+- `lead_1` — notes only reference `lead`
+
+### Step 4 — one track per pattern
+
+Each pattern's clip goes on its own playlist track at bar 0:
+`kick_1` → `track_1`, `snare_1` → `track_2`, `hihat_1` → `track_3`, `clap_1` → `track_4`, `bass_1` → `track_5`, `chords_1` → `track_6`, `lead_1` → `track_7`.
+
+### Step 5 — fill 32 bars
+
+`repeat_clip` × 7 on each clip.
 
 Coherent chord progression (e.g. C – Am – F – G, one chord per bar). Reasonable volumes: drums 0.7, bass 0.75, chords 0.6, lead 0.6.
 
