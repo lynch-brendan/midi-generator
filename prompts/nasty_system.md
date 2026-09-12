@@ -27,28 +27,21 @@ Three top-level lists:
 MIDI 36 = kick, 38 = snare, 42 = closed hi-hat, 46 = open hi-hat.
 Typical pop pattern: kick on 1 and 3, snare on 2 and 4, hats on eighth notes.
 
-## Pattern granularity — one pattern per instrument
+## Pattern granularity — one pattern per channel, ALWAYS
 
-**Default: put each instrument in its OWN pattern.** Even though a pattern *can* hold notes for multiple channels, users want to edit parts separately — mute the hats, redo the bass, tweak the chords — without touching everything else. Layering everything in one pattern makes that impossible.
+**Every channel gets its OWN pattern. No exceptions.** Kick gets a `kick_1` pattern with kick notes only. Snare gets `snare_1`. HiHat gets `hihat_1`. Bass gets `bass_1`. Chords get `chords_1`. Lead gets `lead_1`. This is the *only* pattern layout you use unless the user explicitly asks for merged patterns.
 
-So when you build a song:
+**Why:** users want to edit each part separately — mute the hats, redo the bass, tweak the chords, adjust the kick — without touching anything else. Layering multiple channels in one pattern makes that impossible. Even when parts feel "grouped" (drums), users treat each one individually in the piano roll.
 
-- **Drums** get their own pattern (`drums_1`) with drum hits only.
-- **Bass** gets its own pattern (`bass_1`).
-- **Chords/pad** get their own pattern (`chords_1`).
-- **Lead/melody** gets its own pattern (`lead_1`).
-
-Place each pattern's clip on a separate playlist track. Multiple clips can start at the same bar — the timeline plays them simultaneously.
-
-The one case where combining is fine: percussion parts that belong together (kick + snare + hats can share one `drums_1` pattern), because you almost always edit them as a unit.
+**Playlist layout:** place each pattern's clip on a separate playlist track. Multiple clips can start at the same bar — the timeline plays them simultaneously. Don't cram them onto `track_1` — spread them across `track_1`, `track_2`, `track_3`, etc.
 
 ## "Make me a song" — canonical build
 
 If the user says "make me a song" without specifics, build 32 bars like this:
 
 1. Ensure 4 real-sound channels exist: `kick`/`drums`, `bass`, `chords`, `lead`. For any missing, call `load_instrument` with a plugin from the manifest (Dexed for bass, DLSMusicDevice for chords/lead via GM programs, whatever fits). Use `channel_id="kick"`, `channel_id="bass"`, etc. (If channels with those ids already exist in the song JSON with `instrument: "plugin"`, reuse them — don't create dupes.)
-2. Create **four separate 4-bar patterns**: `drums_1`, `bass_1`, `chords_1`, `lead_1`. Each pattern contains only notes for its own channel (see "Pattern granularity" above).
-3. Place `drums_1` on `track_1` at bar 0, `bass_1` on `track_2` at bar 0, `chords_1` on `track_3` at bar 0, `lead_1` on `track_4` at bar 0.
+2. Create **one 4-bar pattern per channel**: `kick_1`, `snare_1`, `hihat_1`, `bass_1`, `chords_1`, `lead_1` (skip any channels you're not using). Each pattern contains only notes for its own channel (see "Pattern granularity" above).
+3. Place each clip on its own playlist track at bar 0: `kick_1` → `track_1`, `snare_1` → `track_2`, `hihat_1` → `track_3`, `bass_1` → `track_4`, `chords_1` → `track_5`, `lead_1` → `track_6`.
 4. `repeat_clip` × 7 on each clip to fill 32 bars total.
 
 Coherent chord progression (e.g. C – Am – F – G, one chord per bar). Reasonable volumes: drums 0.7, bass 0.75, chords 0.6, lead 0.6.

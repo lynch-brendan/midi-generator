@@ -1234,12 +1234,21 @@ void PluginHost::noteOn(const juce::String& channelId, int pitch, float velocity
 void PluginHost::setChannelGain(const juce::String& channelId, float gain01) {
     std::lock_guard<std::mutex> lock(mutex);
     auto it = channels.find(channelId);
-    if (it == channels.end()) return;
+    if (it == channels.end()) {
+        std::cerr << "[PluginHost] set_channel_gain NO CH: " << channelId << std::endl;
+        return;
+    }
     auto node = graph.getNodeForId(it->second.injectorNodeId);
-    if (!node) return;
+    if (!node) {
+        std::cerr << "[PluginHost] set_channel_gain " << channelId << " has no injector" << std::endl;
+        return;
+    }
     if (auto* inj = dynamic_cast<MidiInjector*>(node->getProcessor())) {
-        inj->gain.store(gain01 < 0.0f ? 0.0f : (gain01 > 4.0f ? 4.0f : gain01),
-                        std::memory_order_relaxed);
+        const float clamped = gain01 < 0.0f ? 0.0f : (gain01 > 4.0f ? 4.0f : gain01);
+        inj->gain.store(clamped, std::memory_order_relaxed);
+        std::cerr << "[PluginHost] gain " << channelId << " -> " << clamped << std::endl;
+    } else {
+        std::cerr << "[PluginHost] set_channel_gain " << channelId << " injector wrong type" << std::endl;
     }
 }
 
