@@ -63,6 +63,16 @@ void StdioBridge::stop() {
 void StdioBridge::handleLine(const std::string& line) {
     juce::var msg = juce::JSON::parse(juce::String(line));
     if (!msg.isObject()) return;
+    // Every command here mutates PluginHost state (graph nodes, connections,
+    // channels map). Those mutations race with the JUCE AudioProcessorGraph's
+    // async render-sequence rebuild, which runs on the message thread. Take
+    // the MessageManagerLock so we're the ONLY writer while we do the work —
+    // the async updater can't fire mid-mutation and walk a half-built node
+    // list. This was the pre-existing intermittent crash: `nullptr` node
+    // pointer in `RenderSequenceSignature::getNodeMap` while hydration was
+    // still adding channels.
+    juce::MessageManagerLock mml;
+    if (!mml.lockWasGained()) return;
     auto reply = handleCommand(msg);
     if (!reply.isVoid()) {
         auto json = juce::JSON::toString(reply, /*allOnOneLine*/ true);
