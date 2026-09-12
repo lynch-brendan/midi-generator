@@ -3095,15 +3095,50 @@ function buildStrip({ id, name, volume, color, kind, fxCount, muted, solo, num }
   return strip;
 }
 
+// Push gain for every channel routed through a bus: engine gain = channel.volume * bus.volume.
+// Called from bus fader drag AND from channel fader drag (which multiplies against whatever bus it lives on).
+function pushBusGains(busNum) {
+  const bus = (song.mixer.busses || []).find(b => b.num === busNum);
+  const busVol = bus ? (bus.volume ?? 1.0) : 1.0;
+  for (const c of song.channels) {
+    if ((c.targetInsertNum || 0) !== busNum) continue;
+    const chVol = c.volume ?? 0.8;
+    engineTransport.send({ cmd: 'set_channel_gain', channelId: c.id, gain: chVol * busVol });
+  }
+}
+
 function onStripFader(id, kind, value) {
   if (kind === 'master') {
     const m = song.mixer.inserts.find(i => i.id === 'master');
     if (m) m.volume = value;
+    // Master fader scales every channel — regardless of which bus (or none)
+    // it routes through. Simplest model: master is a global multiplier.
+    for (const c of song.channels) {
+      const chVol = c.volume ?? 0.8;
+      const bus = (song.mixer.busses || []).find(b => b.num === (c.targetInsertNum || 0));
+      const busVol = bus ? (bus.volume ?? 1.0) : 1.0;
+      engineTransport.send({ cmd: 'set_channel_gain', channelId: c.id, gain: chVol * busVol * value });
+    }
+  } else if (kind === 'bus') {
+    // Bus strip: id is the bus id (like `bus_1`). Store on the bus and push
+    // gain to every channel routed through it. The fader value replaces the
+    // stored bus.volume; each channel keeps its own volume as a per-channel
+    // trim, so the two act like FL Studio's insert + channel faders.
+    const bus = (song.mixer.busses || []).find(b => b.id === id);
+    if (bus) {
+      bus.volume = value;
+      pushBusGains(bus.num);
+    }
   } else {
     const ch = song.channels.find(c => c.id === id);
     if (ch) {
       ch.volume = value;
-      engineTransport.send({ cmd: 'set_channel_gain', channelId: ch.id, gain: value });
+      // Include bus + master multipliers so channel and bus faders compose.
+      const bus = (song.mixer.busses || []).find(b => b.num === (ch.targetInsertNum || 0));
+      const busVol = bus ? (bus.volume ?? 1.0) : 1.0;
+      const master = song.mixer.inserts.find(i => i.id === 'master');
+      const masterVol = master ? (master.volume ?? 0.8) : 1.0;
+      engineTransport.send({ cmd: 'set_channel_gain', channelId: ch.id, gain: value * busVol * masterVol });
     }
   }
   const dbEl = document.querySelector(`[data-db="${id}"]`);
@@ -3809,7 +3844,13 @@ function onChannelVol(e) {
   const ch = song.channels.find(c => c.id === cid);
   if (ch) {
     ch.volume = parseFloat(e.currentTarget.value);
-    engineTransport.send({ cmd: 'set_channel_gain', channelId: ch.id, gain: ch.volume });
+    // Compose channel × bus × master so the channel rack fader agrees with
+    // whatever the mixer strip and master are set to.
+    const bus = (song.mixer.busses || []).find(b => b.num === (ch.targetInsertNum || 0));
+    const busVol = bus ? (bus.volume ?? 1.0) : 1.0;
+    const master = song.mixer.inserts.find(i => i.id === 'master');
+    const masterVol = master ? (master.volume ?? 0.8) : 1.0;
+    engineTransport.send({ cmd: 'set_channel_gain', channelId: ch.id, gain: ch.volume * busVol * masterVol });
     persist();
   }
 }

@@ -236,7 +236,7 @@ private:
                 const std::int64_t offPos = note.atSample + note.durationSamples;
                 if (onPos >= 0 && onPos < wrappedEnd) {
                     midi.addEvent(juce::MidiMessage::noteOn(
-                        patternMidiChannel, note.pitch, note.velocity),
+                        patternMidiChannel, note.pitch, scaleVel(note.velocity)),
                         (int) (onPos + offsetAfterWrap));
                 }
                 if (offPos >= 0 && offPos < wrappedEnd) {
@@ -308,7 +308,7 @@ private:
                 if (onPat >= patStart && onPat < patEnd) {
                     const std::int64_t songPos = clip.songStartSample + onPat;
                     midi.addEvent(juce::MidiMessage::noteOn(
-                        patternMidiChannel, note.pitch, note.velocity),
+                        patternMidiChannel, note.pitch, scaleVel(note.velocity)),
                         (int) (songPos - bufStart));
                 }
                 // noteOff fires if it falls before pattern-end AND before the
