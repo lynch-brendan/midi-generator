@@ -1307,14 +1307,19 @@ _NASTY_SYSTEM_PROMPT = (Path(__file__).parent / "prompts" / "nasty_system.md").r
 # that it's community-maintained and shareable across users, not a per-user
 # thing that has to be re-researched every launch.
 _PLUGIN_KNOWLEDGE_DIR = Path(__file__).parent / "plugin-knowledge"
+_PLUGIN_SHEETS_DIR = _PLUGIN_KNOWLEDGE_DIR / "plugins"
+_SOUND_GOALS_DIR = _PLUGIN_KNOWLEDGE_DIR / "sound-goals"
 
 
 def _load_plugin_knowledge() -> tuple[dict[str, str], dict[str, dict]]:
+    # Per-plugin execution-layer sheets. Keyed by lowercase plugin name.
+    # Matched against the user's installed plugin manifest so Claude only
+    # sees entries for plugins actually on this machine.
     entries: dict[str, str] = {}
     parsed: dict[str, dict] = {}
-    if not _PLUGIN_KNOWLEDGE_DIR.is_dir():
+    if not _PLUGIN_SHEETS_DIR.is_dir():
         return entries, parsed
-    for md in _PLUGIN_KNOWLEDGE_DIR.glob("*.md"):
+    for md in _PLUGIN_SHEETS_DIR.glob("*.md"):
         if md.name.lower() == "readme.md":
             continue
         try:
@@ -1346,9 +1351,33 @@ def _load_plugin_knowledge() -> tuple[dict[str, str], dict[str, dict]]:
     return entries, parsed
 
 
+def _load_sound_goals() -> list[str]:
+    # Discovery-layer sheets organized by sound goal (Reverbs, Bass, Pads,
+    # etc.) instead of by plugin. Injected on every Nasty chat so Claude can
+    # match musical intent -> tool by reading a category first, then dive
+    # into the specific plugin's execution sheet only when it actually loads
+    # the plugin. Returned as an ordered list of full-file contents so we
+    # can slot them into the system-prompt block in a stable order.
+    sheets: list[tuple[str, str]] = []
+    if not _SOUND_GOALS_DIR.is_dir():
+        return []
+    for md in sorted(_SOUND_GOALS_DIR.rglob("*.md")):
+        try:
+            content = md.read_text(encoding="utf-8")
+        except Exception:
+            continue
+        # Path relative to sound-goals/ gives us a stable ordering key.
+        rel = md.relative_to(_SOUND_GOALS_DIR).as_posix()
+        sheets.append((rel, content))
+    # Sorted: instruments/*.md come before effects/*.md alphabetically —
+    # good enough. Return only the contents.
+    return [c for _, c in sheets]
+
+
 # Cached at module import — Railway redeploys on every push, so cache
 # lifetime = deploy lifetime. That's the right freshness knob.
 _PLUGIN_KNOWLEDGE, _PLUGIN_KNOWLEDGE_PARSED = _load_plugin_knowledge()
+_SOUND_GOALS = _load_sound_goals()
 
 
 # Persistent gap log — plugins users have on their machines that we don't
@@ -1849,11 +1878,31 @@ def nasty_chat(req: NastyChatRequest):
         name = (p.get("name") or "").strip().lower() if isinstance(p, dict) else ""
         if name and name in _PLUGIN_KNOWLEDGE:
             knowledge_matches.append(_PLUGIN_KNOWLEDGE[name])
+
+    # Two-layer knowledge injection:
+    # 1. Sound-goal sheets (discovery) — organized by what the user asks for
+    #    (Reverbs, Bass, Pads, etc.). Read these first to pick the right
+    #    tool for the intent. Same across all users — cache-friendly.
+    # 2. Plugin sheets (execution) — how to actually load presets, param
+    #    quirks, license limits for the plugins THIS user has installed.
+    sound_goals_block = ""
+    if _SOUND_GOALS:
+        sound_goals_block = (
+            "Sound-goal cheatsheets (discovery layer — organized by what the "
+            "user asks for, not by plugin). Read the relevant category first "
+            "to pick the right tool for a musical intent, then read the "
+            "specific plugin's sheet below for how to actually load it:\n\n"
+            + "\n\n===\n\n".join(_SOUND_GOALS)
+            + "\n\n"
+        )
+
     knowledge_block = ""
     if knowledge_matches:
         knowledge_block = (
-            "Community plugin knowledge (cheatsheets for plugins you have installed — "
-            "read these BEFORE reasoning about how to use those plugins):\n\n"
+            "Community plugin knowledge (execution layer — cheatsheets for "
+            "plugins you have installed. Read the relevant entry BEFORE "
+            "actually loading a plugin so you know its presets, params, and "
+            "quirks):\n\n"
             + "\n\n---\n\n".join(knowledge_matches)
             + "\n\n"
         )
@@ -1872,7 +1921,7 @@ def nasty_chat(req: NastyChatRequest):
         {"type": "text", "text": _NASTY_SYSTEM_PROMPT},
         {
             "type": "text",
-            "text": plugin_block + knowledge_block,
+            "text": plugin_block + sound_goals_block + knowledge_block,
             "cache_control": {"type": "ephemeral"},
         },
     ]
