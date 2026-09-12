@@ -456,6 +456,28 @@
     display: none; box-shadow: 0 0 4px var(--record);
     will-change: transform;
   }
+  #rack-ruler {
+    display: flex; align-items: stretch;
+    height: 18px; min-width: max-content;
+    background: linear-gradient(#2a2e35, #202429);
+    border-bottom: 1px solid #14171c;
+    position: sticky; top: 0; z-index: 2;
+  }
+  #rack-ruler .rack-ruler-spacer {
+    width: 340px; flex-shrink: 0;
+    border-right: 1px solid var(--line);
+    background: linear-gradient(#5c6672, #48525c);
+  }
+  #rack-ruler .rack-ruler-strip {
+    flex: 1; min-width: 0;
+    cursor: pointer;
+    padding: 0 8px;
+    display: flex; align-items: center;
+    font-size: 9px; color: var(--dim);
+    font-variant-numeric: tabular-nums;
+    user-select: none;
+  }
+  #rack-ruler .rack-ruler-strip:hover { color: var(--accent); }
   .step-cell {
     width: 22px; height: 26px; flex-shrink: 0;
     margin: 0 1px;
@@ -1841,6 +1863,11 @@ const engineTransport = {
   loopSamples: 0,             // PatternPlayer loop length in samples
   lastEventPerfMs: 0,         // performance.now() when patternPosition was captured
   isPlaying: false,
+  // When the user seeks via ruler-click while the transport is stopped, this
+  // holds the sample they picked. Play consumes it instead of the default
+  // seek-to-zero so the ruler click "sticks." Cleared on Play (once used) and
+  // on Stop (so the next Play starts clean again).
+  pendingStartSample: null,
   // Live pattern position in seconds, extrapolated forward from the last
   // engine update using wall-clock delta. Between the 60 Hz position events
   // this keeps the visual playhead rolling smoothly instead of stepping.
@@ -1928,6 +1955,9 @@ const engineTransport = {
     for (const note of pattern.notes) {
       if (pluginChIds.has(note.channelId)) this.setNote(note);
     }
+    // Same as pushSongArrangement — re-sync mute/solo on play so the engine
+    // starts a session with the right actives.
+    this.pushChannelActives();
   },
   setLoopBeats(beats) {
     const samples = this.beatsToSamples(beats);
@@ -1957,6 +1987,18 @@ const engineTransport = {
   },
   setMetronomeEnabled(v) {
     this.send({ cmd: 'metronome_set_enabled', enabled: !!v });
+  },
+  // Compose channel mute + channel solo into a single "should this channel
+  // fire pattern notes?" bit and push it to every plugin channel. FL solo:
+  // if any channel is soloed, only soloed ones play; otherwise mute wins.
+  // Called whenever a channel's mute or solo button toggles.
+  pushChannelActives() {
+    const anySolo = song.channels.some(c => c.solo);
+    for (const c of song.channels) {
+      if (c.instrument !== 'plugin') continue;
+      const active = !c.muted && (!anySolo || !!c.solo);
+      this.send({ cmd: 'set_channel_active', channelId: c.id, active });
+    }
   },
 
   // ---- SONG mode ----
@@ -2070,6 +2112,10 @@ const engineTransport = {
     for (const [chId, clips] of perChannelClips) {
       this.setChannelArrangement(chId, clips);
     }
+    // Whenever the arrangement is (re)pushed, re-push mute/solo state too so
+    // toggles that happened while the engine was cold still apply on first
+    // play. Cheap: one atomic per channel.
+    this.pushChannelActives();
   },
   // Total arrangement length in beats — used to size the Transport loop so
   // SONG playback repeats at song end. Falls back to 1 bar so play never
@@ -2200,8 +2246,11 @@ function playSong() {
     // edits during playback are a later delta-push optimisation.
     engineTransport.pushSongArrangement();
     const lenBeats = engineTransport.songLengthBeats();
-    engineTransport.seek(0);
-    engineTransport.seekPattern(0);
+    // Honour a pending manual seek (ruler-click-while-stopped); default 0.
+    const startSample = engineTransport.pendingStartSample ?? 0;
+    engineTransport.pendingStartSample = null;
+    engineTransport.seek(startSample);
+    engineTransport.seekPattern(startSample);
     // setLoopBeats sizes the PatternPlayer loop — not what SONG uses for
     // playback, but keeps the "pattern position" state consistent and lets
     // animatePlayhead's SONG branch use songLengthBeats for its own wrap.
@@ -2226,8 +2275,10 @@ function playSong() {
   // fresh position — otherwise transitioning out of linear-record mode
   // (loop=1e12) would defer the new smaller loop as pending forever.
   engineTransport.pushPattern(pat);
-  engineTransport.seek(0);
-  engineTransport.seekPattern(0);
+  const startSample = engineTransport.pendingStartSample ?? 0;
+  engineTransport.pendingStartSample = null;
+  engineTransport.seek(startSample);
+  engineTransport.seekPattern(startSample);
   engineTransport.setLoopBeats(pat.lengthBars * 4);
   engineTransport.setMetronomeEnabled(!!document.getElementById('metronome')?.checked);
   engineTransport.play();
@@ -2244,6 +2295,10 @@ function stopSong() {
   // Halt the engine's pattern walker; it emits its own all-notes-off, and
   // we also flush any JS-scheduled plugin-note timeouts.
   engineTransport.stop();
+  // Stop resets: any pending manual-seek is dropped so the next Play starts
+  // from bar 1. If the user wants to resume from where they were, they can
+  // click the ruler again while stopped.
+  engineTransport.pendingStartSample = null;
   engineTransport.setMetronomeEnabled(false);
   stopAllEngineNotes();
   document.getElementById('playhead').style.display = 'none';
@@ -2692,6 +2747,78 @@ function render() {
   persist();
 }
 
+// Click anywhere on the arrangement ruler → move the playhead there. Same
+// intent as FL's ruler-click seek: transport and pattern-position both jump
+// so the visual playhead and the audio callback see the new location on
+// the very next buffer. If already playing, playback continues from the new
+// bar; if stopped, next Space plays from here.
+function onArrangementRulerClick(e) {
+  const rect = e.currentTarget.getBoundingClientRect();
+  const x = Math.max(0, e.clientX - rect.left);
+  const bars = x / BAR_WIDTH;
+  const beats = bars * 4;
+  const sample = engineTransport.beatsToSamples(beats);
+  // pattern_seek moves the PatternPlayer position (that's what the SONG
+  // walker reads); transport_seek keeps session time aligned.
+  engineTransport.send({ cmd: 'pattern_seek', sample });
+  engineTransport.send({ cmd: 'transport_seek', sample });
+  // Update local extrapolation state so the visual playhead jumps this
+  // frame instead of waiting for the next 60 Hz engine event.
+  engineTransport.patternPosition = sample;
+  engineTransport.currentSample = sample;
+  engineTransport.lastEventPerfMs = performance.now();
+  // When stopped, the tick loop isn't repainting the playhead — position it
+  // directly so the user can see where next Play will start from. FL model.
+  // Stash the seeked sample so the next Play resumes here instead of the
+  // default seek-to-zero.
+  if (!engineTransport.isPlaying) {
+    engineTransport.pendingStartSample = sample;
+    const ph = document.getElementById('playhead');
+    ph.style.left = x + 'px';
+    ph.style.display = 'block';
+  }
+}
+
+// Click on the channel-rack ruler → seek within the current pattern loop.
+// Uses the first channel-row's step-cell rects as the truth for step
+// positions, since bar/beat CSS margins make math-from-widths fragile.
+function onRackRulerClick(e) {
+  const pattern = song.patterns.find(p => p.id === currentPatternId);
+  if (!pattern) return;
+  const rack = document.getElementById('channel-rack');
+  const firstRow = rack.querySelector('.channel-row');
+  if (!firstRow) return;
+  const cells = firstRow.querySelectorAll('.step-cell');
+  if (cells.length === 0) return;
+  const clickX = e.clientX;
+  // First cell whose right edge is past the click is the target step.
+  // Clicks past the last cell clamp to the last step.
+  let stepIdx = cells.length - 1;
+  let targetCell = cells[stepIdx];
+  for (let i = 0; i < cells.length; i++) {
+    const r = cells[i].getBoundingClientRect();
+    if (clickX < r.right) { stepIdx = i; targetCell = cells[i]; break; }
+  }
+  const beat = stepIdx * STEP_BEATS;
+  const sample = engineTransport.beatsToSamples(beat);
+  engineTransport.send({ cmd: 'pattern_seek', sample });
+  engineTransport.patternPosition = sample;
+  engineTransport.lastEventPerfMs = performance.now();
+  // When stopped, position the rack playhead directly at the clicked step so
+  // the user sees where playback will resume from. Uses the target cell's
+  // real bounding rect against the rack's — no reliance on the STEP_PX/
+  // LEFT_START heuristics used by the animator.
+  if (!engineTransport.isPlaying) {
+    engineTransport.pendingStartSample = sample;
+    const rackPh = document.getElementById('rack-playhead');
+    const rackRect = rack.getBoundingClientRect();
+    const cellRect = targetCell.getBoundingClientRect();
+    const x = cellRect.left - rackRect.left + rack.scrollLeft;
+    rackPh.style.display = 'block';
+    rackPh.style.transform = `translate3d(${x}px, 0, 0)`;
+  }
+}
+
 function renderPlaylist() {
   const timeline = document.getElementById('timeline');
   const playhead = document.getElementById('playhead');
@@ -2701,6 +2828,8 @@ function renderPlaylist() {
   const ruler = document.createElement('div');
   ruler.className = 'ruler';
   ruler.style.width = totalWidth + 'px';
+  ruler.style.cursor = 'pointer';
+  ruler.title = 'Click to seek';
   for (let b = 0; b < song.bars; b++) {
     const tick = document.createElement('div');
     tick.className = 'tick';
@@ -2708,6 +2837,7 @@ function renderPlaylist() {
     tick.textContent = b + 1;
     ruler.appendChild(tick);
   }
+  ruler.addEventListener('click', onArrangementRulerClick);
   timeline.insertBefore(ruler, timeline.firstChild);
 
   const patternById = new Map(song.patterns.map(p => [p.id, p]));
@@ -2849,12 +2979,22 @@ function toggleStepNote(pattern, channel, stepIdx) {
 function renderChannelRack() {
   const rack = document.getElementById('channel-rack');
   // Preserve the playhead div across re-renders so it doesn't get wiped
-  // when we clear the rack innerHTML on every update.
-  rack.innerHTML = '<div id="rack-playhead"></div>';
+  // when we clear the rack innerHTML on every update. The ruler above
+  // channels is click-to-seek: strip aligns to the step-cell area, spacer
+  // covers the ch-left column so the tick geometry is easy to reason about.
+  rack.innerHTML = `
+    <div id="rack-playhead"></div>
+    <div id="rack-ruler">
+      <div class="rack-ruler-spacer"></div>
+      <div class="rack-ruler-strip" title="Click to seek within pattern"></div>
+    </div>
+  `;
   if (!song.channels.length) {
-    rack.innerHTML = '<div style="color:var(--dim);padding:12px;font-size:12px">No channels. Click + Channel.</div>';
+    rack.innerHTML += '<div style="color:var(--dim);padding:12px;font-size:12px">No channels. Click + Channel.</div>';
     return;
   }
+  const strip = rack.querySelector('.rack-ruler-strip');
+  if (strip) strip.addEventListener('click', onRackRulerClick);
   const pattern = song.patterns.find(p => p.id === currentPatternId);
   // Always show a comfortable canvas — even a 1-bar pattern gets 4 bars of
   // step cells visible so the user can keep extending to the right.
@@ -3843,6 +3983,11 @@ function onTrackHeaderBtn(e) {
   if (!track) return;
   if (a === 'mute') track.muted = !track.muted;
   else if (a === 'solo') track.solo = !track.solo;
+  // Track mute/solo lives in the arrangement filter: re-push so the engine's
+  // per-channel arrangement drops clips on muted/non-soloed tracks. Cheap —
+  // pushSongArrangement already runs on transport start.
+  if (a === 'mute' || a === 'solo') engineTransport.pushSongArrangement();
+  persist();
   render();
 }
 
@@ -3866,8 +4011,16 @@ function onChannelBtn(e) {
   const cid = e.currentTarget.dataset.ch;
   const ch = song.channels.find(c => c.id === cid);
   if (!ch) return;
-  if (a === 'mute') ch.muted = !ch.muted;
-  else if (a === 'solo') ch.solo = !ch.solo;
+  if (a === 'mute') {
+    ch.muted = !ch.muted;
+    engineTransport.pushChannelActives();
+    persist();
+  }
+  else if (a === 'solo') {
+    ch.solo = !ch.solo;
+    engineTransport.pushChannelActives();
+    persist();
+  }
   else if (a === 'gui') {
     if (window.nasty && window.nasty.engine) {
       window.nasty.engine.send({ cmd: 'show_plugin_ui', channelId: ch.id });
