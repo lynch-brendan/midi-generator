@@ -415,6 +415,11 @@ juce::var StdioBridge::handleCommand(const juce::var& msg) {
         return juce::var(o);
     }
 
+    if (cmd == "set_channel_gain") {
+        host.setChannelGain(msg["channelId"].toString(), (float) (double) msg["gain"]);
+        return {};
+    }
+
     if (cmd == "set_output_device") {
         auto err = host.setOutputDevice(msg["name"].toString());
         auto* o = new juce::DynamicObject();

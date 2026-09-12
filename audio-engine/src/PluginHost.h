@@ -141,6 +141,12 @@ public:
     void noteOff(const juce::String& channelId, int pitch);
     void allNotesOff(const juce::String& channelId);
 
+    // Per-channel volume, applied by scaling outgoing noteOn velocities. Cheap
+    // enough to change every buffer if the user drags a slider. Not a true
+    // audio-level gain, but works uniformly across every velocity-honouring
+    // instrument (all synths + drum samplers).
+    void setChannelGain(const juce::String& channelId, float gain01);
+
     // Fire allNotesOff on every registered channel. Used by transport stop
     // so notes held mid-pattern don't get stuck when playback halts before
     // their noteOff was injected.

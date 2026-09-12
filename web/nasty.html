@@ -2413,7 +2413,13 @@ async function applyToolCalls(calls) {
         summaries.push(`− channel ${input.channel_id}`);
       } else if (name === 'set_channel_volume') {
         const c = song.channels.find(c => c.id === input.channel_id);
-        if (c) { c.volume = input.volume; summaries.push(`vol ${c.name} → ${input.volume}`); }
+        if (c) {
+          c.volume = input.volume;
+          // Push to engine so the change is actually audible. Without this,
+          // channel.volume was UI-only — sliders moved, nothing changed.
+          engineTransport.send({ cmd: 'set_channel_gain', channelId: c.id, gain: input.volume });
+          summaries.push(`vol ${c.name} → ${input.volume}`);
+        }
       // (removed) legacy apply_effect / remove_effect tools referenced the
       // old 3-effect WebAudio system. Effects now live in the mixer via
       // Surge XT Effects / AU plugins — Claude can add them via the mixer,
@@ -3095,7 +3101,10 @@ function onStripFader(id, kind, value) {
     if (m) m.volume = value;
   } else {
     const ch = song.channels.find(c => c.id === id);
-    if (ch) ch.volume = value;
+    if (ch) {
+      ch.volume = value;
+      engineTransport.send({ cmd: 'set_channel_gain', channelId: ch.id, gain: value });
+    }
   }
   const dbEl = document.querySelector(`[data-db="${id}"]`);
   if (dbEl) dbEl.textContent = volToDb(value);
@@ -3798,7 +3807,11 @@ function onTrackHeaderBtn(e) {
 function onChannelVol(e) {
   const cid = e.currentTarget.dataset.ch;
   const ch = song.channels.find(c => c.id === cid);
-  if (ch) { ch.volume = parseFloat(e.currentTarget.value); persist(); }
+  if (ch) {
+    ch.volume = parseFloat(e.currentTarget.value);
+    engineTransport.send({ cmd: 'set_channel_gain', channelId: ch.id, gain: ch.volume });
+    persist();
+  }
 }
 function onChannelBtn(e) {
   const a = e.currentTarget.dataset.a;
@@ -5692,6 +5705,14 @@ async function hydratePluginChannels() {
     window.nasty.engine.send({
       cmd: 'set_channel_target', channelId: c.id, targetChannelId: target,
     });
+    // Push saved volume so restored channels come back at the right level.
+    // Without this, ch.volume in the JSON is a UI-only value and the engine
+    // stays at gain=1 regardless of what the mixer shows.
+    if (typeof c.volume === 'number') {
+      window.nasty.engine.send({
+        cmd: 'set_channel_gain', channelId: c.id, gain: c.volume,
+      });
+    }
   }
   const hydrateEffects = (ownerId, effects, savedStatesMap) => {
     const plugins = (effects || []).filter(e => e && e.type === 'plugin');

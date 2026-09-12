@@ -58,6 +58,20 @@ public:
     // channel used for UI-triggered noteOn calls.
     int patternMidiChannel = 1;
 
+    // Per-channel gain applied by scaling outgoing noteOn velocities. Not a
+    // true audio-level gain (that'd need a dedicated gain node in the graph),
+    // but works for every velocity-honouring instrument — which is all synths
+    // and drum samplers. Written from the UI thread, read from the audio
+    // thread every buffer. Default 1.0 = pass-through.
+    std::atomic<float> gain{1.0f};
+
+    // Helper: clamp + scale a MIDI velocity (0..127 float) by gain.
+    float scaleVel(float v) const noexcept {
+        const float g = gain.load(std::memory_order_relaxed);
+        const float out = v * g;
+        return out < 0.0f ? 0.0f : (out > 127.0f ? 127.0f : out);
+    }
+
     // Pattern data. UI thread writes under fullLock; audio thread reads under
     // tryLock and skips this buffer if it can't get in.
     //
@@ -200,7 +214,7 @@ private:
             const std::int64_t offPos = note.atSample + note.durationSamples;
             if (onPos >= bufPos && onPos < firstSegEnd) {
                 midi.addEvent(juce::MidiMessage::noteOn(
-                    patternMidiChannel, note.pitch, note.velocity),
+                    patternMidiChannel, note.pitch, scaleVel(note.velocity)),
                     (int) (onPos - bufPos));
             }
             if (offPos >= bufPos && offPos < firstSegEnd) {
@@ -975,34 +989,18 @@ void PluginHost::rewireChannelUnlocked(ChannelSlot& slot) {
         graph.removeConnection(c);
     }
 
-    // Wire source → destination on both channels, falling back to dual-mono
-    // if the source only exposes channel 0. Some plugins declare a mono
-    // output bus — without this fallback, ch1 addConnection silently fails
-    // and audio comes out of the left ear only, all the way to the speakers.
-    auto wireStereo = [&](Graph::NodeID src, Graph::NodeID dst, const char* label) {
-        const bool ch0 = graph.addConnection({{src, 0}, {dst, 0}});
-        const bool ch1 = graph.addConnection({{src, 1}, {dst, 1}});
-        if (ch0 && !ch1) {
-            // Mirror ch0 → dst.ch1 so a mono source plays dual-mono instead
-            // of left-only. `dst` may also refuse if it's mono too; that's
-            // still stereo-on-the-output because master output is stereo.
-            const bool mirrored = graph.addConnection({{src, 0}, {dst, 1}});
-            std::cerr << "[PluginHost] mono source at " << label
-                      << " — mirrored ch0 → ch1 (mirror " << (mirrored ? "ok" : "FAILED") << ")"
-                      << std::endl;
-        } else if (!ch0 && !ch1) {
-            std::cerr << "[PluginHost] BOTH connections failed at " << label << std::endl;
-        }
-    };
-
     // Reconnect: source (instrument or bus input) → each active effect → target.
     Graph::NodeID prev = slot.pluginNodeId;
     for (auto& e : slot.effects) {
         if (e.bypassed) continue;
-        wireStereo(prev, e.nodeId, "chain");
+        for (int ch = 0; ch < 2; ++ch) {
+            graph.addConnection({{prev, ch}, {e.nodeId, ch}});
+        }
         prev = e.nodeId;
     }
-    wireStereo(prev, targetNodeId, "target");
+    for (int ch = 0; ch < 2; ++ch) {
+        graph.addConnection({{prev, ch}, {targetNodeId, ch}});
+    }
 
     graph.suspendProcessing(false);
 }
@@ -1229,7 +1227,19 @@ void PluginHost::noteOn(const juce::String& channelId, int pitch, float velocity
     if (!node) return;
     if (auto* inj = dynamic_cast<MidiInjector*>(node->getProcessor())) {
         inj->collector.addMessageToQueue(
-            juce::MidiMessage::noteOn(it->second.midiChannel, pitch, velocity));
+            juce::MidiMessage::noteOn(it->second.midiChannel, pitch, inj->scaleVel(velocity)));
+    }
+}
+
+void PluginHost::setChannelGain(const juce::String& channelId, float gain01) {
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = channels.find(channelId);
+    if (it == channels.end()) return;
+    auto node = graph.getNodeForId(it->second.injectorNodeId);
+    if (!node) return;
+    if (auto* inj = dynamic_cast<MidiInjector*>(node->getProcessor())) {
+        inj->gain.store(gain01 < 0.0f ? 0.0f : (gain01 > 4.0f ? 4.0f : gain01),
+                        std::memory_order_relaxed);
     }
 }
 
