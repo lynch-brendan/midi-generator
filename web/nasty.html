@@ -1159,6 +1159,117 @@
     0%   { transform: translateX(-100%); }
     100% { transform: translateX(400%); }
   }
+
+  /* Onboarding overlay — first-launch experience. Shown after the boot
+     overlay dismisses if `localStorage.nasty_onboarded` isn't set. Presents
+     the plugin scan summary + bundle offer, sets `nasty_onboarded = 1` when
+     the user completes or skips. Reset with the "Reset onboarding" menu
+     item (implemented in electron/main.js) or by clearing localStorage. */
+  #onboarding-overlay {
+    position: fixed; inset: 0; z-index: 9998;
+    background: radial-gradient(circle at 50% 30%, #2a2230 0%, #131015 70%);
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: flex-start;
+    padding: 60px 40px 40px;
+    overflow-y: auto;
+    color: var(--text);
+    font-family: inherit;
+    transition: opacity 400ms ease;
+  }
+  #onboarding-overlay.hidden { opacity: 0; pointer-events: none; }
+  #onboarding-overlay .ob-brand {
+    font-weight: 900; font-size: 36px; letter-spacing: 3px;
+    background: linear-gradient(135deg, var(--accent) 0%, #ffb0d0 100%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 6px;
+  }
+  #onboarding-overlay .ob-tag {
+    font-size: 12px; color: var(--text-dim);
+    margin-bottom: 34px; text-align: center; max-width: 500px;
+  }
+  #onboarding-overlay .ob-section {
+    width: 100%; max-width: 640px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 10px;
+    padding: 20px 22px;
+    margin-bottom: 18px;
+  }
+  #onboarding-overlay .ob-section h3 {
+    margin: 0 0 6px; font-size: 13px; color: var(--accent);
+    text-transform: uppercase; letter-spacing: 1px; font-weight: 700;
+  }
+  #onboarding-overlay .ob-section .ob-sec-desc {
+    font-size: 11px; color: var(--dim); margin-bottom: 12px;
+  }
+  #onboarding-overlay .ob-scan-line {
+    font-size: 13px; color: var(--text); margin: 4px 0;
+  }
+  #onboarding-overlay .ob-scan-line .num {
+    font-weight: 700; color: var(--accent);
+  }
+  #onboarding-overlay .ob-group {
+    margin-top: 14px;
+  }
+  #onboarding-overlay .ob-group-title {
+    font-size: 11px; color: var(--text-dim);
+    text-transform: uppercase; letter-spacing: 0.5px;
+    margin-bottom: 8px; font-weight: 600;
+  }
+  #onboarding-overlay .ob-item {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 8px 10px; border-radius: 6px;
+    cursor: pointer; user-select: none;
+    transition: background 100ms ease;
+  }
+  #onboarding-overlay .ob-item:hover { background: rgba(255,255,255,0.03); }
+  #onboarding-overlay .ob-item input[type="checkbox"] {
+    margin: 3px 0 0; accent-color: var(--accent);
+    cursor: pointer;
+  }
+  #onboarding-overlay .ob-item .ob-item-body {
+    display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0;
+  }
+  #onboarding-overlay .ob-item .ob-item-name {
+    font-size: 12px; color: var(--text); font-weight: 600;
+  }
+  #onboarding-overlay .ob-item .ob-item-meta {
+    font-size: 10px; color: var(--dim);
+  }
+  #onboarding-overlay .ob-item .ob-item-size {
+    font-size: 10px; color: var(--text-dim); font-variant-numeric: tabular-nums;
+    margin-left: auto; padding-left: 10px;
+  }
+  #onboarding-overlay .ob-warning {
+    font-size: 10px; color: #ffb040; margin-top: 4px;
+  }
+  #onboarding-overlay .ob-actions {
+    display: flex; gap: 10px; margin-top: 16px;
+    width: 100%; max-width: 640px;
+  }
+  #onboarding-overlay .ob-btn {
+    padding: 10px 20px; border-radius: 6px;
+    font-size: 12px; font-weight: 700; letter-spacing: 0.5px;
+    cursor: pointer; border: none; font-family: inherit;
+    transition: transform 100ms ease, background 100ms ease;
+  }
+  #onboarding-overlay .ob-btn:hover { transform: translateY(-1px); }
+  #onboarding-overlay .ob-btn-primary {
+    background: var(--accent); color: #1a1015;
+    flex: 1;
+  }
+  #onboarding-overlay .ob-btn-primary:hover { background: #ff70a8; }
+  #onboarding-overlay .ob-btn-secondary {
+    background: rgba(255,255,255,0.06); color: var(--text-dim);
+  }
+  #onboarding-overlay .ob-btn-secondary:hover {
+    background: rgba(255,255,255,0.1); color: var(--text);
+  }
+  #onboarding-overlay .ob-total {
+    font-size: 11px; color: var(--text-dim); margin-top: 10px;
+    text-align: right;
+  }
 </style>
 </head>
 <body>
@@ -1169,6 +1280,46 @@
   <div class="boot-bar"><div class="boot-bar-fill"></div></div>
   <div class="boot-phase" id="boot-phase">warming up…</div>
   <div class="boot-sub" id="boot-sub"></div>
+</div>
+
+<!-- Onboarding overlay — first-launch experience. Populated by
+     showOnboarding() in the boot script. Hidden by default; shown when
+     audio_ready fires and localStorage.nasty_onboarded is not truthy. -->
+<div id="onboarding-overlay" class="hidden" style="display:none;">
+  <div class="ob-brand">NASTY</div>
+  <div class="ob-tag">Let's set you up. This takes about a minute.</div>
+
+  <div class="ob-section" id="ob-scan-section">
+    <h3>Your plugins</h3>
+    <div class="ob-sec-desc">We scanned the VST3 and AU folders on your Mac.</div>
+    <div class="ob-scan-line" id="ob-scan-total">Scanning…</div>
+    <div class="ob-scan-line" id="ob-scan-known" style="display:none;"></div>
+    <div class="ob-scan-line" id="ob-scan-unknown" style="display:none;"></div>
+  </div>
+
+  <div class="ob-section" id="ob-bundle-section">
+    <h3>Free plugins we recommend</h3>
+    <div class="ob-sec-desc">
+      Nasty ships with a curated set of free instruments and effects.
+      The essentials are checked; uncheck what you don't want.
+    </div>
+    <div id="ob-bundle-groups"></div>
+    <div class="ob-total" id="ob-bundle-total">Selected: 0 items · ~0 MB</div>
+  </div>
+
+  <div class="ob-section" id="ob-extras-section" style="display:none;">
+    <h3>Optional extras</h3>
+    <div class="ob-sec-desc">
+      These are excellent but require creating a free account on the
+      vendor's site. Skip for now if you'd rather stay in the flow.
+    </div>
+    <div id="ob-extras-list"></div>
+  </div>
+
+  <div class="ob-actions">
+    <button class="ob-btn ob-btn-secondary" id="ob-skip">Skip everything</button>
+    <button class="ob-btn ob-btn-primary" id="ob-install">Install selected</button>
+  </div>
 </div>
 <div id="app">
 
@@ -5844,6 +5995,249 @@ function playReadyChime() {
   } catch (e) { /* audio unavailable — silent boot is fine */ }
 }
 
+// Onboarding — first-launch experience. Shows the plugin scan summary +
+// bundle offer. Persists completion state in localStorage.nasty_onboarded
+// so returning users skip the flow. Reset via the "Reset onboarding"
+// electron menu item, or manually with localStorage.removeItem in devtools.
+const onboardingState = {
+  bundleManifest: null,
+  selectedIds: new Set(),
+};
+
+function isOnboarded() {
+  try { return localStorage.getItem('nasty_onboarded') === '1'; }
+  catch (e) { return true; /* safest fallback */ }
+}
+
+function markOnboarded() {
+  try { localStorage.setItem('nasty_onboarded', '1'); } catch (e) { /* ignore */ }
+}
+
+function dismissOnboarding() {
+  const el = document.getElementById('onboarding-overlay');
+  if (!el) return;
+  el.classList.add('hidden');
+  setTimeout(() => { el.style.display = 'none'; }, 450);
+}
+
+// Fetches both the bundle manifest and the cheatsheet index so we can tell
+// the user "found X plugins; we already know how to use Y of them."
+async function fetchOnboardingData() {
+  const apiBase = (window.nasty && window.nasty.apiBase) || '';
+  const [manifest, known] = await Promise.all([
+    fetch(apiBase + '/nasty/bundle-manifest').then(r => r.json()).catch(() => null),
+    fetch(apiBase + '/nasty/plugin-knowledge').then(r => r.json()).catch(() => ({})),
+  ]);
+  return { manifest, known };
+}
+
+// Populate the "Your plugins" scan section based on the engine's most-recent
+// plugin_list event + the set of cheatsheets we already have on the server.
+function renderOnboardingScan(known) {
+  const total = (enginePluginsList || []).length;
+  const knownKeys = new Set(Object.keys(known || {}).map(k => k.toLowerCase()));
+  let matched = 0;
+  for (const p of (enginePluginsList || [])) {
+    const n = (p && p.name || '').toLowerCase();
+    if (n && knownKeys.has(n)) matched++;
+  }
+  const unknown = Math.max(0, total - matched);
+  const totalEl = document.getElementById('ob-scan-total');
+  const knownEl = document.getElementById('ob-scan-known');
+  const unknownEl = document.getElementById('ob-scan-unknown');
+  if (totalEl) totalEl.innerHTML =
+    `Found <span class="num">${total}</span> plugin${total === 1 ? '' : 's'} on your Mac.`;
+  if (matched > 0 && knownEl) {
+    knownEl.style.display = '';
+    knownEl.innerHTML =
+      `<span class="num">${matched}</span> already have AI-ready cheatsheets.`;
+  }
+  if (unknown > 0 && unknownEl) {
+    unknownEl.style.display = '';
+    unknownEl.innerHTML =
+      `<span class="num">${unknown}</span> will be researched automatically — the AI will know them in a few minutes.`;
+  }
+}
+
+// Render the bundle checkbox groups from the manifest. Starter items are
+// checked by default; extras are unchecked (opt-in). Sound content is
+// grouped as its own section under the bundle list.
+function renderOnboardingBundle(manifest) {
+  onboardingState.bundleManifest = manifest;
+  onboardingState.selectedIds = new Set();
+  const groupsEl = document.getElementById('ob-bundle-groups');
+  if (!groupsEl || !manifest) return;
+  groupsEl.innerHTML = '';
+
+  const plugins = manifest.plugins || [];
+  const soundContent = manifest.sound_content || [];
+  const bundles = manifest.bundles || {};
+  const byId = {};
+  for (const p of plugins) byId[p.id] = p;
+
+  // Which groups get checked by default? Starter yes, extras no.
+  const defaultCheckedGroups = new Set(['starter', 'sound_content']);
+  // Skip friction plugins from the main bundle — they go in the extras panel.
+  const frictionIds = new Set(['vital', 'steven-slate-drums-5-5-free']);
+
+  const groupOrder = [
+    ['starter',        'Starter — essentials',    'plugin'],
+    ['extras_synths',  'Extra synths',            'plugin'],
+    ['extras_drums',   'Extra drums',             'plugin'],
+    ['extras_effects', 'Extra effects',           'plugin'],
+    ['sound_content',  'Sound packs & samples',   'content'],
+  ];
+
+  for (const [groupKey, groupLabel, itemKind] of groupOrder) {
+    const idList = bundles[groupKey] || [];
+    if (!idList.length) continue;
+    const group = document.createElement('div');
+    group.className = 'ob-group';
+    const title = document.createElement('div');
+    title.className = 'ob-group-title';
+    title.textContent = groupLabel;
+    group.appendChild(title);
+    for (const id of idList) {
+      let item;
+      if (itemKind === 'content') {
+        item = (soundContent.find(c => c.id === id));
+        if (!item) continue;
+      } else {
+        item = byId[id];
+        if (!item) continue;
+        if (frictionIds.has(id)) continue; // route to extras section below
+      }
+      const row = document.createElement('label');
+      row.className = 'ob-item';
+      const checked = defaultCheckedGroups.has(groupKey);
+      if (checked) onboardingState.selectedIds.add(id);
+      const size = itemKind === 'content' ? (item.size_mb || 0) : (item.file_size_mb || 0);
+      const category = itemKind === 'content' ? (item.format || 'content')
+                                              : (item.category || '');
+      row.innerHTML = `
+        <input type="checkbox" data-id="${id}" ${checked ? 'checked' : ''}>
+        <div class="ob-item-body">
+          <div class="ob-item-name">${item.name}</div>
+          <div class="ob-item-meta">${category}</div>
+          ${item.warning ? `<div class="ob-warning">⚠ ${item.warning}</div>` : ''}
+        </div>
+        <div class="ob-item-size">${size ? size + ' MB' : ''}</div>
+      `;
+      row.querySelector('input').addEventListener('change', (e) => {
+        if (e.target.checked) onboardingState.selectedIds.add(id);
+        else onboardingState.selectedIds.delete(id);
+        updateOnboardingTotal();
+      });
+      group.appendChild(row);
+    }
+    groupsEl.appendChild(group);
+  }
+  updateOnboardingTotal();
+}
+
+// Optional extras — friction plugins that require account signup.
+// Rendered as a separate opt-in section under the main bundle.
+function renderOnboardingExtras(manifest) {
+  const section = document.getElementById('ob-extras-section');
+  const listEl = document.getElementById('ob-extras-list');
+  if (!section || !listEl || !manifest) return;
+  const frictionIds = ['vital', 'steven-slate-drums-5-5-free'];
+  const plugins = manifest.plugins || [];
+  const byId = {};
+  for (const p of plugins) byId[p.id] = p;
+  const items = frictionIds.map(id => byId[id]).filter(Boolean);
+  if (!items.length) return;
+  section.style.display = '';
+  listEl.innerHTML = '';
+  for (const item of items) {
+    const row = document.createElement('label');
+    row.className = 'ob-item';
+    row.innerHTML = `
+      <input type="checkbox" data-id="${item.id}">
+      <div class="ob-item-body">
+        <div class="ob-item-name">${item.name}</div>
+        <div class="ob-item-meta">${item.category || ''}</div>
+        <div class="ob-warning">⚠ Requires a free account on the vendor's site</div>
+      </div>
+      <div class="ob-item-size">${item.file_size_mb ? item.file_size_mb + ' MB' : ''}</div>
+    `;
+    row.querySelector('input').addEventListener('change', (e) => {
+      if (e.target.checked) onboardingState.selectedIds.add(item.id);
+      else onboardingState.selectedIds.delete(item.id);
+      updateOnboardingTotal();
+    });
+    listEl.appendChild(row);
+  }
+}
+
+function updateOnboardingTotal() {
+  const el = document.getElementById('ob-bundle-total');
+  if (!el || !onboardingState.bundleManifest) return;
+  const manifest = onboardingState.bundleManifest;
+  const plugins = manifest.plugins || [];
+  const soundContent = manifest.sound_content || [];
+  const byId = {};
+  for (const p of plugins) byId[p.id] = { size: p.file_size_mb || 0 };
+  for (const c of soundContent) byId[c.id] = { size: c.size_mb || 0 };
+  let totalMb = 0;
+  let count = 0;
+  for (const id of onboardingState.selectedIds) {
+    const it = byId[id];
+    if (!it) continue;
+    totalMb += it.size;
+    count++;
+  }
+  el.textContent = `Selected: ${count} item${count === 1 ? '' : 's'} · ~${totalMb.toLocaleString()} MB`;
+}
+
+// Fire the on-demand research trigger so any of the user's installed plugins
+// that lack cheatsheets get researched now instead of waiting for the daily
+// cron. Fires with soft-error tolerance — onboarding still succeeds if this
+// no-ops (GITHUB_RESEARCH_TOKEN unset on server, throttle window, etc.).
+async function triggerResearchNow() {
+  const apiBase = (window.nasty && window.nasty.apiBase) || '';
+  try {
+    const resp = await fetch(apiBase + '/nasty/trigger-research', { method: 'POST' });
+    const data = await resp.json().catch(() => ({}));
+    console.log('[onboarding] research trigger:', data);
+  } catch (e) {
+    console.log('[onboarding] research trigger failed (non-fatal):', e);
+  }
+}
+
+async function showOnboarding() {
+  const overlay = document.getElementById('onboarding-overlay');
+  if (!overlay) return;
+  overlay.style.display = '';
+  requestAnimationFrame(() => overlay.classList.remove('hidden'));
+
+  const { manifest, known } = await fetchOnboardingData();
+  renderOnboardingScan(known || {});
+  if (manifest) {
+    renderOnboardingBundle(manifest);
+    renderOnboardingExtras(manifest);
+  }
+
+  document.getElementById('ob-skip').addEventListener('click', () => {
+    markOnboarded();
+    // Even if they skip the bundle, still fire the research for their
+    // existing plugins — they get the AI-knows-my-rig benefit either way.
+    triggerResearchNow();
+    dismissOnboarding();
+  });
+
+  document.getElementById('ob-install').addEventListener('click', () => {
+    const selected = Array.from(onboardingState.selectedIds);
+    console.log('[onboarding] install selected:', selected);
+    // TODO next commit: kick off background downloads via preload IPC.
+    // For now we just mark onboarded + fire research — the downloader
+    // scaffold arrives in the next small commit.
+    markOnboarded();
+    triggerResearchNow();
+    dismissOnboarding();
+  });
+}
+
 // Web build has no audio engine — drop the overlay immediately so the app is
 // usable for chat/editing without waiting on an event that will never arrive.
 if (!(window.nasty && window.nasty.engine)) {
@@ -5898,6 +6292,12 @@ if (window.nasty && window.nasty.engine) {
       }
       playReadyChime();
       dismissBootOverlay();
+      // First-launch check. If they've never completed onboarding, show
+      // the welcome + bundle-offer flow. Delayed slightly so the boot
+      // overlay's fade-out finishes first and doesn't fight for stacking.
+      if (!isOnboarded()) {
+        setTimeout(() => { showOnboarding(); }, 550);
+      }
     } else if (msg.event === 'transport_position') {
       // The engine emits these at ~60 Hz while playing. Store the latest
       // pattern position AND the wall-clock instant we received it so the
