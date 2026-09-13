@@ -765,6 +765,7 @@ juce::String PluginHost::loadPlugin(const juce::String& channelId,
                                     const juce::String& pluginId,
                                     const juce::String& base64State,
                                     const juce::String& presetName) {
+    std::cerr << "[loadPlugin] START ch=" << channelId << " pluginId=" << pluginId << std::endl;
     startAudio(); // lazy-init audio device on first plugin load
 
     // Find description
@@ -772,12 +773,20 @@ juce::String PluginHost::loadPlugin(const juce::String& channelId,
     for (const auto& t : knownPlugins.getTypes()) {
         if (t.createIdentifierString() == pluginId) { desc = &t; break; }
     }
-    if (!desc) return "Plugin not found: " + pluginId;
+    if (!desc) {
+        std::cerr << "[loadPlugin] FAIL: plugin not found in manifest" << std::endl;
+        return "Plugin not found: " + pluginId;
+    }
+    std::cerr << "[loadPlugin] step1 found desc name=" << desc->name << " format=" << desc->pluginFormatName << std::endl;
 
     juce::String err;
     auto instance = formatManager.createPluginInstance(
         *desc, graph.getSampleRate(), graph.getBlockSize(), err);
-    if (!instance) return err.isNotEmpty() ? err : juce::String("Instantiation failed");
+    if (!instance) {
+        std::cerr << "[loadPlugin] FAIL: createPluginInstance returned null err='" << err << "'" << std::endl;
+        return err.isNotEmpty() ? err : juce::String("Instantiation failed");
+    }
+    std::cerr << "[loadPlugin] step2 created instance ok" << std::endl;
 
     // Publish host tempo to the plugin directly (not all wrappers pick it up
     // through the graph forwarding path — VST3 in particular reads from the
@@ -789,7 +798,9 @@ juce::String PluginHost::loadPlugin(const juce::String& channelId,
     if (base64State.isNotEmpty()) {
         juce::MemoryOutputStream decoded;
         if (juce::Base64::convertFromBase64(decoded, base64State) && decoded.getDataSize() > 0) {
+            std::cerr << "[loadPlugin] step3 applying saved state (" << decoded.getDataSize() << " bytes)" << std::endl;
             instance->setStateInformation(decoded.getData(), (int) decoded.getDataSize());
+            std::cerr << "[loadPlugin] step3 saved state applied" << std::endl;
         }
     }
 
@@ -800,11 +811,25 @@ juce::String PluginHost::loadPlugin(const juce::String& channelId,
     // actually expose.
     if (presetName.isNotEmpty()) {
         const int idx = matchPresetIndex(*instance, presetName);
+        std::cerr << "[loadPlugin] step4 preset '" << presetName << "' → idx=" << idx << std::endl;
         if (idx >= 0) instance->setCurrentProgram(idx);
     }
 
+    // Everything above (createPluginInstance, state, preset) ran WITHOUT
+    // holding MessageManagerLock — that's the whole point, plugin init needs
+    // the message loop to pump. Now take the lock JUST for the graph mutation
+    // so the async render-sequence rebuild can't race with us.
+    std::cerr << "[loadPlugin] step5 acquiring MessageManagerLock for graph mutation" << std::endl;
+    juce::MessageManagerLock mml;
+    if (!mml.lockWasGained()) {
+        std::cerr << "[loadPlugin] FAIL: MessageManagerLock aborted" << std::endl;
+        return "aborted";
+    }
+
+    std::cerr << "[loadPlugin] step6 unloading existing on channel (if any)" << std::endl;
     unloadPlugin(channelId); // replace if exists
 
+    std::cerr << "[loadPlugin] step7 adding injector + plugin to graph" << std::endl;
     auto injectorNode = addInjectorNode();
     auto pluginNode   = graph.addNode(std::move(instance));
     // JUCE returns null if the graph rejects the node — happens with a few
@@ -812,6 +837,8 @@ juce::String PluginHost::loadPlugin(const juce::String& channelId,
     // would sit in the graph until the next async render-sequence rebuild
     // walked it and crashed (EXC_BAD_ACCESS in getNodeMap).
     if (pluginNode == nullptr || injectorNode == nullptr) {
+        std::cerr << "[loadPlugin] FAIL: graph rejected node (plugin=" << (pluginNode!=nullptr)
+                  << " injector=" << (injectorNode!=nullptr) << ")" << std::endl;
         if (injectorNode) graph.removeNode(injectorNode->nodeID);
         if (pluginNode)   graph.removeNode(pluginNode->nodeID);
         return "graph rejected plugin: " + pluginId;
@@ -820,13 +847,16 @@ juce::String PluginHost::loadPlugin(const juce::String& channelId,
     // MIDI: injector → plugin.
     graph.addConnection({{injectorNode->nodeID, Graph::midiChannelIndex},
                          {pluginNode->nodeID,   Graph::midiChannelIndex}});
+    std::cerr << "[loadPlugin] step8 wired midi injector → plugin" << std::endl;
 
     {
         std::lock_guard<std::mutex> lock(mutex);
         ChannelSlot slot{ pluginNode->nodeID, injectorNode->nodeID, 1, {}, {}, false };
         channels[channelId] = slot;
+        std::cerr << "[loadPlugin] step9 calling rewireChannelUnlocked" << std::endl;
         rewireChannelUnlocked(channels[channelId]); // instrument → output
     }
+    std::cerr << "[loadPlugin] DONE ch=" << channelId << std::endl;
     return {};
 }
 
@@ -913,6 +943,7 @@ void PluginHost::setGmProgram(const juce::String& channelId, int gmProgram) {
 }
 
 void PluginHost::unloadPlugin(const juce::String& channelId) {
+    std::cerr << "[unloadPlugin] ch=" << channelId << std::endl;
     // Close the editor window first (on message thread) so its held editor
     // pointer doesn't dangle when we drop the plugin node below.
     hidePluginUI(channelId);
@@ -946,8 +977,15 @@ void PluginHost::unloadPlugin(const juce::String& channelId) {
 // or the input node of another channel (bus routing) if targetChannelId is
 // set.
 void PluginHost::rewireChannelUnlocked(ChannelSlot& slot) {
+    std::cerr << "[rewire] START pluginNode=" << slot.pluginNodeId.uid
+              << " injector=" << slot.injectorNodeId.uid
+              << " effects=" << slot.effects.size()
+              << " target='" << slot.targetChannelId << "'" << std::endl;
     auto outNode = graph.getNodeForId(Graph::NodeID(2));
-    if (!outNode) return;
+    if (!outNode) {
+        std::cerr << "[rewire] BAIL: no outNode (nodeID 2)" << std::endl;
+        return;
+    }
 
     // Pause the audio thread while we mutate the graph — otherwise the
     // render-sequence rebuild races with our add/remove calls and can
@@ -1001,6 +1039,7 @@ void PluginHost::rewireChannelUnlocked(ChannelSlot& slot) {
     for (int ch = 0; ch < 2; ++ch) {
         graph.addConnection({{prev, ch}, {targetNodeId, ch}});
     }
+    std::cerr << "[rewire] DONE target=" << targetNodeId.uid << std::endl;
 
     graph.suspendProcessing(false);
 }
@@ -1040,16 +1079,28 @@ juce::String PluginHost::addEffect(const juce::String& channelId,
                                    const juce::String& pluginId,
                                    const juce::String& base64State,
                                    const juce::String& presetName) {
+    std::cerr << "[addEffect] START ch=" << channelId << " slot=" << slotId << " pluginId=" << pluginId << std::endl;
     const juce::PluginDescription* desc = nullptr;
     for (const auto& t : knownPlugins.getTypes()) {
         if (t.createIdentifierString() == pluginId) { desc = &t; break; }
     }
-    if (!desc) return "Plugin not found: " + pluginId;
+    if (!desc) {
+        std::cerr << "[addEffect] FAIL: plugin not found in manifest" << std::endl;
+        return "Plugin not found: " + pluginId;
+    }
+    std::cerr << "[addEffect] step1 found desc name=" << desc->name << " format=" << desc->pluginFormatName << std::endl;
 
+    // Create instance WITHOUT holding MessageManagerLock — plugin init needs
+    // the message loop to pump (Cocoa callbacks, plugin-internal callAsync).
+    // Holding the lock across this call deadlocks the engine on slow plugins.
     juce::String err;
     auto instance = formatManager.createPluginInstance(
         *desc, graph.getSampleRate(), graph.getBlockSize(), err);
-    if (!instance) return err.isNotEmpty() ? err : juce::String("Instantiation failed");
+    if (!instance) {
+        std::cerr << "[addEffect] FAIL: createPluginInstance returned null err='" << err << "'" << std::endl;
+        return err.isNotEmpty() ? err : juce::String("Instantiation failed");
+    }
+    std::cerr << "[addEffect] step2 created instance ok" << std::endl;
     instance->setPlayHead(playHead.get());
 
     if (base64State.isNotEmpty()) {
@@ -1064,14 +1115,25 @@ juce::String PluginHost::addEffect(const juce::String& channelId,
         if (idx >= 0) instance->setCurrentProgram(idx);
     }
 
+    // Now take MessageManagerLock for the graph mutation portion only.
+    std::cerr << "[addEffect] step3 acquiring MessageManagerLock" << std::endl;
+    juce::MessageManagerLock mml;
+    if (!mml.lockWasGained()) {
+        std::cerr << "[addEffect] FAIL: MessageManagerLock aborted" << std::endl;
+        return "aborted";
+    }
+
     auto effectNode = graph.addNode(std::move(instance));
     if (effectNode == nullptr) {
+        std::cerr << "[addEffect] FAIL: graph rejected effect node" << std::endl;
         return "graph rejected effect: " + pluginId;
     }
+    std::cerr << "[addEffect] step4 added node to graph" << std::endl;
 
     std::lock_guard<std::mutex> lock(mutex);
     auto it = channels.find(channelId);
     if (it == channels.end()) {
+        std::cerr << "[addEffect] FAIL: channel not found: " << channelId << std::endl;
         graph.removeNode(effectNode->nodeID);
         return "Channel not found: " + channelId;
     }
@@ -1082,11 +1144,13 @@ juce::String PluginHost::addEffect(const juce::String& channelId,
             e.nodeId = effectNode->nodeID;
             e.bypassed = false;
             rewireChannelUnlocked(it->second);
+            std::cerr << "[addEffect] DONE (replaced existing slot)" << std::endl;
             return {};
         }
     }
     it->second.effects.push_back({ slotId, effectNode->nodeID, false });
     rewireChannelUnlocked(it->second);
+    std::cerr << "[addEffect] DONE ch=" << channelId << std::endl;
     return {};
 }
 

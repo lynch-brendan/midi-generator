@@ -66,11 +66,17 @@ void StdioBridge::stop() {
 // roll edits, set_channel_gain) skip the lock to avoid starving the
 // message-thread timer that drives the playhead broadcaster.
 static bool commandMutatesGraph(const juce::String& cmd) {
-    return cmd == "load_plugin"
-        || cmd == "unload_plugin"
+    // NOTE: load_plugin and add_effect intentionally NOT here. They call
+    // formatManager.createPluginInstance internally, which needs the message
+    // thread to pump (Cocoa callbacks, plugin-internal callAsync). Holding
+    // MessageManagerLock across that deadlocks the engine — the plugin
+    // instantiation runs, needs a message-thread turn, and can't get one
+    // because we're holding it. Those two paths take the lock INTERNALLY,
+    // only around the graph mutation itself, after createPluginInstance
+    // returns. See PluginHost::loadPlugin / addEffect.
+    return cmd == "unload_plugin"
         || cmd == "add_gm_channel"
         || cmd == "add_drum_channel"
-        || cmd == "add_effect"
         || cmd == "remove_effect"
         || cmd == "reorder_effects"
         || cmd == "bypass_effect"
@@ -85,6 +91,15 @@ void StdioBridge::handleLine(const std::string& line) {
     juce::var msg = juce::JSON::parse(juce::String(line));
     if (!msg.isObject()) return;
     const auto cmd = msg["cmd"].toString();
+    // Log every command except hot-path noise so we can see what the JS is
+    // actually sending. Filter out the ~60Hz position poll and per-note edits.
+    if (cmd != "transport_get" && cmd != "pattern_get_position") {
+        std::cerr << "[cmd] " << cmd;
+        if (msg["channelId"].isString())  std::cerr << " channelId=" << msg["channelId"].toString();
+        if (msg["pluginId"].isString())   std::cerr << " pluginId=" << msg["pluginId"].toString();
+        if (msg["gmProgram"].isInt())     std::cerr << " gmProgram=" << (int) msg["gmProgram"];
+        std::cerr << std::endl;
+    }
     juce::var reply;
     if (commandMutatesGraph(cmd)) {
         // Graph mutations race with JUCE's async render-sequence rebuild (also
