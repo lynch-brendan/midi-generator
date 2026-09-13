@@ -1321,6 +1321,74 @@
     letter-spacing: 0.5px;
     flex: 0 0 auto;
   }
+
+  /* Section rows — one per major bundle grouping. Header has a master
+     checkbox + description + count/size + a details-toggle button. Body
+     is a collapsible list of individual plugin checkboxes. */
+  #onboarding-overlay .ob-section-row {
+    width: 100%;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px;
+    margin-bottom: 12px;
+    overflow: hidden;
+  }
+  #onboarding-overlay .ob-section-header {
+    display: flex; align-items: flex-start; gap: 14px;
+    padding: 16px 20px;
+  }
+  #onboarding-overlay .ob-section-master {
+    margin: 5px 0 0; width: 18px; height: 18px;
+    accent-color: var(--accent);
+    cursor: pointer; flex-shrink: 0;
+  }
+  #onboarding-overlay .ob-section-body {
+    flex: 1; min-width: 0;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  #onboarding-overlay .ob-section-name {
+    font-size: 15px; font-weight: 700; color: var(--text);
+    letter-spacing: 0.2px;
+  }
+  #onboarding-overlay .ob-section-reason {
+    font-size: 12px; color: var(--text-dim); line-height: 1.5;
+  }
+  #onboarding-overlay .ob-section-meta {
+    font-size: 11px; color: var(--dim);
+    font-variant-numeric: tabular-nums;
+    margin-top: 2px;
+  }
+  #onboarding-overlay .ob-section-meta .ob-section-count,
+  #onboarding-overlay .ob-section-meta .ob-section-size {
+    color: var(--accent); font-weight: 600;
+  }
+  #onboarding-overlay .ob-section-toggle {
+    background: transparent; border: 1px solid rgba(255,255,255,0.12);
+    color: var(--text-dim); padding: 6px 12px; font-size: 11px;
+    border-radius: 6px; cursor: pointer; font-family: inherit;
+    flex-shrink: 0;
+    transition: color 100ms ease, border-color 100ms ease;
+  }
+  #onboarding-overlay .ob-section-toggle:hover {
+    color: var(--accent); border-color: var(--accent);
+  }
+  #onboarding-overlay .ob-section-details {
+    border-top: 1px solid rgba(255,255,255,0.06);
+    padding: 8px 16px 14px;
+    background: rgba(0,0,0,0.15);
+  }
+  #onboarding-overlay .ob-section-items {
+    display: flex; flex-direction: column; gap: 0;
+  }
+  #onboarding-overlay .ob-section-items .ob-item {
+    padding: 6px 8px;
+  }
+  #onboarding-overlay .ob-section-items .ob-item .ob-item-name {
+    font-size: 11px;
+  }
+  #onboarding-overlay .ob-section-items .ob-item .ob-item-meta {
+    font-size: 10px;
+  }
 </style>
 </head>
 <body>
@@ -1348,23 +1416,62 @@
     </button>
   </div>
 
-  <!-- Step 2: bundle offer. Free plugins, checkbox list, optional extras.
-       We don't surface a "plugin scan" step because the engine scans at
-       boot (same as every DAW). The AI just uses their plugin list once
-       they start chatting. -->
+  <!-- Step 2: bundle offer. Two collapsible section rows with a master
+       checkbox each. Section header shows name + count + size + reason.
+       Expandable dropdown reveals individual plugin checkboxes. -->
   <div class="ob-view ob-view-wide" id="ob-bundle-view" style="display:none;">
     <div class="ob-step-title">Want some free plugins?</div>
     <div class="ob-step-desc">
-      We recommend these free instruments and effects. The essentials are
-      checked; uncheck what you don't want. Optional extras below need a
-      free account on the vendor's site.
+      We recommend a curated starter pack of free instruments and effects.
+      Check whole sections, or open each section to pick individually.
     </div>
-    <div id="ob-bundle-groups"></div>
-    <div id="ob-extras-container" style="display:none;">
-      <div class="ob-group-title" style="margin-top:18px;">Optional extras</div>
-      <div id="ob-extras-list"></div>
+
+    <!-- Section 1: Starter pack — all instruments + effects + sound content.
+         Default state: master ON, dropdown collapsed. -->
+    <div class="ob-section-row" data-section="starter">
+      <div class="ob-section-header">
+        <input type="checkbox" class="ob-section-master" checked>
+        <div class="ob-section-body">
+          <div class="ob-section-name">Free starter pack</div>
+          <div class="ob-section-reason">
+            Everything an AI-DAW needs day one — synths, drums, effects,
+            sound content. All free and redistributable.
+          </div>
+          <div class="ob-section-meta">
+            <span class="ob-section-count">0</span> items ·
+            <span class="ob-section-size">0</span> MB
+          </div>
+        </div>
+        <button class="ob-section-toggle">Details ▼</button>
+      </div>
+      <div class="ob-section-details" style="display:none;">
+        <div class="ob-section-items"></div>
+      </div>
     </div>
-    <div class="ob-total" id="ob-bundle-total">Selected: 0 items · ~0 MB</div>
+
+    <!-- Section 2: Optional extras — friction plugins requiring signup.
+         Default state: master OFF, dropdown collapsed. -->
+    <div class="ob-section-row" data-section="extras">
+      <div class="ob-section-header">
+        <input type="checkbox" class="ob-section-master">
+        <div class="ob-section-body">
+          <div class="ob-section-name">Optional extras</div>
+          <div class="ob-section-reason">
+            Excellent tools that require a free account on the vendor's
+            site. Skip for now if you'd rather stay in the flow.
+          </div>
+          <div class="ob-section-meta">
+            <span class="ob-section-count">0</span> items ·
+            <span class="ob-section-size">0</span> MB
+          </div>
+        </div>
+        <button class="ob-section-toggle">Details ▼</button>
+      </div>
+      <div class="ob-section-details" style="display:none;">
+        <div class="ob-section-items"></div>
+      </div>
+    </div>
+
     <div class="ob-step-actions">
       <button class="ob-btn ob-btn-secondary" id="ob-skip">Skip everything</button>
       <button class="ob-btn ob-btn-primary ob-step-cta" id="ob-install">
@@ -6133,135 +6240,146 @@ function renderOnboardingScan(known) {
   }
 }
 
-// Render the bundle checkbox groups from the manifest. Starter items are
-// checked by default; extras are unchecked (opt-in). Sound content is
-// grouped as its own section under the bundle list.
+// Render the two collapsible section rows (Free starter pack + Optional
+// extras) from the manifest. Section master checkbox toggles all items in
+// that section on/off. Details button expands individual item list.
 function renderOnboardingBundle(manifest) {
   onboardingState.bundleManifest = manifest;
   onboardingState.selectedIds = new Set();
-  const groupsEl = document.getElementById('ob-bundle-groups');
-  if (!groupsEl || !manifest) return;
-  groupsEl.innerHTML = '';
+  if (!manifest) return;
 
   const plugins = manifest.plugins || [];
   const soundContent = manifest.sound_content || [];
   const bundles = manifest.bundles || {};
-  const byId = {};
-  for (const p of plugins) byId[p.id] = p;
 
-  // Which groups get checked by default? Starter yes, extras no.
-  const defaultCheckedGroups = new Set(['starter', 'sound_content']);
-  // Skip friction plugins from the main bundle — they go in the extras panel.
+  // Which ids belong to which section.
   const frictionIds = new Set(['vital', 'steven-slate-drums-5-5-free']);
+  const starterIds = [
+    ...(bundles.starter || []),
+    ...(bundles.extras_synths || []),
+    ...(bundles.extras_drums || []),
+    ...(bundles.extras_effects || []),
+    ...(bundles.sound_content || []),
+  ].filter(id => !frictionIds.has(id));
+  const extrasIds = [
+    ...(bundles.extras_synths || []),
+    ...(bundles.extras_drums || []),
+  ].filter(id => frictionIds.has(id));
 
-  const groupOrder = [
-    ['starter',        'Starter — essentials',    'plugin'],
-    ['extras_synths',  'Extra synths',            'plugin'],
-    ['extras_drums',   'Extra drums',             'plugin'],
-    ['extras_effects', 'Extra effects',           'plugin'],
-    ['sound_content',  'Sound packs & samples',   'content'],
-  ];
+  // Item lookup — plugins and sound-content merged for convenience.
+  const byId = {};
+  for (const p of plugins) byId[p.id] = { ...p, size: p.file_size_mb || 0, kind: 'plugin' };
+  for (const c of soundContent) byId[c.id] = { ...c, size: c.size_mb || 0, kind: 'content' };
 
-  for (const [groupKey, groupLabel, itemKind] of groupOrder) {
-    const idList = bundles[groupKey] || [];
-    if (!idList.length) continue;
-    const group = document.createElement('div');
-    group.className = 'ob-group';
-    const title = document.createElement('div');
-    title.className = 'ob-group-title';
-    title.textContent = groupLabel;
-    group.appendChild(title);
-    for (const id of idList) {
-      let item;
-      if (itemKind === 'content') {
-        item = (soundContent.find(c => c.id === id));
-        if (!item) continue;
-      } else {
-        item = byId[id];
-        if (!item) continue;
-        if (frictionIds.has(id)) continue; // route to extras section below
-      }
-      const row = document.createElement('label');
-      row.className = 'ob-item';
-      const checked = defaultCheckedGroups.has(groupKey);
-      if (checked) onboardingState.selectedIds.add(id);
-      const size = itemKind === 'content' ? (item.size_mb || 0) : (item.file_size_mb || 0);
-      const category = itemKind === 'content' ? (item.format || 'content')
-                                              : (item.category || '');
-      row.innerHTML = `
-        <input type="checkbox" data-id="${id}" ${checked ? 'checked' : ''}>
-        <div class="ob-item-body">
-          <div class="ob-item-name">${item.name}</div>
-          <div class="ob-item-meta">${category}</div>
-          ${item.warning ? `<div class="ob-warning">⚠ ${item.warning}</div>` : ''}
-        </div>
-        <div class="ob-item-size">${size ? size + ' MB' : ''}</div>
-      `;
-      row.querySelector('input').addEventListener('change', (e) => {
-        if (e.target.checked) onboardingState.selectedIds.add(id);
-        else onboardingState.selectedIds.delete(id);
-        updateOnboardingTotal();
-      });
-      group.appendChild(row);
-    }
-    groupsEl.appendChild(group);
-  }
+  onboardingState.sectionIds = { starter: starterIds, extras: extrasIds };
+  onboardingState.byId = byId;
+
+  // Starter: check all by default. Extras: none by default.
+  for (const id of starterIds) onboardingState.selectedIds.add(id);
+
+  renderSection('starter', starterIds, byId, true);
+  renderSection('extras', extrasIds, byId, false);
   updateOnboardingTotal();
 }
 
-// Optional extras — friction plugins that require account signup.
-// Rendered as a separate opt-in section under the main bundle.
-function renderOnboardingExtras(manifest) {
-  const section = document.getElementById('ob-extras-container');
-  const listEl = document.getElementById('ob-extras-list');
-  if (!section || !listEl || !manifest) return;
-  const frictionIds = ['vital', 'steven-slate-drums-5-5-free'];
-  const plugins = manifest.plugins || [];
-  const byId = {};
-  for (const p of plugins) byId[p.id] = p;
-  const items = frictionIds.map(id => byId[id]).filter(Boolean);
-  if (!items.length) return;
-  section.style.display = '';
-  listEl.innerHTML = '';
-  for (const item of items) {
-    const row = document.createElement('label');
-    row.className = 'ob-item';
-    row.innerHTML = `
-      <input type="checkbox" data-id="${item.id}">
+function renderSection(key, idList, byId, masterOnByDefault) {
+  const row = document.querySelector(`.ob-section-row[data-section="${key}"]`);
+  if (!row) return;
+  const master = row.querySelector('.ob-section-master');
+  const toggle = row.querySelector('.ob-section-toggle');
+  const details = row.querySelector('.ob-section-details');
+  const itemsEl = row.querySelector('.ob-section-items');
+
+  master.checked = masterOnByDefault;
+
+  // Build the individual item rows.
+  itemsEl.innerHTML = '';
+  for (const id of idList) {
+    const item = byId[id];
+    if (!item) continue;
+    const label = document.createElement('label');
+    label.className = 'ob-item';
+    const checked = onboardingState.selectedIds.has(id);
+    label.innerHTML = `
+      <input type="checkbox" data-id="${id}" ${checked ? 'checked' : ''}>
       <div class="ob-item-body">
         <div class="ob-item-name">${item.name}</div>
-        <div class="ob-item-meta">${item.category || ''}</div>
-        <div class="ob-warning">⚠ Requires a free account on the vendor's site</div>
+        <div class="ob-item-meta">${item.category || item.format || ''}</div>
       </div>
-      <div class="ob-item-size">${item.file_size_mb ? item.file_size_mb + ' MB' : ''}</div>
+      <div class="ob-item-size">${item.size ? item.size + ' MB' : ''}</div>
     `;
-    row.querySelector('input').addEventListener('change', (e) => {
-      if (e.target.checked) onboardingState.selectedIds.add(item.id);
-      else onboardingState.selectedIds.delete(item.id);
+    label.querySelector('input').addEventListener('change', (e) => {
+      if (e.target.checked) onboardingState.selectedIds.add(id);
+      else onboardingState.selectedIds.delete(id);
+      syncSectionMaster(key);
+      updateSectionMeta(key);
       updateOnboardingTotal();
     });
-    listEl.appendChild(row);
+    itemsEl.appendChild(label);
   }
+
+  // Master toggles all items in the section.
+  master.onchange = () => {
+    if (master.checked) {
+      for (const id of idList) onboardingState.selectedIds.add(id);
+    } else {
+      for (const id of idList) onboardingState.selectedIds.delete(id);
+    }
+    // Re-render item checkboxes to match master state.
+    for (const inp of itemsEl.querySelectorAll('input[type=checkbox]')) {
+      inp.checked = master.checked;
+    }
+    updateSectionMeta(key);
+    updateOnboardingTotal();
+  };
+
+  // Details expand/collapse.
+  toggle.onclick = () => {
+    const open = details.style.display !== 'none';
+    details.style.display = open ? 'none' : '';
+    toggle.textContent = open ? 'Details ▼' : 'Hide ▲';
+  };
+
+  updateSectionMeta(key);
 }
 
-function updateOnboardingTotal() {
-  const el = document.getElementById('ob-bundle-total');
-  if (!el || !onboardingState.bundleManifest) return;
-  const manifest = onboardingState.bundleManifest;
-  const plugins = manifest.plugins || [];
-  const soundContent = manifest.sound_content || [];
-  const byId = {};
-  for (const p of plugins) byId[p.id] = { size: p.file_size_mb || 0 };
-  for (const c of soundContent) byId[c.id] = { size: c.size_mb || 0 };
-  let totalMb = 0;
-  let count = 0;
-  for (const id of onboardingState.selectedIds) {
-    const it = byId[id];
-    if (!it) continue;
-    totalMb += it.size;
-    count++;
+function syncSectionMaster(key) {
+  const row = document.querySelector(`.ob-section-row[data-section="${key}"]`);
+  if (!row) return;
+  const master = row.querySelector('.ob-section-master');
+  const idList = onboardingState.sectionIds[key] || [];
+  let anyChecked = false, allChecked = true;
+  for (const id of idList) {
+    if (onboardingState.selectedIds.has(id)) anyChecked = true;
+    else allChecked = false;
   }
-  el.textContent = `Selected: ${count} item${count === 1 ? '' : 's'} · ~${totalMb.toLocaleString()} MB`;
+  master.checked = allChecked && idList.length > 0;
+  master.indeterminate = anyChecked && !allChecked;
+}
+
+function updateSectionMeta(key) {
+  const row = document.querySelector(`.ob-section-row[data-section="${key}"]`);
+  if (!row) return;
+  const idList = onboardingState.sectionIds[key] || [];
+  const byId = onboardingState.byId || {};
+  let count = 0, size = 0;
+  for (const id of idList) {
+    if (onboardingState.selectedIds.has(id)) {
+      count++;
+      size += (byId[id] && byId[id].size) || 0;
+    }
+  }
+  row.querySelector('.ob-section-count').textContent = count;
+  row.querySelector('.ob-section-size').textContent = size.toLocaleString();
+}
+
+// Kept as a no-op wrapper — the extras section is rendered inside
+// renderOnboardingBundle now. Called by showOnboarding().
+function renderOnboardingExtras(_manifest) { /* handled by renderOnboardingBundle */ }
+
+function updateOnboardingTotal() {
+  // Deprecated in the new section-row layout — meta lives per-section.
+  // Left as a no-op so any stale callers don't blow up.
 }
 
 // Fire the on-demand research trigger so any of the user's installed plugins
