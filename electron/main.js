@@ -29,31 +29,102 @@ function findAudioEngineBinary() {
   return candidates.find(p => p && fs.existsSync(p));
 }
 
-// On first launch, copy any bundled SFZ folders into the user's Sfizz
-// default folder so they show up in Sfizz's file picker without setup.
-// Idempotent: only copies folders that don't already exist.
+// Locate the bundled-instruments folder — dev tree in the repo, or
+// packaged app resources under process.resourcesPath. Returns null if
+// neither exists (e.g. web-only build).
+function findBundledInstrumentsDir() {
+  const dev  = path.join(__dirname, '..', 'audio-engine', 'bundled-instruments');
+  const prod = path.join(process.resourcesPath || '', 'bundled-instruments');
+  if (fs.existsSync(dev)) return dev;
+  if (fs.existsSync(prod)) return prod;
+  return null;
+}
+
+// On first launch, seed bundled plugin CONTENT (patches, wavetables,
+// samples) into each plugin's user data folder. Every plugin binary we
+// bundle ships with an empty preset list unless its factory data is
+// placed on disk where the plugin expects it. This function does that.
+//
+// Idempotent: each plugin's seed only runs if its dest folder is missing.
+// Long-term: extend this map when we bundle Sfizz content, Helm banks, etc.
 function seedBundledInstruments() {
+  const bundle = findBundledInstrumentsDir();
+  if (!bundle) return;
+  const home = require('os').homedir();
+
+  // 1) Legacy SFZ folder path (existing seed). Copies bundled-instruments/sfz/*
+  //    to ~/Documents/SFZ instruments/*. Kept for Sfizz content once we
+  //    add it — no-op if the source folder is absent.
   try {
-    const devBundle  = path.join(__dirname, '..', 'audio-engine', 'bundled-instruments', 'sfz');
-    const prodBundle = path.join(process.resourcesPath || '', 'bundled-instruments', 'sfz');
-    const source = fs.existsSync(devBundle) ? devBundle
-                 : fs.existsSync(prodBundle) ? prodBundle
-                 : null;
-    if (!source) return;
-    const dest = path.join(require('os').homedir(), 'Documents', 'SFZ instruments');
-    fs.mkdirSync(dest, { recursive: true });
-    const entries = fs.readdirSync(source, { withFileTypes: true });
-    for (const e of entries) {
-      if (!e.isDirectory()) continue;
-      const from = path.join(source, e.name);
-      const to = path.join(dest, e.name);
-      if (fs.existsSync(to)) continue;
-      // Recursive copy (Node 16.7+ supports fs.cpSync).
-      fs.cpSync(from, to, { recursive: true });
-      console.log('[nasty] seeded instrument:', e.name);
+    const sfzSource = path.join(bundle, 'sfz');
+    if (fs.existsSync(sfzSource)) {
+      const sfzDest = path.join(home, 'Documents', 'SFZ instruments');
+      fs.mkdirSync(sfzDest, { recursive: true });
+      for (const e of fs.readdirSync(sfzSource, { withFileTypes: true })) {
+        if (!e.isDirectory()) continue;
+        const to = path.join(sfzDest, e.name);
+        if (fs.existsSync(to)) continue;
+        fs.cpSync(path.join(sfzSource, e.name), to, { recursive: true });
+        console.log('[nasty] seeded sfz:', e.name);
+      }
     }
   } catch (e) {
-    console.error('[nasty] seedBundledInstruments failed:', e);
+    console.error('[nasty] sfz seed failed:', e);
+  }
+
+  // 2) Surge XT factory data. Surge XT's plugin binary is bundled but its
+  //    factory library (patches, wavetables, FX presets, modulators) is a
+  //    separate ~500 MB payload. Without it, the plugin loads with an empty
+  //    patch browser — technically alive, musically useless.
+  //
+  //    The upstream tarball's layout is `Surge Synth Team/SurgeXTData/*`
+  //    with subfolders `patches_factory`, `wavetables`, etc. We ship it
+  //    already extracted under `bundled-instruments/Surge Synth Team/`
+  //    (avoids a tar-extract step on first launch — a straight file copy
+  //    is faster and doesn't need a shell).
+  //
+  //    Surge XT can't scan admin-writable factory locations without root,
+  //    so we copy the content into the user data folder (`~/Documents/
+  //    Surge XT/`). Folder-name mapping matches Surge's user-folder
+  //    conventions:
+  //      patches_factory      → Patches
+  //      wavetables           → Wavetables
+  //      fx_presets           → FX Presets
+  //      modulator_presets    → Modulator Presets
+  //
+  //    Idempotent: presence of Patches/Basses/ signals we've seeded. On
+  //    first launch this takes a couple seconds (~5000 files). Subsequent
+  //    launches short-circuit.
+  try {
+    const surgeSrc = path.join(bundle, 'Surge Synth Team', 'SurgeXTData');
+    if (fs.existsSync(surgeSrc)) {
+      const surgeDest = path.join(home, 'Documents', 'Surge XT');
+      const marker = path.join(surgeDest, 'Patches', 'Basses');
+      if (!fs.existsSync(marker)) {
+        fs.mkdirSync(surgeDest, { recursive: true });
+        const jobs = [
+          ['patches_factory',    'Patches'],
+          ['wavetables',         'Wavetables'],
+          ['fx_presets',         'FX Presets'],
+          ['modulator_presets',  'Modulator Presets'],
+        ];
+        for (const [from, to] of jobs) {
+          const src = path.join(surgeSrc, from);
+          if (!fs.existsSync(src)) continue;
+          const dst = path.join(surgeDest, to);
+          fs.mkdirSync(dst, { recursive: true });
+          for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+            const s = path.join(src, entry.name);
+            const d = path.join(dst, entry.name);
+            if (fs.existsSync(d)) continue;   // never overwrite user edits
+            fs.cpSync(s, d, { recursive: true });
+          }
+        }
+        console.log('[nasty] seeded Surge XT factory data →', surgeDest);
+      }
+    }
+  } catch (e) {
+    console.error('[nasty] Surge XT seed failed:', e);
   }
 }
 
