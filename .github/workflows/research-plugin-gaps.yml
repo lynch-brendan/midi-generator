@@ -1,0 +1,73 @@
+# Daily automation of the plugin-knowledge research pipeline.
+#
+# What it does:
+#   1. Fetches the plugin gap log from the production Nasty server.
+#   2. Runs scripts/research_plugin_gaps.py to research the top 10
+#      most-missed plugins via Claude + web search.
+#   3. If any files changed, commits them directly to main. Railway
+#      auto-deploys, users see the new cheatsheets on their next chat.
+#
+# Fully automatic — no PR review step. All new sheets are marked
+# `verified: false` so Brendan can flip them to true when he skims.
+# If Claude generates garbage for a plugin, revert the commit locally:
+#   git revert HEAD && git push
+#
+# Manual trigger: Actions tab → "Research plugin gaps" → Run workflow.
+# Scheduled: daily at 04:00 UTC.
+#
+# Setup required (one-time, already done):
+#   gh secret set ANTHROPIC_API_KEY
+
+name: Research plugin gaps
+
+on:
+  schedule:
+    - cron: "0 4 * * *"   # every day at 04:00 UTC
+  workflow_dispatch:       # allow manual trigger from GitHub UI
+
+# Needs write on contents to commit + push cheatsheet updates.
+permissions:
+  contents: write
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install anthropic
+
+      - name: Run research script
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python scripts/research_plugin_gaps.py \
+            --from-server https://museaimusician.com \
+            --top 10
+
+      - name: Commit and push if anything changed
+        run: |
+          if [[ -n "$(git status --porcelain plugin-knowledge/)" ]]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add plugin-knowledge/
+            git commit -m "Nasty: auto-research plugin cheatsheets (daily run)
+
+          Automated daily plugin-knowledge research via Claude Opus + web
+          search. Pulled from the production gap log at
+          museaimusician.com/nasty/plugin-gaps.
+
+          All new sheets marked verified: false — review and flip to true
+          when they check out. If any entry is bad, revert this commit."
+            git push origin main
+          else
+            echo "No new cheatsheets — gap log was empty or all plugins already researched."
+          fi
