@@ -9,6 +9,14 @@ Piano, electric piano, organ, harpsichord — anything with a keyboard voice. Re
 
 ## Options
 
+### Vital
+
+- **Character:** Clean and versatile; with third-party lo-fi banks it becomes warm, dusty, and tape-flavored electric-piano-style keys.
+- **Best for:** Lo-fi hip-hop keys, synthwave electric pianos, plucky bell tones, hybrid keys layers.
+- **Emotional tags:** warm, nostalgic, mellow, chilled, intimate
+- **Comparison:** Not a sampled Rhodes/Wurli emulation — more of a synthesized keys sound; pair with a lo-fi preset bank for the vintage keys vibe.
+- **How to use:** `load_instrument(channel_id=..., plugin_id="vital", preset_name="<keys preset name>")`
+
 ### GM Acoustic Grand Piano (program 0)
 
 - **Character:** clean, natural concert grand piano

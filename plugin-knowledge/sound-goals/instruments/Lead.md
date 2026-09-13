@@ -9,6 +9,14 @@ Front-and-center melodic voices — bright leads, aggressive leads, plucks, arps
 
 ## Options
 
+### Vital
+
+- **Character:** Bright, articulate, high-fidelity. Wavetable morphing gives leads a lot of motion and expression; MPE support enables per-note pitch/timbre.
+- **Best for:** EDM/festival leads, future bass supersaw-style leads, plucky arps, expressive MPE lead work, hyperpop.
+- **Emotional tags:** uplifting, euphoric, cutting, expressive, modern
+- **Comparison:** Comparable to Serum for modern wavetable leads; more visual/animated interface than Massive; more digital and precise than analog-modeled leads like Diva.
+- **How to use:** `load_instrument(channel_id=..., plugin_id="vital", preset_name="<lead preset name>")`
+
 ### Surge XT — Leads category patches
 
 - **Character:** hybrid subtractive/wavetable/FM — huge range of lead tones

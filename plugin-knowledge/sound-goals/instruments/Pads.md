@@ -9,6 +9,14 @@ Sustained background textures — warm pads, ethereal pads, evolving atmospheres
 
 ## Options
 
+### Vital
+
+- **Character:** Wide, evolving, lush. The stereo-split LFO and drawable wavetables produce pads with constant motion and huge stereo image; can go from warm and analog-ish to glassy and spectral.
+- **Best for:** Cinematic pads, ambient beds, evolving textures, lo-fi keys/pads, synthwave washes.
+- **Emotional tags:** dreamy, ethereal, atmospheric, nostalgic, spacious
+- **Comparison:** Wider and more animated than Massive pads thanks to stereo-mod LFOs; not as organic as Omnisphere but far more sound-designable and free.
+- **How to use:** `load_instrument(channel_id=..., plugin_id="vital", preset_name="<pad preset name>")`
+
 ### Surge XT — Pads category patches
 
 - **Character:** hybrid subtractive/wavetable — capable of warm, ethereal, evolving, aggressive pad textures

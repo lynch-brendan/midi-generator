@@ -9,6 +9,14 @@ Anything that lives in the low register — sub bass, growl bass, 808s, funky ba
 
 ## Options
 
+### Vital
+
+- **Character:** Clean, modern, digital; can be aggressive and growling with unison + wavetable position modulation, or deep and sub-heavy with a simple sine/triangle table. Very low aliasing and low noise floor.
+- **Best for:** Dubstep/riddim growls, reese basses, neuro basses, future bass, house/EDM plucky basses, clean sub layers.
+- **Emotional tags:** aggressive, gritty, punchy, futuristic, hard, energetic
+- **Comparison:** Sonically in the same league as Serum for wavetable bass design; cleaner and more "digital" than Massive; free, unlike both.
+- **How to use:** `load_instrument(channel_id=..., plugin_id="vital", preset_name="<bass preset name>")`
+
 ### Surge XT — Basses category patches
 
 - **Character:** hybrid subtractive/wavetable — capable of almost any bass tone
