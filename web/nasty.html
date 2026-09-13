@@ -5246,6 +5246,13 @@ function runCmd(cmd) {
         'Space  Play/Stop\n⌘S  Save   ⌘O  Load   ⌘E  Export WAV   ⌘N  Clear\n\n' +
         'Z–M on the laptop keyboard plays the armed channel as a piano.'
       );
+    case 'reset-onboarding':
+      // Clears the onboarded flag and re-shows the welcome flow. Testing
+      // aid — lets you experience the fresh-install path anytime without
+      // wiping your Nasty install.
+      try { localStorage.removeItem('nasty_onboarded'); } catch (e) { /* ignore */ }
+      if (typeof showOnboarding === 'function') showOnboarding();
+      return;
   }
   // Pattern selection from PATTERNS menu
   if (cmd && cmd.startsWith('sel-pat:')) {

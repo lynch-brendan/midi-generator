@@ -340,6 +340,11 @@ function buildMenu() {
       submenu: [
         { label: 'Keyboard shortcuts…', click: () => sendCmd('help-shortcuts') },
         { type: 'separator' },
+        // Clears the onboarded flag and re-shows the welcome flow. Testing
+        // aid for the maintainer — lets Brendan experience the fresh-install
+        // path without wiping his real Nasty install.
+        { label: 'Reset onboarding…', click: () => sendCmd('reset-onboarding') },
+        { type: 'separator' },
         { label: 'Nasty — an AI-native DAW', enabled: false },
       ],
     },
