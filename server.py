@@ -1455,6 +1455,25 @@ def nasty_plugin_knowledge_stale(req: NastyStaleReport):
     return {"ok": True}
 
 
+# Bundle manifest — the curated list of free plugins + sample content Nasty
+# offers new users during onboarding. Loaded at module init so we don't hit
+# the disk on every request; the file changes rarely and only on redeploy.
+_BUNDLE_MANIFEST_PATH = Path(__file__).parent / "nasty-bundle.json"
+try:
+    _BUNDLE_MANIFEST = json.loads(_BUNDLE_MANIFEST_PATH.read_text(encoding="utf-8"))
+except Exception:
+    _BUNDLE_MANIFEST = {"plugins": [], "sound_content": [], "bundles": {}}
+
+
+@app.get("/nasty/bundle-manifest")
+def nasty_bundle_manifest():
+    # Renderer fetches this during onboarding to build the plugin-checkbox
+    # UI. Everything here is public info (download URLs, plugin names) —
+    # not a secret, just centralized so the manifest can be updated by
+    # editing one file in the repo.
+    return _BUNDLE_MANIFEST
+
+
 @app.get("/nasty/plugin-gaps")
 def nasty_plugin_gaps():
     # Maintainer endpoint — dumps the currently-logged gap entries so the
