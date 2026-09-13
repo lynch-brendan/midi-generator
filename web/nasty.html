@@ -1336,7 +1336,7 @@
 <!-- Onboarding overlay — first-launch experience. Populated by
      showOnboarding() in the boot script. Hidden by default; shown when
      audio_ready fires and localStorage.nasty_onboarded is not truthy.
-     Five-step flow: welcome → scan-ask → scan-results → bundle → installing.
+     Three-step flow: welcome → bundle → installing.
      One clear ask per screen. -->
 <div id="onboarding-overlay" class="hidden" style="display:none;">
 
@@ -1348,35 +1348,10 @@
     </button>
   </div>
 
-  <!-- Step 2: ask to scan. macOS doesn't gate the standard VST3/AU folders,
-       so this isn't a real permission — it's a UX gesture. Sets the tone
-       that Nasty respects the machine. -->
-  <div class="ob-view" id="ob-scan-ask-view" style="display:none;">
-    <div class="ob-step-title">Can we look at your plugins?</div>
-    <div class="ob-step-desc">
-      Nasty scans your VST3 and AU folders so the AI can use the
-      instruments you already own. Nothing leaves your computer.
-    </div>
-    <div class="ob-step-actions">
-      <button class="ob-btn ob-btn-secondary" id="ob-scan-no">Not now</button>
-      <button class="ob-btn ob-btn-primary ob-step-cta" id="ob-scan-yes">
-        Scan my plugins
-      </button>
-    </div>
-  </div>
-
-  <!-- Step 3: scan results. Only shown when the user opts in. -->
-  <div class="ob-view" id="ob-scan-results-view" style="display:none;">
-    <div class="ob-step-title">Here's what we found</div>
-    <div class="ob-step-desc" id="ob-scan-summary">Scanning…</div>
-    <div class="ob-step-actions">
-      <button class="ob-btn ob-btn-primary ob-step-cta" id="ob-scan-continue">
-        Continue
-      </button>
-    </div>
-  </div>
-
-  <!-- Step 4: bundle offer. Free plugins, checkbox list, optional extras. -->
+  <!-- Step 2: bundle offer. Free plugins, checkbox list, optional extras.
+       We don't surface a "plugin scan" step because the engine scans at
+       boot (same as every DAW). The AI just uses their plugin list once
+       they start chatting. -->
   <div class="ob-view ob-view-wide" id="ob-bundle-view" style="display:none;">
     <div class="ob-step-title">Want some free plugins?</div>
     <div class="ob-step-desc">
@@ -6309,8 +6284,6 @@ async function triggerResearchNow() {
 // each step; Skip on the bundle step jumps straight to done.
 const OB_STEPS = [
   'ob-welcome-view',
-  'ob-scan-ask-view',
-  'ob-scan-results-view',
   'ob-bundle-view',
   'ob-installing-view',
 ];
@@ -6323,11 +6296,8 @@ function setOnboardingStep(stepId) {
   }
 }
 
-// Filled in when the user opts to scan. Cached across steps so scan-results
-// can render without re-fetching. Set to null on "Not now" so we skip the
-// scan-results step entirely.
-let obPluginKnown = null;   // dict of lowercase plugin name → cheatsheet text
-let obManifest = null;      // bundle manifest
+// Manifest cached across the flow so we don't re-fetch between steps.
+let obManifest = null;
 
 async function showOnboarding() {
   const overlay = document.getElementById('onboarding-overlay');
@@ -6336,37 +6306,21 @@ async function showOnboarding() {
   setOnboardingStep('ob-welcome-view');
   requestAnimationFrame(() => overlay.classList.remove('hidden'));
 
-  // Kick off manifest prefetch so the bundle step paints fast.
+  // Prefetch the manifest while they read the welcome screen.
   const manifestPromise = fetchOnboardingData();
 
-  // ---- Step 1: Welcome → Scan ask ----
-  document.getElementById('ob-get-started').onclick = () => {
-    setOnboardingStep('ob-scan-ask-view');
-  };
-
-  // ---- Step 2: Scan ask → Scan results (or skip to bundle) ----
-  document.getElementById('ob-scan-yes').onclick = async () => {
-    setOnboardingStep('ob-scan-results-view');
-    // Now do the actual scan-render. Engine already scanned at boot; we
-    // just fetch cheatsheet coverage and render the summary.
-    const { manifest, known } = await manifestPromise;
-    obPluginKnown = known || {};
-    obManifest = manifest || null;
-    renderScanResultsSummary(obPluginKnown);
-  };
-  document.getElementById('ob-scan-no').onclick = async () => {
-    // Skip the scan display. Still load the manifest so the bundle step
-    // works. Nothing changes technically — the engine already scanned.
+  // ---- Step 1: Welcome → Bundle ----
+  document.getElementById('ob-get-started').onclick = async () => {
     const { manifest } = await manifestPromise;
     obManifest = manifest || null;
-    obPluginKnown = null;
-    goToBundleStep();
+    setOnboardingStep('ob-bundle-view');
+    if (obManifest) {
+      renderOnboardingBundle(obManifest);
+      renderOnboardingExtras(obManifest);
+    }
   };
 
-  // ---- Step 3: Scan results → Bundle ----
-  document.getElementById('ob-scan-continue').onclick = () => goToBundleStep();
-
-  // ---- Step 4: Bundle → Installing (or Skip → done) ----
+  // ---- Step 2: Bundle → Installing (or Skip → done) ----
   document.getElementById('ob-skip').onclick = () => {
     markOnboarded();
     triggerResearchNow();
@@ -6383,7 +6337,7 @@ async function showOnboarding() {
     kickOffBundleInstalls(selected);
   };
 
-  // ---- Step 5: Installing → done ----
+  // ---- Step 3: Installing → done ----
   document.getElementById('ob-done').onclick = () => {
     markOnboarded();
     if (window.nasty && window.nasty.engine) {
@@ -6392,34 +6346,6 @@ async function showOnboarding() {
     triggerResearchNow();
     dismissOnboarding();
   };
-}
-
-function goToBundleStep() {
-  setOnboardingStep('ob-bundle-view');
-  if (obManifest) {
-    renderOnboardingBundle(obManifest);
-    renderOnboardingExtras(obManifest);
-  }
-}
-
-// Renders the short summary line on the scan-results step. Reuses the
-// existing enginePluginsList + cheatsheet index.
-function renderScanResultsSummary(known) {
-  const el = document.getElementById('ob-scan-summary');
-  if (!el) return;
-  const total = (enginePluginsList || []).length;
-  const knownKeys = new Set(Object.keys(known || {}).map(k => k.toLowerCase()));
-  let matched = 0;
-  for (const p of (enginePluginsList || [])) {
-    const n = (p && p.name || '').toLowerCase();
-    if (n && knownKeys.has(n)) matched++;
-  }
-  const unknown = Math.max(0, total - matched);
-  const parts = [];
-  parts.push(`Found <b style="color:var(--accent);">${total}</b> plugin${total === 1 ? '' : 's'} on your Mac.`);
-  if (matched > 0) parts.push(`<b style="color:var(--accent);">${matched}</b> already have AI-ready cheatsheets.`);
-  if (unknown > 0) parts.push(`<b style="color:var(--accent);">${unknown}</b> will be researched automatically — the AI will know them in a few minutes.`);
-  el.innerHTML = parts.join('<br>');
 }
 
 // Look up an item (plugin or sound-content pack) by id in the current
