@@ -1270,26 +1270,24 @@
     font-size: 11px; color: var(--text-dim); margin-top: 10px;
     text-align: right;
   }
-  /* Welcome view — centered, minimal, inviting. Comes before setup. */
+  /* Welcome view — centered, minimal, inviting. Comes before setup.
+     Just brand + one button. */
   #onboarding-overlay #ob-welcome-view {
     display: flex; flex-direction: column; align-items: center;
     justify-content: center; text-align: center;
-    min-height: 70vh; gap: 22px;
+    min-height: 70vh; gap: 40px;
   }
   #onboarding-overlay #ob-welcome-view .ob-brand {
     font-size: 64px; letter-spacing: 6px; margin: 0;
   }
-  #onboarding-overlay .ob-welcome-tag {
-    font-size: 18px; color: var(--text); font-weight: 500;
-    letter-spacing: 0.5px;
-  }
-  #onboarding-overlay .ob-welcome-pitch {
-    font-size: 13px; color: var(--text-dim); line-height: 1.7;
-    max-width: 440px;
-  }
   #onboarding-overlay .ob-welcome-cta {
-    margin-top: 8px; padding: 14px 40px; font-size: 13px;
+    /* Override the `.ob-btn-primary { flex: 1 }` rule that came from the
+       Skip/Install actions row — in a column layout that flex-1 makes the
+       button stretch to fill the container's height. */
+    flex: 0 0 auto;
+    padding: 12px 32px; font-size: 13px;
     letter-spacing: 1px;
+    width: auto; min-width: 180px;
   }
 </style>
 </head>
@@ -1308,15 +1306,10 @@
      audio_ready fires and localStorage.nasty_onboarded is not truthy.
      Two views: welcome (initial) → setup (scan + bundle + extras + actions). -->
 <div id="onboarding-overlay" class="hidden" style="display:none;">
-  <!-- View 1: welcome. Shown first, dismissed by clicking Get started. -->
+  <!-- View 1: welcome. Shown first, dismissed by clicking Get started.
+       Deliberately minimal — just the brand and one button. -->
   <div id="ob-welcome-view">
     <div class="ob-brand">NASTY</div>
-    <div class="ob-welcome-tag">The AI-native DAW.</div>
-    <div class="ob-welcome-pitch">
-      Make a whole song by talking to it. Load your plugins, describe
-      what you want, hear it back. Let's set up your instruments —
-      takes about a minute.
-    </div>
     <button class="ob-btn ob-btn-primary ob-welcome-cta" id="ob-get-started">
       Get started
     </button>
