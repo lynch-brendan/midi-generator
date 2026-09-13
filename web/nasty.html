@@ -1270,24 +1270,56 @@
     font-size: 11px; color: var(--text-dim); margin-top: 10px;
     text-align: right;
   }
-  /* Welcome view — centered, minimal, inviting. Comes before setup.
-     Just brand + one button. */
-  #onboarding-overlay #ob-welcome-view {
+  /* Step-based onboarding — each .ob-view is one screen. Only one is
+     visible at a time; setOnboardingStep() flips display. Welcome + scan-ask
+     + scan-results are centered/minimal. Bundle + installing use the wider
+     card layout because they list a lot of items. */
+  #onboarding-overlay .ob-view {
     display: flex; flex-direction: column; align-items: center;
     justify-content: center; text-align: center;
-    min-height: 70vh; gap: 40px;
+    min-height: 70vh; gap: 24px;
+    width: 100%; max-width: 500px;
+  }
+  #onboarding-overlay .ob-view.ob-view-wide {
+    max-width: 640px;
+    justify-content: flex-start;
+    padding-top: 40px;
+    text-align: left;
   }
   #onboarding-overlay #ob-welcome-view .ob-brand {
     font-size: 64px; letter-spacing: 6px; margin: 0;
   }
-  #onboarding-overlay .ob-welcome-cta {
-    /* Override the `.ob-btn-primary { flex: 1 }` rule that came from the
-       Skip/Install actions row — in a column layout that flex-1 makes the
-       button stretch to fill the container's height. */
+  #onboarding-overlay .ob-step-title {
+    font-size: 22px; font-weight: 700; color: var(--text);
+    letter-spacing: 0.3px; margin: 0;
+  }
+  #onboarding-overlay .ob-step-desc {
+    font-size: 13px; color: var(--text-dim);
+    line-height: 1.6; max-width: 440px;
+    margin: 0;
+  }
+  #onboarding-overlay .ob-view-wide .ob-step-desc {
+    max-width: 100%; margin-bottom: 10px;
+  }
+  #onboarding-overlay .ob-step-actions {
+    display: flex; gap: 12px; margin-top: 8px;
+    justify-content: center;
+  }
+  #onboarding-overlay .ob-view-wide .ob-step-actions {
+    width: 100%; margin-top: 16px;
+    justify-content: flex-end;
+  }
+  #onboarding-overlay .ob-step-cta {
+    /* Override the flex:1 that came from the old side-by-side actions row. */
     flex: 0 0 auto;
     padding: 12px 32px; font-size: 13px;
     letter-spacing: 1px;
     width: auto; min-width: 180px;
+  }
+  #onboarding-overlay .ob-btn-secondary {
+    padding: 12px 24px; font-size: 12px;
+    letter-spacing: 0.5px;
+    flex: 0 0 auto;
   }
 </style>
 </head>
@@ -1304,54 +1336,82 @@
 <!-- Onboarding overlay — first-launch experience. Populated by
      showOnboarding() in the boot script. Hidden by default; shown when
      audio_ready fires and localStorage.nasty_onboarded is not truthy.
-     Two views: welcome (initial) → setup (scan + bundle + extras + actions). -->
+     Five-step flow: welcome → scan-ask → scan-results → bundle → installing.
+     One clear ask per screen. -->
 <div id="onboarding-overlay" class="hidden" style="display:none;">
-  <!-- View 1: welcome. Shown first, dismissed by clicking Get started.
-       Deliberately minimal — just the brand and one button. -->
-  <div id="ob-welcome-view">
+
+  <!-- Step 1: welcome. Just the brand and Get started. -->
+  <div class="ob-view" id="ob-welcome-view">
     <div class="ob-brand">NASTY</div>
-    <button class="ob-btn ob-btn-primary ob-welcome-cta" id="ob-get-started">
+    <button class="ob-btn ob-btn-primary ob-step-cta" id="ob-get-started">
       Get started
     </button>
   </div>
 
-  <!-- View 2: setup. Hidden until Get started is clicked. -->
-  <div id="ob-setup-view" style="display:none;">
-    <div class="ob-brand">NASTY</div>
-    <div class="ob-tag">Let's set you up. This takes about a minute.</div>
-
-    <div class="ob-section" id="ob-scan-section">
-    <h3>Your plugins</h3>
-    <div class="ob-sec-desc">We scanned the VST3 and AU folders on your Mac.</div>
-    <div class="ob-scan-line" id="ob-scan-total">Scanning…</div>
-    <div class="ob-scan-line" id="ob-scan-known" style="display:none;"></div>
-    <div class="ob-scan-line" id="ob-scan-unknown" style="display:none;"></div>
+  <!-- Step 2: ask to scan. macOS doesn't gate the standard VST3/AU folders,
+       so this isn't a real permission — it's a UX gesture. Sets the tone
+       that Nasty respects the machine. -->
+  <div class="ob-view" id="ob-scan-ask-view" style="display:none;">
+    <div class="ob-step-title">Can we look at your plugins?</div>
+    <div class="ob-step-desc">
+      Nasty scans your VST3 and AU folders so the AI can use the
+      instruments you already own. Nothing leaves your computer.
+    </div>
+    <div class="ob-step-actions">
+      <button class="ob-btn ob-btn-secondary" id="ob-scan-no">Not now</button>
+      <button class="ob-btn ob-btn-primary ob-step-cta" id="ob-scan-yes">
+        Scan my plugins
+      </button>
+    </div>
   </div>
 
-  <div class="ob-section" id="ob-bundle-section">
-    <h3>Free plugins we recommend</h3>
-    <div class="ob-sec-desc">
-      Nasty ships with a curated set of free instruments and effects.
-      The essentials are checked; uncheck what you don't want.
+  <!-- Step 3: scan results. Only shown when the user opts in. -->
+  <div class="ob-view" id="ob-scan-results-view" style="display:none;">
+    <div class="ob-step-title">Here's what we found</div>
+    <div class="ob-step-desc" id="ob-scan-summary">Scanning…</div>
+    <div class="ob-step-actions">
+      <button class="ob-btn ob-btn-primary ob-step-cta" id="ob-scan-continue">
+        Continue
+      </button>
+    </div>
+  </div>
+
+  <!-- Step 4: bundle offer. Free plugins, checkbox list, optional extras. -->
+  <div class="ob-view ob-view-wide" id="ob-bundle-view" style="display:none;">
+    <div class="ob-step-title">Want some free plugins?</div>
+    <div class="ob-step-desc">
+      We recommend these free instruments and effects. The essentials are
+      checked; uncheck what you don't want. Optional extras below need a
+      free account on the vendor's site.
     </div>
     <div id="ob-bundle-groups"></div>
+    <div id="ob-extras-container" style="display:none;">
+      <div class="ob-group-title" style="margin-top:18px;">Optional extras</div>
+      <div id="ob-extras-list"></div>
+    </div>
     <div class="ob-total" id="ob-bundle-total">Selected: 0 items · ~0 MB</div>
-  </div>
-
-  <div class="ob-section" id="ob-extras-section" style="display:none;">
-    <h3>Optional extras</h3>
-    <div class="ob-sec-desc">
-      These are excellent but require creating a free account on the
-      vendor's site. Skip for now if you'd rather stay in the flow.
-    </div>
-    <div id="ob-extras-list"></div>
-  </div>
-
-    <div class="ob-actions">
+    <div class="ob-step-actions">
       <button class="ob-btn ob-btn-secondary" id="ob-skip">Skip everything</button>
-      <button class="ob-btn ob-btn-primary" id="ob-install">Install selected</button>
+      <button class="ob-btn ob-btn-primary ob-step-cta" id="ob-install">
+        Install selected
+      </button>
     </div>
-  </div><!-- /ob-setup-view -->
+  </div>
+
+  <!-- Step 5: installing — waiting for vendor installers to complete. -->
+  <div class="ob-view ob-view-wide" id="ob-installing-view" style="display:none;">
+    <div class="ob-step-title">Installers opened</div>
+    <div class="ob-step-desc" id="ob-installing-desc">
+      We opened vendor pages in your browser. Install each one (they're
+      all free), then come back and click <b>I'm done</b>.
+    </div>
+    <div id="ob-install-list"></div>
+    <div class="ob-step-actions">
+      <button class="ob-btn ob-btn-primary ob-step-cta" id="ob-done">
+        I'm done — rescan my plugins
+      </button>
+    </div>
+  </div>
 </div>
 <div id="app">
 
@@ -6177,7 +6237,7 @@ function renderOnboardingBundle(manifest) {
 // Optional extras — friction plugins that require account signup.
 // Rendered as a separate opt-in section under the main bundle.
 function renderOnboardingExtras(manifest) {
-  const section = document.getElementById('ob-extras-section');
+  const section = document.getElementById('ob-extras-container');
   const listEl = document.getElementById('ob-extras-list');
   if (!section || !listEl || !manifest) return;
   const frictionIds = ['vital', 'steven-slate-drums-5-5-free'];
@@ -6244,56 +6304,122 @@ async function triggerResearchNow() {
   }
 }
 
+// The step-machine ids in order. Each maps to a `.ob-view` div in the
+// overlay. Users move forward through them by clicking the primary CTA on
+// each step; Skip on the bundle step jumps straight to done.
+const OB_STEPS = [
+  'ob-welcome-view',
+  'ob-scan-ask-view',
+  'ob-scan-results-view',
+  'ob-bundle-view',
+  'ob-installing-view',
+];
+
+function setOnboardingStep(stepId) {
+  for (const id of OB_STEPS) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    el.style.display = (id === stepId) ? '' : 'none';
+  }
+}
+
+// Filled in when the user opts to scan. Cached across steps so scan-results
+// can render without re-fetching. Set to null on "Not now" so we skip the
+// scan-results step entirely.
+let obPluginKnown = null;   // dict of lowercase plugin name → cheatsheet text
+let obManifest = null;      // bundle manifest
+
 async function showOnboarding() {
   const overlay = document.getElementById('onboarding-overlay');
   if (!overlay) return;
   overlay.style.display = '';
-  // Always start on the welcome view. Setup is hidden until Get started.
-  const welcome = document.getElementById('ob-welcome-view');
-  const setup = document.getElementById('ob-setup-view');
-  if (welcome) welcome.style.display = '';
-  if (setup) setup.style.display = 'none';
+  setOnboardingStep('ob-welcome-view');
   requestAnimationFrame(() => overlay.classList.remove('hidden'));
 
-  // Get started button: fetch data + swap to setup view.
-  const startBtn = document.getElementById('ob-get-started');
-  if (startBtn) {
-    startBtn.onclick = async () => {
-      if (welcome) welcome.style.display = 'none';
-      if (setup) setup.style.display = '';
-      const { manifest, known } = await fetchOnboardingData();
-      renderOnboardingScan(known || {});
-      if (manifest) {
-        renderOnboardingBundle(manifest);
-        renderOnboardingExtras(manifest);
-      }
-    };
-  }
+  // Kick off manifest prefetch so the bundle step paints fast.
+  const manifestPromise = fetchOnboardingData();
 
-  // Preload the manifest fetch in the background so setup renders fast
-  // when they click through. Kicks off now, awaited in the button handler
-  // via a shared promise if we wanted to; MVP just double-fetches, cheap.
-  // (Intentionally not caching — the manifest is tiny and network is rare.)
+  // ---- Step 1: Welcome → Scan ask ----
+  document.getElementById('ob-get-started').onclick = () => {
+    setOnboardingStep('ob-scan-ask-view');
+  };
 
-  document.getElementById('ob-skip').addEventListener('click', () => {
+  // ---- Step 2: Scan ask → Scan results (or skip to bundle) ----
+  document.getElementById('ob-scan-yes').onclick = async () => {
+    setOnboardingStep('ob-scan-results-view');
+    // Now do the actual scan-render. Engine already scanned at boot; we
+    // just fetch cheatsheet coverage and render the summary.
+    const { manifest, known } = await manifestPromise;
+    obPluginKnown = known || {};
+    obManifest = manifest || null;
+    renderScanResultsSummary(obPluginKnown);
+  };
+  document.getElementById('ob-scan-no').onclick = async () => {
+    // Skip the scan display. Still load the manifest so the bundle step
+    // works. Nothing changes technically — the engine already scanned.
+    const { manifest } = await manifestPromise;
+    obManifest = manifest || null;
+    obPluginKnown = null;
+    goToBundleStep();
+  };
+
+  // ---- Step 3: Scan results → Bundle ----
+  document.getElementById('ob-scan-continue').onclick = () => goToBundleStep();
+
+  // ---- Step 4: Bundle → Installing (or Skip → done) ----
+  document.getElementById('ob-skip').onclick = () => {
     markOnboarded();
-    // Even if they skip the bundle, still fire the research for their
-    // existing plugins — they get the AI-knows-my-rig benefit either way.
     triggerResearchNow();
     dismissOnboarding();
-  });
-
-  document.getElementById('ob-install').addEventListener('click', () => {
+  };
+  document.getElementById('ob-install').onclick = () => {
     const selected = Array.from(onboardingState.selectedIds);
     if (selected.length === 0) {
-      // Nothing selected — same behavior as Skip.
       markOnboarded();
       triggerResearchNow();
       dismissOnboarding();
       return;
     }
     kickOffBundleInstalls(selected);
-  });
+  };
+
+  // ---- Step 5: Installing → done ----
+  document.getElementById('ob-done').onclick = () => {
+    markOnboarded();
+    if (window.nasty && window.nasty.engine) {
+      try { window.nasty.engine.send({ cmd: 'list_plugins' }); } catch (e) { /* ignore */ }
+    }
+    triggerResearchNow();
+    dismissOnboarding();
+  };
+}
+
+function goToBundleStep() {
+  setOnboardingStep('ob-bundle-view');
+  if (obManifest) {
+    renderOnboardingBundle(obManifest);
+    renderOnboardingExtras(obManifest);
+  }
+}
+
+// Renders the short summary line on the scan-results step. Reuses the
+// existing enginePluginsList + cheatsheet index.
+function renderScanResultsSummary(known) {
+  const el = document.getElementById('ob-scan-summary');
+  if (!el) return;
+  const total = (enginePluginsList || []).length;
+  const knownKeys = new Set(Object.keys(known || {}).map(k => k.toLowerCase()));
+  let matched = 0;
+  for (const p of (enginePluginsList || [])) {
+    const n = (p && p.name || '').toLowerCase();
+    if (n && knownKeys.has(n)) matched++;
+  }
+  const unknown = Math.max(0, total - matched);
+  const parts = [];
+  parts.push(`Found <b style="color:var(--accent);">${total}</b> plugin${total === 1 ? '' : 's'} on your Mac.`);
+  if (matched > 0) parts.push(`<b style="color:var(--accent);">${matched}</b> already have AI-ready cheatsheets.`);
+  if (unknown > 0) parts.push(`<b style="color:var(--accent);">${unknown}</b> will be researched automatically — the AI will know them in a few minutes.`);
+  el.innerHTML = parts.join('<br>');
 }
 
 // Look up an item (plugin or sound-content pack) by id in the current
@@ -6316,42 +6442,29 @@ function bundleItemById(id) {
   return null;
 }
 
-// Swap the onboarding overlay to a "downloads in progress" state. Opens
-// each selected item's vendor URL in the user's default browser (via the
-// preload's openExternal bridge). User installs each plugin manually,
-// clicks "I'm done" when finished, we rescan.
+// Advance to the "installers opened" step, populate its list, and open
+// the vendor URLs in the user's default browser (staggered so a burst
+// doesn't get dropped). The user installs each plugin manually, then
+// clicks "I'm done" (wired in showOnboarding()) to rescan.
 async function kickOffBundleInstalls(selectedIds) {
-  const overlay = document.getElementById('onboarding-overlay');
-  if (!overlay) return;
-
-  // Bulk-open all URLs. Slight stagger so the browser doesn't drop tabs
-  // when a burst arrives at once.
   const items = selectedIds.map(bundleItemById).filter(Boolean);
-  const canOpen = window.nasty && typeof window.nasty.openExternal === 'function';
-  for (let i = 0; i < items.length; i++) {
-    if (canOpen) {
-      try { window.nasty.openExternal(items[i].url); } catch (e) { /* ignore */ }
-    }
-    // 250ms between opens keeps browsers happy without dragging the UX.
-    if (i < items.length - 1) await new Promise(r => setTimeout(r, 250));
+  setOnboardingStep('ob-installing-view');
+
+  // Update the description with the actual count.
+  const desc = document.getElementById('ob-installing-desc');
+  if (desc) {
+    desc.innerHTML = `
+      We opened <b>${items.length}</b> vendor page${items.length === 1 ? '' : 's'}
+      in your browser. Install each one (they're all free), then come back
+      and click <b>I'm done</b>. Nasty will rescan and update the AI.
+    `;
   }
 
-  // Rebuild the overlay in "waiting" mode. Replace both bundle + extras
-  // sections with a single "installers opened" panel + a Done button.
-  const bundleSection = document.getElementById('ob-bundle-section');
-  const extrasSection = document.getElementById('ob-extras-section');
-  const actions = overlay.querySelector('.ob-actions');
-  if (bundleSection) {
-    bundleSection.innerHTML = `
-      <h3>Installers opened</h3>
-      <div class="ob-sec-desc">
-        We opened ${items.length} vendor page${items.length === 1 ? '' : 's'} in your browser.
-        Install each one (they're all free), then come back here and click
-        <b>I'm done</b>. Nasty will rescan your plugins and update the AI.
-      </div>
-      <div id="ob-install-list"></div>
-    `;
-    const listEl = document.getElementById('ob-install-list');
+  // Populate the row list.
+  const listEl = document.getElementById('ob-install-list');
+  const canOpen = window.nasty && typeof window.nasty.openExternal === 'function';
+  if (listEl) {
+    listEl.innerHTML = '';
     for (const item of items) {
       const row = document.createElement('div');
       row.className = 'ob-item';
@@ -6372,27 +6485,13 @@ async function kickOffBundleInstalls(selectedIds) {
       listEl.appendChild(row);
     }
   }
-  if (extrasSection) extrasSection.style.display = 'none';
 
-  // Swap the actions: only a "Done — rescan" button now.
-  if (actions) {
-    actions.innerHTML = `
-      <button class="ob-btn ob-btn-primary" id="ob-done" style="flex:1;">
-        I'm done — rescan my plugins
-      </button>
-    `;
-    document.getElementById('ob-done').addEventListener('click', () => {
-      markOnboarded();
-      // Ask the engine to re-report its plugin list so any newly-installed
-      // .vst3/.component files show up. The engine caches the plugin scan
-      // at boot; a fresh boot picks up new arrivals. For MVP the rescan is
-      // effectively a hint — the next Nasty restart is what really matters.
-      if (window.nasty && window.nasty.engine) {
-        try { window.nasty.engine.send({ cmd: 'list_plugins' }); } catch (e) { /* ignore */ }
-      }
-      triggerResearchNow();
-      dismissOnboarding();
-    });
+  // Bulk-open all URLs. 250ms stagger so browsers don't drop tabs.
+  for (let i = 0; i < items.length; i++) {
+    if (canOpen) {
+      try { window.nasty.openExternal(items[i].url); } catch (e) { /* ignore */ }
+    }
+    if (i < items.length - 1) await new Promise(r => setTimeout(r, 250));
   }
 }
 
