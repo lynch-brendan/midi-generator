@@ -1293,6 +1293,16 @@
     font-size: 22px; font-weight: 700; color: var(--text);
     letter-spacing: 0.3px; margin: 0;
   }
+  /* Accent word inside a step title — used to make "Free" jump on the
+     bundle-offer screen. Same trick as the boot brand: pink gradient text. */
+  #onboarding-overlay .ob-title-accent {
+    font-size: 32px; font-weight: 900;
+    letter-spacing: 1px;
+    background: linear-gradient(135deg, var(--accent) 0%, #ffb0d0 100%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-right: 4px;
+  }
   #onboarding-overlay .ob-step-desc {
     font-size: 13px; color: var(--text-dim);
     line-height: 1.6; max-width: 440px;
@@ -1376,6 +1386,21 @@
     border-top: 1px solid rgba(255,255,255,0.06);
     padding: 8px 16px 14px;
     background: rgba(0,0,0,0.15);
+    /* Contained, scrollable list — long bundles don't push the buttons
+       off screen. Dark-theme scrollbar styling below. */
+    max-height: 320px; overflow-y: auto;
+  }
+  #onboarding-overlay .ob-section-details::-webkit-scrollbar {
+    width: 8px;
+  }
+  #onboarding-overlay .ob-section-details::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  #onboarding-overlay .ob-section-details::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.12); border-radius: 4px;
+  }
+  #onboarding-overlay .ob-section-details::-webkit-scrollbar-thumb:hover {
+    background: rgba(255,255,255,0.22);
   }
   #onboarding-overlay .ob-section-items {
     display: flex; flex-direction: column; gap: 0;
@@ -1420,10 +1445,12 @@
        checkbox each. Section header shows name + count + size + reason.
        Expandable dropdown reveals individual plugin checkboxes. -->
   <div class="ob-view ob-view-wide" id="ob-bundle-view" style="display:none;">
-    <div class="ob-step-title">Want some free plugins?</div>
+    <div class="ob-step-title">
+      <span class="ob-title-accent">Free</span> plugins to get you started
+    </div>
     <div class="ob-step-desc">
-      We recommend a curated starter pack of free instruments and effects.
-      Check whole sections, or open each section to pick individually.
+      Every plugin on this page is 100% free. Pick a whole section, or
+      open one to choose individually.
     </div>
 
     <!-- Section 1: Starter pack — all instruments + effects + sound content.
@@ -1432,10 +1459,10 @@
       <div class="ob-section-header">
         <input type="checkbox" class="ob-section-master" checked>
         <div class="ob-section-body">
-          <div class="ob-section-name">Free starter pack</div>
+          <div class="ob-section-name">Starter pack</div>
           <div class="ob-section-reason">
-            Everything an AI-DAW needs day one — synths, drums, effects,
-            sound content. All free and redistributable.
+            Hand-picked essentials — synths, drums, effects, sound content.
+            Everything an AI-DAW needs day one.
           </div>
           <div class="ob-section-meta">
             <span class="ob-section-count">0</span> items ·
@@ -1449,16 +1476,17 @@
       </div>
     </div>
 
-    <!-- Section 2: Optional extras — friction plugins requiring signup.
+    <!-- Section 2: Needs a free account — Vital + SSD Free, both require
+         vendor signup. Also free, just gated behind a form.
          Default state: master OFF, dropdown collapsed. -->
     <div class="ob-section-row" data-section="extras">
       <div class="ob-section-header">
         <input type="checkbox" class="ob-section-master">
         <div class="ob-section-body">
-          <div class="ob-section-name">Optional extras</div>
+          <div class="ob-section-name">Needs a free account</div>
           <div class="ob-section-reason">
-            Excellent tools that require a free account on the vendor's
-            site. Skip for now if you'd rather stay in the flow.
+            Also free — the vendor just wants you to sign up on their
+            site. Skip if you'd rather not.
           </div>
           <div class="ob-section-meta">
             <span class="ob-section-count">0</span> items ·
