@@ -48,10 +48,13 @@ jobs:
       - name: Run research script
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        # No --top cap: research every plugin in the gap log. Cost per plugin
+        # is small (~$0.35 with Claude Opus + web search) — even a fresh user
+        # with 50 unknown plugins is ~$17, well worth catching them all in
+        # one pass. If costs ever get out of hand, add the cap back here.
         run: |
           python scripts/research_plugin_gaps.py \
-            --from-server https://museaimusician.com \
-            --top 10
+            --from-server https://museaimusician.com
 
       - name: Commit and push if anything changed
         run: |
