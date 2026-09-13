@@ -1476,6 +1476,81 @@ def nasty_plugin_gaps():
         pass
     return {"entries": entries}
 
+
+# In-memory throttle timestamp — last time we fired the research workflow.
+# Reset on server redeploy, which is fine: Railway redeploys are rare
+# enough that this doesn't leak the throttle window across restarts in
+# any meaningful way.
+_LAST_RESEARCH_TRIGGER_TS: dict[str, float] = {"ts": 0.0}
+_RESEARCH_THROTTLE_SECONDS = 3600  # 1 hour
+
+
+@app.post("/nasty/trigger-research")
+def nasty_trigger_research():
+    """Fires the GitHub Actions research workflow on demand.
+
+    Called by the client during onboarding (and any time the client wants
+    to force a research pass instead of waiting for the daily cron).
+    Throttled to once per hour so a client bug can't spam workflow runs.
+
+    Requires GITHUB_RESEARCH_TOKEN env var — a fine-grained personal-access
+    token with `actions: write` on the midi-generator repo. If unset, the
+    endpoint returns a soft no-op so onboarding still succeeds.
+    """
+    import time
+    import urllib.request
+    import urllib.error
+
+    token = os.getenv("GITHUB_RESEARCH_TOKEN", "").strip()
+    if not token:
+        return {
+            "ok": False,
+            "reason": "GITHUB_RESEARCH_TOKEN not set on server — "
+                      "research will run on the daily cron instead",
+        }
+
+    now = time.time()
+    since_last = now - _LAST_RESEARCH_TRIGGER_TS["ts"]
+    if since_last < _RESEARCH_THROTTLE_SECONDS:
+        # Not an error — the plugins are still in the gap log and will be
+        # picked up on the next allowed fire (or the daily cron). Just tell
+        # the client we intentionally skipped.
+        return {
+            "ok": True,
+            "fired": False,
+            "reason": f"throttled — last fire was {int(since_last)}s ago",
+            "next_available_in": int(_RESEARCH_THROTTLE_SECONDS - since_last),
+        }
+
+    # GitHub REST: POST /repos/{owner}/{repo}/actions/workflows/{file}/dispatches
+    # requires `ref` in the body — main branch is the workflow's home.
+    url = ("https://api.github.com/repos/lynch-brendan/midi-generator"
+           "/actions/workflows/research-plugin-gaps.yml/dispatches")
+    body = json.dumps({"ref": "main"}).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=body,
+        method="POST",
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {token}",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "Content-Type": "application/json",
+            "User-Agent": "nasty-server/1.0",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            # 204 No Content on success. Anything 2xx is fine.
+            if 200 <= resp.status < 300:
+                _LAST_RESEARCH_TRIGGER_TS["ts"] = now
+                return {"ok": True, "fired": True, "status": resp.status}
+            return {"ok": False, "reason": f"github returned {resp.status}"}
+    except urllib.error.HTTPError as exc:
+        return {"ok": False, "reason": f"github http {exc.code}: {exc.reason}"}
+    except Exception as exc:
+        return {"ok": False, "reason": f"error: {exc}"}
+
 _NASTY_TOOLS = [
     {
         "name": "set_tempo",
