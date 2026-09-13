@@ -10,6 +10,11 @@ contextBridge.exposeInMainWorld('nasty', {
   // TEMP: dump preset states to /tmp so Claude can bake them as defaults.
   dumpPresetStates: (json) => ipcRenderer.invoke('dump-preset-states', json),
 
+  // Open an external URL in the user's default browser. Used by the
+  // onboarding bundle downloader to send users to vendor installer pages
+  // for plugins we can't auto-install (Valhalla, TDR, Klanghelm, u-he, ...).
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
+
   // Path to the bundled General MIDI SoundFont on disk.
   sf2Path: () => ipcRenderer.invoke('nasty-sf2-path'),
 

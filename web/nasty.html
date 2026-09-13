@@ -6235,14 +6235,115 @@ async function showOnboarding() {
 
   document.getElementById('ob-install').addEventListener('click', () => {
     const selected = Array.from(onboardingState.selectedIds);
-    console.log('[onboarding] install selected:', selected);
-    // TODO next commit: kick off background downloads via preload IPC.
-    // For now we just mark onboarded + fire research — the downloader
-    // scaffold arrives in the next small commit.
-    markOnboarded();
-    triggerResearchNow();
-    dismissOnboarding();
+    if (selected.length === 0) {
+      // Nothing selected — same behavior as Skip.
+      markOnboarded();
+      triggerResearchNow();
+      dismissOnboarding();
+      return;
+    }
+    kickOffBundleInstalls(selected);
   });
+}
+
+// Look up an item (plugin or sound-content pack) by id in the current
+// manifest. Returns { name, url, size } or null.
+function bundleItemById(id) {
+  const m = onboardingState.bundleManifest;
+  if (!m) return null;
+  const p = (m.plugins || []).find(x => x.id === id);
+  if (p) return {
+    id: p.id, name: p.name,
+    url: p.download_url, size: p.file_size_mb || 0,
+    kind: 'plugin',
+  };
+  const c = (m.sound_content || []).find(x => x.id === id);
+  if (c) return {
+    id: c.id, name: c.name,
+    url: c.source, size: c.size_mb || 0,
+    kind: 'content',
+  };
+  return null;
+}
+
+// Swap the onboarding overlay to a "downloads in progress" state. Opens
+// each selected item's vendor URL in the user's default browser (via the
+// preload's openExternal bridge). User installs each plugin manually,
+// clicks "I'm done" when finished, we rescan.
+async function kickOffBundleInstalls(selectedIds) {
+  const overlay = document.getElementById('onboarding-overlay');
+  if (!overlay) return;
+
+  // Bulk-open all URLs. Slight stagger so the browser doesn't drop tabs
+  // when a burst arrives at once.
+  const items = selectedIds.map(bundleItemById).filter(Boolean);
+  const canOpen = window.nasty && typeof window.nasty.openExternal === 'function';
+  for (let i = 0; i < items.length; i++) {
+    if (canOpen) {
+      try { window.nasty.openExternal(items[i].url); } catch (e) { /* ignore */ }
+    }
+    // 250ms between opens keeps browsers happy without dragging the UX.
+    if (i < items.length - 1) await new Promise(r => setTimeout(r, 250));
+  }
+
+  // Rebuild the overlay in "waiting" mode. Replace both bundle + extras
+  // sections with a single "installers opened" panel + a Done button.
+  const bundleSection = document.getElementById('ob-bundle-section');
+  const extrasSection = document.getElementById('ob-extras-section');
+  const actions = overlay.querySelector('.ob-actions');
+  if (bundleSection) {
+    bundleSection.innerHTML = `
+      <h3>Installers opened</h3>
+      <div class="ob-sec-desc">
+        We opened ${items.length} vendor page${items.length === 1 ? '' : 's'} in your browser.
+        Install each one (they're all free), then come back here and click
+        <b>I'm done</b>. Nasty will rescan your plugins and update the AI.
+      </div>
+      <div id="ob-install-list"></div>
+    `;
+    const listEl = document.getElementById('ob-install-list');
+    for (const item of items) {
+      const row = document.createElement('div');
+      row.className = 'ob-item';
+      row.style.cursor = 'default';
+      row.innerHTML = `
+        <div style="width:16px;color:var(--accent);">◐</div>
+        <div class="ob-item-body">
+          <div class="ob-item-name">${item.name}</div>
+          <div class="ob-item-meta">Waiting for you to install…</div>
+        </div>
+        <button class="ob-btn ob-btn-secondary" style="padding:4px 10px;font-size:10px;">
+          Reopen page
+        </button>
+      `;
+      row.querySelector('button').addEventListener('click', () => {
+        if (canOpen) window.nasty.openExternal(item.url);
+      });
+      listEl.appendChild(row);
+    }
+  }
+  if (extrasSection) extrasSection.style.display = 'none';
+
+  // Swap the actions: only a "Done — rescan" button now.
+  if (actions) {
+    actions.innerHTML = `
+      <button class="ob-btn ob-btn-primary" id="ob-done" style="flex:1;">
+        I'm done — rescan my plugins
+      </button>
+    `;
+    document.getElementById('ob-done').addEventListener('click', () => {
+      markOnboarded();
+      // Ask the engine to re-report its plugin list so any newly-installed
+      // .vst3/.component files show up. The engine caches the plugin scan
+      // at boot; a fresh boot picks up new arrivals. For MVP the rescan is
+      // effectively a hint — the next Nasty restart is what really matters.
+      if (window.nasty && window.nasty.engine) {
+        try { window.nasty.engine.send({ cmd: 'list_plugins' }); } catch (e) { /* ignore */ }
+      }
+      triggerResearchNow();
+      dismissOnboarding();
+    });
+  }
 }
 
 // Web build has no audio engine — drop the overlay immediately so the app is

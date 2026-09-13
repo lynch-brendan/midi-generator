@@ -183,6 +183,20 @@ ipcMain.handle('nasty-read-base64', async (_evt, filePath) => {
   }
 });
 
+// Onboarding downloader — opens vendor installer pages in the user's default
+// browser. Sandbox: only allow http(s) URLs, no `file://` or JS URIs.
+ipcMain.handle('open-external', async (_evt, url) => {
+  try {
+    if (typeof url !== 'string') return { ok: false, error: 'invalid url' };
+    if (!/^https?:\/\//i.test(url)) return { ok: false, error: 'only http(s) urls allowed' };
+    await shell.openExternal(url);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+});
+
+
 // Renderer reads this to send the SF2 path along with GM channel creation.
 ipcMain.handle('nasty-sf2-path', () => {
   const devInstruments  = path.join(__dirname, '..', 'audio-engine', 'bundled-instruments');
