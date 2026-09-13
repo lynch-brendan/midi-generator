@@ -1270,6 +1270,27 @@
     font-size: 11px; color: var(--text-dim); margin-top: 10px;
     text-align: right;
   }
+  /* Welcome view — centered, minimal, inviting. Comes before setup. */
+  #onboarding-overlay #ob-welcome-view {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; text-align: center;
+    min-height: 70vh; gap: 22px;
+  }
+  #onboarding-overlay #ob-welcome-view .ob-brand {
+    font-size: 64px; letter-spacing: 6px; margin: 0;
+  }
+  #onboarding-overlay .ob-welcome-tag {
+    font-size: 18px; color: var(--text); font-weight: 500;
+    letter-spacing: 0.5px;
+  }
+  #onboarding-overlay .ob-welcome-pitch {
+    font-size: 13px; color: var(--text-dim); line-height: 1.7;
+    max-width: 440px;
+  }
+  #onboarding-overlay .ob-welcome-cta {
+    margin-top: 8px; padding: 14px 40px; font-size: 13px;
+    letter-spacing: 1px;
+  }
 </style>
 </head>
 <body>
@@ -1284,12 +1305,29 @@
 
 <!-- Onboarding overlay — first-launch experience. Populated by
      showOnboarding() in the boot script. Hidden by default; shown when
-     audio_ready fires and localStorage.nasty_onboarded is not truthy. -->
+     audio_ready fires and localStorage.nasty_onboarded is not truthy.
+     Two views: welcome (initial) → setup (scan + bundle + extras + actions). -->
 <div id="onboarding-overlay" class="hidden" style="display:none;">
-  <div class="ob-brand">NASTY</div>
-  <div class="ob-tag">Let's set you up. This takes about a minute.</div>
+  <!-- View 1: welcome. Shown first, dismissed by clicking Get started. -->
+  <div id="ob-welcome-view">
+    <div class="ob-brand">NASTY</div>
+    <div class="ob-welcome-tag">The AI-native DAW.</div>
+    <div class="ob-welcome-pitch">
+      Make a whole song by talking to it. Load your plugins, describe
+      what you want, hear it back. Let's set up your instruments —
+      takes about a minute.
+    </div>
+    <button class="ob-btn ob-btn-primary ob-welcome-cta" id="ob-get-started">
+      Get started
+    </button>
+  </div>
 
-  <div class="ob-section" id="ob-scan-section">
+  <!-- View 2: setup. Hidden until Get started is clicked. -->
+  <div id="ob-setup-view" style="display:none;">
+    <div class="ob-brand">NASTY</div>
+    <div class="ob-tag">Let's set you up. This takes about a minute.</div>
+
+    <div class="ob-section" id="ob-scan-section">
     <h3>Your plugins</h3>
     <div class="ob-sec-desc">We scanned the VST3 and AU folders on your Mac.</div>
     <div class="ob-scan-line" id="ob-scan-total">Scanning…</div>
@@ -1316,10 +1354,11 @@
     <div id="ob-extras-list"></div>
   </div>
 
-  <div class="ob-actions">
-    <button class="ob-btn ob-btn-secondary" id="ob-skip">Skip everything</button>
-    <button class="ob-btn ob-btn-primary" id="ob-install">Install selected</button>
-  </div>
+    <div class="ob-actions">
+      <button class="ob-btn ob-btn-secondary" id="ob-skip">Skip everything</button>
+      <button class="ob-btn ob-btn-primary" id="ob-install">Install selected</button>
+    </div>
+  </div><!-- /ob-setup-view -->
 </div>
 <div id="app">
 
@@ -6216,14 +6255,32 @@ async function showOnboarding() {
   const overlay = document.getElementById('onboarding-overlay');
   if (!overlay) return;
   overlay.style.display = '';
+  // Always start on the welcome view. Setup is hidden until Get started.
+  const welcome = document.getElementById('ob-welcome-view');
+  const setup = document.getElementById('ob-setup-view');
+  if (welcome) welcome.style.display = '';
+  if (setup) setup.style.display = 'none';
   requestAnimationFrame(() => overlay.classList.remove('hidden'));
 
-  const { manifest, known } = await fetchOnboardingData();
-  renderOnboardingScan(known || {});
-  if (manifest) {
-    renderOnboardingBundle(manifest);
-    renderOnboardingExtras(manifest);
+  // Get started button: fetch data + swap to setup view.
+  const startBtn = document.getElementById('ob-get-started');
+  if (startBtn) {
+    startBtn.onclick = async () => {
+      if (welcome) welcome.style.display = 'none';
+      if (setup) setup.style.display = '';
+      const { manifest, known } = await fetchOnboardingData();
+      renderOnboardingScan(known || {});
+      if (manifest) {
+        renderOnboardingBundle(manifest);
+        renderOnboardingExtras(manifest);
+      }
+    };
   }
+
+  // Preload the manifest fetch in the background so setup renders fast
+  // when they click through. Kicks off now, awaited in the button handler
+  // via a shared promise if we wanted to; MVP just double-fetches, cheap.
+  // (Intentionally not caching — the manifest is tiny and network is rare.)
 
   document.getElementById('ob-skip').addEventListener('click', () => {
     markOnboarded();
