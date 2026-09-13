@@ -1414,6 +1414,24 @@
   #onboarding-overlay .ob-section-items .ob-item .ob-item-meta {
     font-size: 10px;
   }
+  /* Already-installed items — greyed out with a green check where the
+     checkbox would be. Not clickable, not queued for install. */
+  #onboarding-overlay .ob-item-installed {
+    opacity: 0.55;
+    cursor: default;
+  }
+  #onboarding-overlay .ob-item-installed:hover {
+    background: transparent;
+  }
+  #onboarding-overlay .ob-item-status {
+    width: 14px; height: 14px; margin: 3px 2px 0;
+    display: flex; align-items: center; justify-content: center;
+    color: #4ecc7a; font-weight: 700; font-size: 14px;
+    flex-shrink: 0;
+  }
+  #onboarding-overlay .ob-item-installed .ob-item-meta {
+    color: #4ecc7a;
+  }
 </style>
 </head>
 <body>
@@ -6302,12 +6320,34 @@ function renderOnboardingBundle(manifest) {
   onboardingState.sectionIds = { starter: starterIds, extras: extrasIds };
   onboardingState.byId = byId;
 
-  // Starter: check all by default. Extras: none by default.
-  for (const id of starterIds) onboardingState.selectedIds.add(id);
+  // Starter: check all NOT-already-installed items by default. Extras:
+  // none by default. Already-installed items are never queued for install.
+  for (const id of starterIds) {
+    const item = byId[id];
+    if (item && !isAlreadyInstalled(item)) {
+      onboardingState.selectedIds.add(id);
+    }
+  }
 
   renderSection('starter', starterIds, byId, true);
   renderSection('extras', extrasIds, byId, false);
   updateOnboardingTotal();
+}
+
+// Check whether a bundle item is already installed on the user's Mac —
+// case-insensitive exact-name match against the engine's plugin_list.
+// Sound-content items (SFZ packs, SoundFonts) always return false — we
+// don't yet have a way to detect those on disk, and they're low-risk to
+// re-download.
+function isAlreadyInstalled(item) {
+  if (!item || item.kind !== 'plugin') return false;
+  const target = (item.name || '').toLowerCase().trim();
+  if (!target) return false;
+  for (const p of (enginePluginsList || [])) {
+    const n = (p && p.name || '').toLowerCase().trim();
+    if (n && n === target) return true;
+  }
+  return false;
 }
 
 function renderSection(key, idList, byId, masterOnByDefault) {
@@ -6320,45 +6360,60 @@ function renderSection(key, idList, byId, masterOnByDefault) {
 
   master.checked = masterOnByDefault;
 
-  // Build the individual item rows.
+  // Build the individual item rows. Already-installed items get a
+  // "✓ Installed" marker instead of a checkbox, so we don't push users to
+  // reinstall Surge XT / Dexed / etc. that they already have.
   itemsEl.innerHTML = '';
   for (const id of idList) {
     const item = byId[id];
     if (!item) continue;
-    const label = document.createElement('label');
-    label.className = 'ob-item';
-    const checked = onboardingState.selectedIds.has(id);
+    const installed = isAlreadyInstalled(item);
+    if (installed) {
+      // Skip it from selectedIds — don't queue for install.
+      onboardingState.selectedIds.delete(id);
+    }
+    const label = document.createElement(installed ? 'div' : 'label');
+    label.className = 'ob-item' + (installed ? ' ob-item-installed' : '');
+    label.dataset.installed = installed ? '1' : '0';
+    const checked = !installed && onboardingState.selectedIds.has(id);
+    const controlHtml = installed
+      ? `<div class="ob-item-status">✓</div>`
+      : `<input type="checkbox" data-id="${id}" ${checked ? 'checked' : ''}>`;
+    const metaText = installed
+      ? 'Already installed'
+      : (item.category || item.format || '');
     label.innerHTML = `
-      <input type="checkbox" data-id="${id}" ${checked ? 'checked' : ''}>
+      ${controlHtml}
       <div class="ob-item-body">
         <div class="ob-item-name">${item.name}</div>
-        <div class="ob-item-meta">${item.category || item.format || ''}</div>
+        <div class="ob-item-meta">${metaText}</div>
       </div>
-      <div class="ob-item-size">${item.size ? item.size + ' MB' : ''}</div>
+      <div class="ob-item-size">${installed ? '' : (item.size ? item.size + ' MB' : '')}</div>
     `;
-    label.querySelector('input').addEventListener('change', (e) => {
-      if (e.target.checked) onboardingState.selectedIds.add(id);
-      else onboardingState.selectedIds.delete(id);
-      syncSectionMaster(key);
-      updateSectionMeta(key);
-      updateOnboardingTotal();
-    });
+    if (!installed) {
+      label.querySelector('input').addEventListener('change', (e) => {
+        if (e.target.checked) onboardingState.selectedIds.add(id);
+        else onboardingState.selectedIds.delete(id);
+        syncSectionMaster(key);
+        updateSectionMeta(key);
+      });
+    }
     itemsEl.appendChild(label);
   }
 
-  // Master toggles all items in the section.
+  // Master toggles all NOT-yet-installed items in the section.
   master.onchange = () => {
-    if (master.checked) {
-      for (const id of idList) onboardingState.selectedIds.add(id);
-    } else {
-      for (const id of idList) onboardingState.selectedIds.delete(id);
+    for (const id of idList) {
+      const item = byId[id];
+      if (!item || isAlreadyInstalled(item)) continue;
+      if (master.checked) onboardingState.selectedIds.add(id);
+      else onboardingState.selectedIds.delete(id);
     }
-    // Re-render item checkboxes to match master state.
+    // Sync visible checkboxes (installed items don't have one).
     for (const inp of itemsEl.querySelectorAll('input[type=checkbox]')) {
       inp.checked = master.checked;
     }
     updateSectionMeta(key);
-    updateOnboardingTotal();
   };
 
   // Details expand/collapse.
@@ -6376,12 +6431,17 @@ function syncSectionMaster(key) {
   if (!row) return;
   const master = row.querySelector('.ob-section-master');
   const idList = onboardingState.sectionIds[key] || [];
+  const byId = onboardingState.byId || {};
+  // Only consider not-already-installed items when computing master state.
+  // Otherwise a section where everything is installed would show "unchecked"
+  // forever even though there's nothing to check.
+  const eligible = idList.filter(id => !isAlreadyInstalled(byId[id]));
   let anyChecked = false, allChecked = true;
-  for (const id of idList) {
+  for (const id of eligible) {
     if (onboardingState.selectedIds.has(id)) anyChecked = true;
     else allChecked = false;
   }
-  master.checked = allChecked && idList.length > 0;
+  master.checked = allChecked && eligible.length > 0;
   master.indeterminate = anyChecked && !allChecked;
 }
 
