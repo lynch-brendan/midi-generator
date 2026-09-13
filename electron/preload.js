@@ -15,6 +15,20 @@ contextBridge.exposeInMainWorld('nasty', {
   // for plugins we can't auto-install (Valhalla, TDR, Klanghelm, u-he, ...).
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
 
+  // Tier 1 auto-installer — silent download + install for OSS plugins.
+  // installPluginAuto returns a promise that resolves to {ok, error?} once
+  // the whole flow completes. Progress updates fire as `install-progress`
+  // events with { pluginId, status, percent?, error? } — subscribe via
+  // onInstallProgress. listAutoInstallable returns the set of plugin ids
+  // routable through this path (rest fall back to openExternal).
+  installPluginAuto: (pluginId) => ipcRenderer.invoke('install-plugin-auto', pluginId),
+  listAutoInstallable: () => ipcRenderer.invoke('list-auto-installable-plugins'),
+  onInstallProgress: (fn) => {
+    const handler = (_evt, payload) => fn(payload);
+    ipcRenderer.on('install-progress', handler);
+    return () => ipcRenderer.removeListener('install-progress', handler);
+  },
+
   // Path to the bundled General MIDI SoundFont on disk.
   sf2Path: () => ipcRenderer.invoke('nasty-sf2-path'),
 

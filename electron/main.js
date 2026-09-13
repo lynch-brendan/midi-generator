@@ -197,6 +197,243 @@ ipcMain.handle('open-external', async (_evt, url) => {
 });
 
 
+// ---------------------------------------------------------------------------
+// Tier 1 auto-install — silent download + install for OSS plugins with
+// direct .pkg / .dmg URLs. Uses only Node built-ins + macOS `installer` and
+// `hdiutil`. Renderer calls `install-plugin-auto` per plugin; we stream
+// progress events back so the UI can show a real bar per install.
+// ---------------------------------------------------------------------------
+
+// Resolver map: plugin id → how to obtain the installer.
+// - kind: 'direct'  → pkgUrl is a stable URL to a .pkg or .dmg file
+// - kind: 'github'  → look up latest release from the repo, pick the asset
+//                     matching assetMatch (macOS .pkg preferred, .dmg fallback)
+const OSS_INSTALLERS = {
+  'surge-xt': {
+    kind: 'direct',
+    // Surge XT ships an installer .pkg (not just a drag-install .dmg). URL
+    // hardcoded from the manifest; when this goes stale (new release), just
+    // bump it in one place. Long-term: switch to their releases feed.
+    url: 'https://github.com/surge-synthesizer/releases-xt/releases/download/1.3.4/surge-xt-macOS-1.3.4.pkg',
+    kindHint: 'pkg',
+  },
+  'dexed': {
+    kind: 'github',
+    owner: 'asb2m10',
+    repo: 'dexed',
+    assetMatch: /(mac|osx).*\.pkg$/i,
+    assetFallback: /(mac|osx).*\.dmg$/i,
+  },
+  'sfizz': {
+    kind: 'github',
+    owner: 'sfztools',
+    repo: 'sfizz',
+    assetMatch: /macos.*\.pkg$/i,
+    assetFallback: /macos.*\.dmg$/i,
+  },
+};
+
+function isAutoInstallable(pluginId) {
+  return Object.prototype.hasOwnProperty.call(OSS_INSTALLERS, pluginId);
+}
+
+// Resolve a plugin id to a concrete { url, kindHint } — kindHint is 'pkg' or
+// 'dmg' derived from the URL. GitHub-hosted plugins hit api.github.com to
+// find the latest release's macOS asset. Throws on any failure so the caller
+// can report a clean error via IPC.
+async function resolveInstallerUrl(pluginId) {
+  const spec = OSS_INSTALLERS[pluginId];
+  if (!spec) throw new Error(`no OSS installer registered for '${pluginId}'`);
+  if (spec.kind === 'direct') {
+    return { url: spec.url, kindHint: spec.kindHint || (spec.url.match(/\.pkg$/i) ? 'pkg' : 'dmg') };
+  }
+  if (spec.kind === 'github') {
+    const releasesUrl = `https://api.github.com/repos/${spec.owner}/${spec.repo}/releases/latest`;
+    const data = await httpGetJson(releasesUrl);
+    const assets = (data && data.assets) || [];
+    const pick =
+      assets.find(a => spec.assetMatch.test(a.name || '')) ||
+      assets.find(a => spec.assetFallback && spec.assetFallback.test(a.name || ''));
+    if (!pick) throw new Error(`no matching macOS asset in ${spec.owner}/${spec.repo}`);
+    return {
+      url: pick.browser_download_url,
+      kindHint: pick.name.match(/\.pkg$/i) ? 'pkg' : 'dmg',
+    };
+  }
+  throw new Error(`unknown installer kind for '${pluginId}'`);
+}
+
+// One-shot JSON GET with GitHub-friendly headers. No auth needed for public
+// releases; we're well under the anonymous rate limit for a per-user flow.
+function httpGetJson(url) {
+  return new Promise((resolve, reject) => {
+    const https = require('https');
+    const req = https.get(url, {
+      headers: {
+        'User-Agent': 'Nasty-DAW-Installer/1.0',
+        'Accept': 'application/vnd.github+json',
+      },
+    }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        return httpGetJson(res.headers.location).then(resolve, reject);
+      }
+      if (res.statusCode !== 200) {
+        return reject(new Error(`GET ${url} → HTTP ${res.statusCode}`));
+      }
+      let buf = '';
+      res.on('data', d => buf += d);
+      res.on('end', () => {
+        try { resolve(JSON.parse(buf)); }
+        catch (e) { reject(e); }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(30000, () => req.destroy(new Error('timeout')));
+  });
+}
+
+// Streaming download with progress reporting. Follows redirects (GitHub
+// asset URLs redirect to CDN). Writes to `destPath`. Calls `onProgress` with
+// { bytes, total } roughly every 128 KB.
+function downloadFile(url, destPath, onProgress) {
+  return new Promise((resolve, reject) => {
+    const https = require('https');
+    const req = https.get(url, {
+      headers: { 'User-Agent': 'Nasty-DAW-Installer/1.0' },
+    }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        return downloadFile(res.headers.location, destPath, onProgress).then(resolve, reject);
+      }
+      if (res.statusCode !== 200) {
+        return reject(new Error(`GET ${url} → HTTP ${res.statusCode}`));
+      }
+      const total = parseInt(res.headers['content-length'] || '0', 10) || 0;
+      let bytes = 0, lastReported = 0;
+      const out = fs.createWriteStream(destPath);
+      res.on('data', chunk => {
+        bytes += chunk.length;
+        if (onProgress && bytes - lastReported > 128 * 1024) {
+          lastReported = bytes;
+          onProgress({ bytes, total });
+        }
+      });
+      res.pipe(out);
+      out.on('finish', () => {
+        out.close(() => {
+          if (onProgress) onProgress({ bytes, total });
+          resolve({ bytes, total });
+        });
+      });
+      out.on('error', reject);
+    });
+    req.on('error', reject);
+    req.setTimeout(120000, () => req.destroy(new Error('timeout')));
+  });
+}
+
+// Run a .pkg installer at user scope (no sudo). We target the current user's
+// home directory so plugins land in ~/Library/Audio/Plug-Ins/*, which macOS
+// treats as a valid Audio Units search path for the user.
+function runPkgInstaller(pkgPath) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn('installer', ['-pkg', pkgPath, '-target', 'CurrentUserHomeDirectory']);
+    let stderr = '';
+    proc.stderr.on('data', d => stderr += d);
+    proc.on('close', code => {
+      if (code === 0) resolve();
+      else reject(new Error(`installer exit ${code}: ${stderr.trim()}`));
+    });
+    proc.on('error', reject);
+  });
+}
+
+// Mount a .dmg, find the first .pkg inside, run installer on it, then
+// detach. Handles the common OSS shape (Dexed, Surge XT, Sfizz all ship
+// .pkg files inside a .dmg wrapper).
+async function installFromDmg(dmgPath) {
+  const { promisify } = require('util');
+  const execFile = promisify(require('child_process').execFile);
+  // hdiutil attach -nobrowse -mountrandom /tmp gives us a stable mountpoint
+  // that won't clash with a user drag-mounted copy.
+  const { stdout } = await execFile('hdiutil', [
+    'attach', dmgPath, '-nobrowse', '-mountrandom', '/tmp',
+  ]);
+  // Last non-empty line's whitespace-split last field is the mountpoint.
+  const lines = stdout.trim().split('\n').map(l => l.trim()).filter(Boolean);
+  const mountLine = lines[lines.length - 1] || '';
+  const mount = mountLine.split(/\s+/).pop();
+  if (!mount || !mount.startsWith('/')) {
+    throw new Error(`could not parse hdiutil mountpoint from: ${stdout}`);
+  }
+  try {
+    const files = fs.readdirSync(mount);
+    const pkg = files.find(f => f.toLowerCase().endsWith('.pkg'));
+    if (!pkg) {
+      // Some DMGs contain drag-install .vst3/.component bundles instead of a
+      // .pkg. Fall back to copying those to the user plug-in folders.
+      const homeDir = require('os').homedir();
+      const vst3Dir = path.join(homeDir, 'Library', 'Audio', 'Plug-Ins', 'VST3');
+      const auDir   = path.join(homeDir, 'Library', 'Audio', 'Plug-Ins', 'Components');
+      fs.mkdirSync(vst3Dir, { recursive: true });
+      fs.mkdirSync(auDir,   { recursive: true });
+      let copied = 0;
+      for (const f of files) {
+        const src = path.join(mount, f);
+        if (f.endsWith('.vst3')) { fs.cpSync(src, path.join(vst3Dir, f), { recursive: true }); copied++; }
+        else if (f.endsWith('.component')) { fs.cpSync(src, path.join(auDir, f), { recursive: true }); copied++; }
+      }
+      if (copied === 0) throw new Error(`.dmg had neither .pkg nor drag-install bundles: ${files.join(', ')}`);
+    } else {
+      await runPkgInstaller(path.join(mount, pkg));
+    }
+  } finally {
+    try { await execFile('hdiutil', ['detach', mount, '-force']); } catch (e) { /* best-effort */ }
+  }
+}
+
+// Full flow: resolve URL → download → install → report progress. Renderer
+// awaits the promise for terminal success/failure, but subscribes via
+// `install-progress` events for per-plugin status.
+ipcMain.handle('install-plugin-auto', async (evt, pluginId) => {
+  const emit = (payload) => {
+    if (evt.sender && !evt.sender.isDestroyed()) {
+      evt.sender.send('install-progress', { pluginId, ...payload });
+    }
+  };
+  try {
+    if (!isAutoInstallable(pluginId)) {
+      throw new Error(`plugin '${pluginId}' is not registered for auto-install`);
+    }
+    emit({ status: 'resolving' });
+    const { url, kindHint } = await resolveInstallerUrl(pluginId);
+    emit({ status: 'downloading', percent: 0 });
+    const tmp = path.join(require('os').tmpdir(),
+      `nasty-install-${pluginId}-${Date.now()}.${kindHint}`);
+    await downloadFile(url, tmp, ({ bytes, total }) => {
+      const percent = total ? Math.round(bytes / total * 100) : null;
+      emit({ status: 'downloading', percent, bytes, total });
+    });
+    emit({ status: 'installing' });
+    if (kindHint === 'pkg') {
+      await runPkgInstaller(tmp);
+    } else {
+      await installFromDmg(tmp);
+    }
+    try { fs.unlinkSync(tmp); } catch (e) { /* ignore cleanup errors */ }
+    emit({ status: 'done' });
+    return { ok: true };
+  } catch (e) {
+    const msg = String(e && e.message || e);
+    emit({ status: 'error', error: msg });
+    return { ok: false, error: msg };
+  }
+});
+
+// Renderer asks for the auto-installable set so the bundle UI knows which
+// items should route through auto-install vs vendor tabs.
+ipcMain.handle('list-auto-installable-plugins', () => Object.keys(OSS_INSTALLERS));
+
+
 // Renderer reads this to send the SF2 path along with GM channel creation.
 ipcMain.handle('nasty-sf2-path', () => {
   const devInstruments  = path.join(__dirname, '..', 'audio-engine', 'bundled-instruments');

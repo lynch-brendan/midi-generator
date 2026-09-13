@@ -6574,57 +6574,134 @@ function bundleItemById(id) {
   return null;
 }
 
-// Advance to the "installers opened" step, populate its list, and open
-// the vendor URLs in the user's default browser (staggered so a burst
-// doesn't get dropped). The user installs each plugin manually, then
-// clicks "I'm done" (wired in showOnboarding()) to rescan.
+// Split selected items into two piles:
+//   auto  → Tier 1 OSS plugins (silent download + install via IPC)
+//   vendor → everything else (opens vendor page in the user's browser)
+// Fetches the auto-installable list from main.js so we don't hardcode
+// the split on the renderer side.
+let _autoInstallableIds = null;
+async function getAutoInstallableSet() {
+  if (_autoInstallableIds) return _autoInstallableIds;
+  const set = new Set();
+  if (window.nasty && typeof window.nasty.listAutoInstallable === 'function') {
+    try {
+      const list = await window.nasty.listAutoInstallable();
+      for (const id of (list || [])) set.add(id);
+    } catch (e) { /* fall through — empty set = everything routes vendor */ }
+  }
+  _autoInstallableIds = set;
+  return set;
+}
+
+// Kick off installs. Renders each selected item as a row with live status.
+// Auto-installable items download+install silently in sequence. Vendor
+// items open one browser tab each (staggered to keep browsers happy).
 async function kickOffBundleInstalls(selectedIds) {
   const items = selectedIds.map(bundleItemById).filter(Boolean);
+  const autoSet = await getAutoInstallableSet();
+  const autoItems = items.filter(it => autoSet.has(it.id));
+  const vendorItems = items.filter(it => !autoSet.has(it.id));
+
   setOnboardingStep('ob-installing-view');
 
-  // Update the description with the actual count.
   const desc = document.getElementById('ob-installing-desc');
   if (desc) {
-    desc.innerHTML = `
-      We opened <b>${items.length}</b> vendor page${items.length === 1 ? '' : 's'}
-      in your browser. Install each one (they're all free), then come back
-      and click <b>I'm done</b>. Nasty will rescan and update the AI.
-    `;
+    const parts = [];
+    if (autoItems.length) {
+      parts.push(`Installing <b>${autoItems.length}</b> plugin${autoItems.length === 1 ? '' : 's'} silently in the background.`);
+    }
+    if (vendorItems.length) {
+      parts.push(`Opening <b>${vendorItems.length}</b> vendor page${vendorItems.length === 1 ? '' : 's'} in your browser — install each one, then come back.`);
+    }
+    parts.push(`Click <b>I'm done</b> when all installs are complete.`);
+    desc.innerHTML = parts.join(' ');
   }
 
-  // Populate the row list.
+  // Build the row list. Auto items get a live status; vendor items get
+  // the existing "reopen page" affordance.
   const listEl = document.getElementById('ob-install-list');
   const canOpen = window.nasty && typeof window.nasty.openExternal === 'function';
+  const rowById = {};
   if (listEl) {
     listEl.innerHTML = '';
     for (const item of items) {
       const row = document.createElement('div');
       row.className = 'ob-item';
       row.style.cursor = 'default';
+      const isAuto = autoSet.has(item.id);
       row.innerHTML = `
-        <div style="width:16px;color:var(--accent);">◐</div>
+        <div class="ob-install-status" style="width:16px;color:var(--accent);">${isAuto ? '⋯' : '◐'}</div>
         <div class="ob-item-body">
           <div class="ob-item-name">${item.name}</div>
-          <div class="ob-item-meta">Waiting for you to install…</div>
+          <div class="ob-item-meta ob-install-line">${isAuto ? 'Queued for auto-install…' : 'Waiting for you to install…'}</div>
         </div>
-        <button class="ob-btn ob-btn-secondary" style="padding:4px 10px;font-size:10px;">
-          Reopen page
-        </button>
+        ${isAuto ? '' : `<button class="ob-btn ob-btn-secondary" style="padding:4px 10px;font-size:10px;">Reopen page</button>`}
       `;
-      row.querySelector('button').addEventListener('click', () => {
-        if (canOpen) window.nasty.openExternal(item.url);
-      });
+      if (!isAuto) {
+        row.querySelector('button').addEventListener('click', () => {
+          if (canOpen) window.nasty.openExternal(item.url);
+        });
+      }
       listEl.appendChild(row);
+      rowById[item.id] = row;
     }
   }
 
-  // Bulk-open all URLs. 250ms stagger so browsers don't drop tabs.
-  for (let i = 0; i < items.length; i++) {
-    if (canOpen) {
-      try { window.nasty.openExternal(items[i].url); } catch (e) { /* ignore */ }
+  // Subscribe to install-progress events and update the matching row.
+  if (window.nasty && typeof window.nasty.onInstallProgress === 'function') {
+    // Detach any prior listener from a previous run before subscribing.
+    if (onboardingState._installProgressUnsub) {
+      try { onboardingState._installProgressUnsub(); } catch (e) { /* ignore */ }
     }
-    if (i < items.length - 1) await new Promise(r => setTimeout(r, 250));
+    onboardingState._installProgressUnsub = window.nasty.onInstallProgress((payload) => {
+      const row = rowById[payload.pluginId];
+      if (!row) return;
+      const status = row.querySelector('.ob-install-status');
+      const line = row.querySelector('.ob-install-line');
+      if (payload.status === 'resolving') {
+        status.textContent = '⋯'; status.style.color = 'var(--accent)';
+        line.textContent = 'Looking up download…';
+      } else if (payload.status === 'downloading') {
+        status.textContent = '↓'; status.style.color = 'var(--accent)';
+        const p = payload.percent;
+        line.textContent = (p != null) ? `Downloading — ${p}%` : 'Downloading…';
+      } else if (payload.status === 'installing') {
+        status.textContent = '⚙'; status.style.color = 'var(--accent)';
+        line.textContent = 'Installing…';
+      } else if (payload.status === 'done') {
+        status.textContent = '✓'; status.style.color = '#4ecc7a';
+        line.textContent = 'Installed';
+        line.style.color = '#4ecc7a';
+      } else if (payload.status === 'error') {
+        status.textContent = '✕'; status.style.color = '#ff5c5c';
+        line.textContent = `Failed: ${payload.error || 'unknown error'}`;
+        line.style.color = '#ff9090';
+      }
+    });
   }
+
+  // Fire auto-installs sequentially (one at a time — no parallel .pkg
+  // wrestling matches). Vendor tabs open in parallel with staggering.
+  const autoPromise = (async () => {
+    for (const item of autoItems) {
+      if (window.nasty && typeof window.nasty.installPluginAuto === 'function') {
+        try { await window.nasty.installPluginAuto(item.id); }
+        catch (e) { /* error already reported via install-progress */ }
+      }
+    }
+  })();
+
+  const vendorPromise = (async () => {
+    for (let i = 0; i < vendorItems.length; i++) {
+      if (canOpen) {
+        try { window.nasty.openExternal(vendorItems[i].url); } catch (e) { /* ignore */ }
+      }
+      if (i < vendorItems.length - 1) await new Promise(r => setTimeout(r, 250));
+    }
+  })();
+
+  // Fire and forget — the user clicks "I'm done" when they're ready.
+  Promise.all([autoPromise, vendorPromise]);
 }
 
 // Web build has no audio engine — drop the overlay immediately so the app is
