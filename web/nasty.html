@@ -1282,8 +1282,7 @@
   }
   #onboarding-overlay .ob-view.ob-view-wide {
     max-width: 640px;
-    justify-content: flex-start;
-    padding-top: 40px;
+    justify-content: center;
     text-align: left;
   }
   #onboarding-overlay #ob-welcome-view .ob-brand {
@@ -1334,19 +1333,35 @@
 
   /* Single cohesive card containing the whole bundle-choice UI: title,
      copy, radio options, drop-down, and the Install button (full-width
-     inside the card). */
+     inside the card). Subtle pink-gradient border/background to bring
+     some visual life without being loud. */
   #onboarding-overlay .ob-choice-card {
     width: 100%;
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 12px;
-    padding: 24px;
-    display: flex; flex-direction: column; gap: 16px;
+    background: linear-gradient(180deg,
+                                rgba(238, 108, 158, 0.05) 0%,
+                                rgba(255,255,255,0.03) 100%);
+    border: 1px solid rgba(238, 108, 158, 0.18);
+    border-radius: 14px;
+    padding: 30px 28px;
+    display: flex; flex-direction: column; gap: 18px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.25),
+                0 0 0 1px rgba(238, 108, 158, 0.04) inset;
   }
-  #onboarding-overlay .ob-choice-card .ob-step-title,
+  #onboarding-overlay .ob-choice-card .ob-step-title {
+    margin: 0;
+    text-align: center;
+    font-size: 26px;
+  }
+  #onboarding-overlay .ob-choice-card .ob-step-title::before {
+    content: "✨ ";
+    font-size: 22px;
+    filter: drop-shadow(0 0 6px rgba(238, 108, 158, 0.5));
+  }
   #onboarding-overlay .ob-choice-card .ob-step-desc {
     margin: 0;
-    text-align: left;
+    text-align: center;
+    max-width: 520px;
+    align-self: center;
   }
   #onboarding-overlay .ob-choice-options {
     display: flex; flex-direction: column;
@@ -1513,6 +1528,40 @@
   #onboarding-overlay .ob-item-installed .ob-item-meta {
     color: #4ecc7a;
   }
+
+  /* Success interstitial — celebratory beat between vendor installs. */
+  #onboarding-overlay .ob-success-card {
+    width: 100%; max-width: 500px;
+    display: flex; flex-direction: column; align-items: center;
+    gap: 14px;
+    padding: 40px 32px;
+    background: linear-gradient(180deg,
+                                rgba(78, 204, 122, 0.10) 0%,
+                                rgba(255,255,255,0.03) 100%);
+    border: 1px solid rgba(78, 204, 122, 0.35);
+    border-radius: 14px;
+    text-align: center;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.25);
+  }
+  #onboarding-overlay .ob-success-check {
+    width: 60px; height: 60px; border-radius: 50%;
+    background: #4ecc7a; color: #0d1610;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 34px; font-weight: 900;
+    box-shadow: 0 0 24px rgba(78, 204, 122, 0.5);
+  }
+  #onboarding-overlay .ob-success-title {
+    font-size: 22px; font-weight: 800; color: var(--text);
+    letter-spacing: 0.2px;
+  }
+  #onboarding-overlay .ob-success-tagline {
+    font-size: 13px; color: var(--text-dim);
+    line-height: 1.55; max-width: 420px;
+  }
+  #onboarding-overlay .ob-success-meta {
+    font-size: 11px; color: var(--dim);
+    font-variant-numeric: tabular-nums;
+  }
 </style>
 </head>
 <body>
@@ -1576,6 +1625,24 @@
       <button class="ob-btn ob-btn-primary ob-choice-cta" id="ob-install">
         Install selected
       </button>
+    </div>
+  </div>
+
+  <!-- Step 4: success interstitial — shown between vendor installs, so the
+       user gets a beat of "yes it worked" + a taste of why the plugin
+       matters before the next vendor page pops. -->
+  <div class="ob-view" id="ob-success-view" style="display:none;">
+    <div class="ob-success-card">
+      <div class="ob-success-check">✓</div>
+      <div class="ob-success-title" id="ob-success-title">You have it!</div>
+      <div class="ob-success-tagline" id="ob-success-tagline"></div>
+      <div class="ob-success-meta" id="ob-success-meta"></div>
+      <div class="ob-step-actions" style="width:100%;">
+        <button class="ob-btn ob-btn-secondary" id="ob-success-done">I'm done</button>
+        <button class="ob-btn ob-btn-primary ob-step-cta" id="ob-success-next">
+          Install next
+        </button>
+      </div>
     </div>
   </div>
 
@@ -6616,8 +6683,51 @@ async function triggerResearchNow() {
 const OB_STEPS = [
   'ob-welcome-view',
   'ob-bundle-view',
+  'ob-success-view',
   'ob-installing-view',
 ];
+
+// One-line "why this plugin is dope" per bundle item. Shown on the success
+// interstitial after each install. Fallback if a plugin isn't in the map:
+// use its category. Curated by hand — feels warmer than a manifest field.
+const PLUGIN_TAGLINES = {
+  'valhalla-supermassive': 'Huge cinematic reverbs — feedback-into-shimmer madness on tap.',
+  'valhalla-freq-echo':    'Frequency-shifting delay for weird, wobbly, ethereal echoes.',
+  'valhalla-space-modulator': 'Retro modulation reverb — flangey, chorusy space textures.',
+  'tdr-nova':              'Dynamic EQ that carves problems out of your mix without pumping.',
+  'tdr-kotelnikov':        'Mastering-grade compressor — clean, smooth glue on your master.',
+  'tdr-slickeq':           'Broadband tone-shaping EQ with vintage color.',
+  'klanghelm-ivgi':        'Tape/tube saturation — warmth and glue with one knob.',
+  'klanghelm-mjuc-jr':     'Vintage vari-mu compressor — thick, smooth, punchy.',
+  'xfer-ott':              'Aggressive multiband compressor — the sound of modern EDM.',
+  'voxengo-span':          'Real-time spectrum analyzer for spotting mix problems fast.',
+  'voxengo-oldskoolverb':  'Classic algorithmic reverb — warm, musical rooms and halls.',
+  'tal-noisemaker':        'Classic virtual analog synth — punchy basses, fat leads.',
+  'tal-reverb-4':          'Plate-style reverb — warm, smooth, always-on-tap tails.',
+  'obxd':                  'Oberheim-style analog polysynth — warm 80s pads and leads.',
+  'podolski':              'Simple u-he virtual analog — clean, versatile, CPU-friendly.',
+  'tyrell-n6':             'Classic dual-osc analog voice — thick basses and bright leads.',
+  'zebralette':            'Wavetable oscillator playground — a taste of u-he Zebra.',
+  'mt-power-drum-kit-2':   'Free acoustic drum kit — sounds pro out of the box.',
+  'sitala':                'Drop-in drum sampler — instant beat-making surface.',
+  'vital':                 'Serum-tier wavetable synth — free tier is fully usable.',
+  'steven-slate-drums-5-5-free': 'Modern rock/pop drum kit — punchy, produced samples.',
+  'sfizz':                 'SFZ sample player — opens tons of free instrument libraries.',
+};
+
+function pluginTagline(item) {
+  if (!item) return '';
+  const t = PLUGIN_TAGLINES[item.id];
+  if (t) return t;
+  const cat = (item.category || item.format || '').toLowerCase();
+  if (cat.includes('reverb')) return 'A reverb effect — space and depth for your sounds.';
+  if (cat.includes('delay')) return 'A delay effect — echoes and rhythmic bounces.';
+  if (cat.includes('compressor') || cat.includes('dynamics')) return 'A compressor — control dynamics, glue tracks together.';
+  if (cat.includes('eq')) return 'An EQ — shape frequency balance.';
+  if (cat.includes('synth')) return 'A synth — new sound-design territory for your rig.';
+  if (cat.includes('drum')) return 'Drums — new percussive material for your beats.';
+  return 'A free tool worth having in your library.';
+}
 
 function setOnboardingStep(stepId) {
   for (const id of OB_STEPS) {
@@ -6813,7 +6923,10 @@ async function kickOffBundleInstalls(selectedIds) {
     });
   }
 
-  // Auto-installs (Tier 1) — sequential to avoid parallel .pkg wrestling.
+  // Auto-installs (Tier 1) — sequential background work. Silent — the
+  // user doesn't see anything for these; they just show up green in the
+  // final scan. No interstitial per install (would feel spammy for
+  // 3 silent background installs).
   const autoPromise = (async () => {
     for (const item of autoItems) {
       if (window.nasty && typeof window.nasty.installPluginAuto === 'function') {
@@ -6823,26 +6936,83 @@ async function kickOffBundleInstalls(selectedIds) {
     }
   })();
 
-  // Vendor installs (Tier 2) — sequential in-app-browser flow. Each opens
-  // a child BrowserWindow to the vendor page; user clicks Download; Nasty
-  // catches the download and runs the installer silently. Runs one at a
-  // time so the user isn't looking at 14 vendor pages simultaneously.
+  // Vendor installs (Tier 2) — sequential, with a "success" pause step
+  // between each so the user gets confirmation + context before the next
+  // vendor window opens. Awaits a Promise that the user resolves by
+  // clicking Install next / I'm done on the success interstitial.
   const canWebInstall = window.nasty && typeof window.nasty.installPluginViaWeb === 'function';
   const vendorPromise = (async () => {
-    for (const item of vendorItems) {
+    for (let i = 0; i < vendorItems.length; i++) {
+      const item = vendorItems[i];
+      let ok = false;
       if (canWebInstall) {
-        try { await window.nasty.installPluginViaWeb(item.id, item.url, item.name); }
-        catch (e) { /* error already reported via install-progress */ }
+        try {
+          const result = await window.nasty.installPluginViaWeb(item.id, item.url, item.name);
+          ok = !!(result && result.ok);
+        } catch (e) { /* error already reported via install-progress */ }
       } else if (canOpen) {
-        // Fallback for older builds without the in-app browser: external tab.
         try { window.nasty.openExternal(item.url); } catch (e) { /* ignore */ }
         await new Promise(r => setTimeout(r, 250));
+        ok = true;
+      }
+      // Show the success interstitial after each successful install.
+      // Skipped/failed items go straight to the next (no celebration).
+      if (ok && i < vendorItems.length - 1) {
+        const cont = await showSuccessInterstitial(item, i + 1, vendorItems.length);
+        if (!cont) break; // user clicked "I'm done"
+      } else if (ok && i === vendorItems.length - 1) {
+        // Last item — show a final "all done" beat.
+        await showSuccessInterstitial(item, i + 1, vendorItems.length);
       }
     }
   })();
 
-  // Fire and forget — the user clicks "I'm done" when they're ready.
   Promise.all([autoPromise, vendorPromise]);
+}
+
+// Show the success interstitial for `item`. Resolves true if the user
+// clicked "Install next" (or if this was the last item and they clicked
+// the equivalent), false if they clicked "I'm done".
+function showSuccessInterstitial(item, indexOneBased, total) {
+  return new Promise((resolve) => {
+    setOnboardingStep('ob-success-view');
+    const titleEl = document.getElementById('ob-success-title');
+    const tagEl   = document.getElementById('ob-success-tagline');
+    const metaEl  = document.getElementById('ob-success-meta');
+    const nextBtn = document.getElementById('ob-success-next');
+    const doneBtn = document.getElementById('ob-success-done');
+    if (titleEl) titleEl.textContent = `You have ${item.name}!`;
+    if (tagEl) tagEl.textContent = pluginTagline(item);
+    const isLast = indexOneBased >= total;
+    if (metaEl) metaEl.textContent = isLast
+      ? `All ${total} plugins installed.`
+      : `${indexOneBased} of ${total} installed.`;
+    if (nextBtn) nextBtn.textContent = isLast ? 'Finish onboarding' : 'Install next';
+
+    const cleanup = () => {
+      if (nextBtn) nextBtn.onclick = null;
+      if (doneBtn) doneBtn.onclick = null;
+    };
+    if (nextBtn) nextBtn.onclick = () => {
+      cleanup();
+      if (isLast) {
+        markOnboarded();
+        triggerResearchNow();
+        dismissOnboarding();
+        resolve(false);
+      } else {
+        setOnboardingStep('ob-installing-view');
+        resolve(true);
+      }
+    };
+    if (doneBtn) doneBtn.onclick = () => {
+      cleanup();
+      markOnboarded();
+      triggerResearchNow();
+      dismissOnboarding();
+      resolve(false);
+    };
+  });
 }
 
 // Web build has no audio engine — drop the overlay immediately so the app is
