@@ -1332,6 +1332,44 @@
     flex: 0 0 auto;
   }
 
+  /* Preset choice — three big radio-buttons at the top of the bundle
+     step. Applying a preset just checks/unchecks the section masters
+     below; the sections still show live count + size + Details toggle. */
+  #onboarding-overlay .ob-preset-choice {
+    display: flex; flex-direction: column; gap: 8px;
+    width: 100%; margin-bottom: 4px;
+  }
+  #onboarding-overlay .ob-preset-option {
+    display: flex; align-items: flex-start; gap: 14px;
+    padding: 14px 18px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background 100ms ease, border-color 100ms ease;
+  }
+  #onboarding-overlay .ob-preset-option:hover {
+    background: rgba(255,255,255,0.05);
+    border-color: rgba(255,255,255,0.14);
+  }
+  #onboarding-overlay .ob-preset-option input[type=radio] {
+    margin: 4px 0 0; accent-color: var(--accent);
+    width: 16px; height: 16px; cursor: pointer; flex-shrink: 0;
+  }
+  #onboarding-overlay .ob-preset-option:has(input:checked) {
+    background: rgba(238, 108, 158, 0.08);
+    border-color: rgba(238, 108, 158, 0.35);
+  }
+  #onboarding-overlay .ob-preset-body {
+    display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0;
+  }
+  #onboarding-overlay .ob-preset-name {
+    font-size: 14px; font-weight: 700; color: var(--text);
+  }
+  #onboarding-overlay .ob-preset-sub {
+    font-size: 11px; color: var(--text-dim);
+  }
+
   /* Section rows — one per major bundle grouping. Header has a master
      checkbox + description + count/size + a details-toggle button. Body
      is a collapsible list of individual plugin checkboxes. */
@@ -1459,16 +1497,42 @@
     </button>
   </div>
 
-  <!-- Step 2: bundle offer. Two collapsible section rows with a master
-       checkbox each. Section header shows name + count + size + reason.
-       Expandable dropdown reveals individual plugin checkboxes. -->
+  <!-- Step 2: bundle offer. Three-way top-level choice + two collapsible
+       section rows below for granular control. -->
   <div class="ob-view ob-view-wide" id="ob-bundle-view" style="display:none;">
     <div class="ob-step-title">
-      <span class="ob-title-accent">Free</span> plugins to get you started
+      Want some <span class="ob-title-accent">free</span> plugins?
     </div>
     <div class="ob-step-desc">
-      Every plugin on this page is 100% free. Pick a whole section, or
-      open one to choose individually.
+      Nasty's AI works way better with more plugins to reach for. Most
+      of these take a minute and a couple clicks; two need a free vendor
+      account. Everything on this page is 100% free.
+    </div>
+
+    <!-- Three-way path selector. Clicking one applies its preset to the
+         section masters below and previews the resulting count/size. -->
+    <div class="ob-preset-choice">
+      <label class="ob-preset-option" data-preset="all">
+        <input type="radio" name="ob-preset" value="all" checked>
+        <div class="ob-preset-body">
+          <div class="ob-preset-name">Grab everything</div>
+          <div class="ob-preset-sub">Fastest — installs all recommended free plugins.</div>
+        </div>
+      </label>
+      <label class="ob-preset-option" data-preset="no-account">
+        <input type="radio" name="ob-preset" value="no-account">
+        <div class="ob-preset-body">
+          <div class="ob-preset-name">Grab everything except the account ones</div>
+          <div class="ob-preset-sub">Skip the two that ask for a free vendor account.</div>
+        </div>
+      </label>
+      <label class="ob-preset-option" data-preset="manual">
+        <input type="radio" name="ob-preset" value="manual">
+        <div class="ob-preset-body">
+          <div class="ob-preset-name">Let me pick</div>
+          <div class="ob-preset-sub">Open the sections below and choose individually.</div>
+        </div>
+      </label>
     </div>
 
     <!-- Section 1: Starter pack — all instruments + effects + sound content.
@@ -6286,6 +6350,49 @@ function renderOnboardingScan(known) {
   }
 }
 
+// Apply a top-level preset — "all" checks both section masters; "no-account"
+// checks only starter; "manual" leaves the current selection alone and
+// auto-opens the section details for granular editing.
+function applyBundlePreset(preset) {
+  const starterIds = (onboardingState.sectionIds && onboardingState.sectionIds.starter) || [];
+  const extrasIds  = (onboardingState.sectionIds && onboardingState.sectionIds.extras)  || [];
+  const byId = onboardingState.byId || {};
+  const eligible = ids => ids.filter(id => byId[id] && !isAlreadyInstalled(byId[id]));
+
+  if (preset === 'all') {
+    for (const id of eligible(starterIds)) onboardingState.selectedIds.add(id);
+    for (const id of eligible(extrasIds))  onboardingState.selectedIds.add(id);
+  } else if (preset === 'no-account') {
+    for (const id of eligible(starterIds)) onboardingState.selectedIds.add(id);
+    for (const id of extrasIds) onboardingState.selectedIds.delete(id);
+  } else if (preset === 'manual') {
+    // Leave selections as-is; open both sections for tweaking.
+    for (const key of ['starter', 'extras']) {
+      const row = document.querySelector(`.ob-section-row[data-section="${key}"]`);
+      if (!row) continue;
+      const details = row.querySelector('.ob-section-details');
+      const toggle = row.querySelector('.ob-section-toggle');
+      if (details && details.style.display === 'none') {
+        details.style.display = '';
+        if (toggle) toggle.textContent = 'Hide ▲';
+      }
+    }
+  }
+
+  // Reflect the preset on the section masters + item checkboxes + counters.
+  for (const key of ['starter', 'extras']) {
+    syncSectionMaster(key);
+    updateSectionMeta(key);
+    const row = document.querySelector(`.ob-section-row[data-section="${key}"]`);
+    if (!row) continue;
+    const ids = onboardingState.sectionIds[key] || [];
+    for (const cb of row.querySelectorAll('.ob-section-items input[type=checkbox]')) {
+      const id = cb.dataset.id;
+      cb.checked = onboardingState.selectedIds.has(id);
+    }
+  }
+}
+
 // Render the two collapsible section rows (Free starter pack + Optional
 // extras) from the manifest. Section master checkbox toggles all items in
 // that section on/off. Details button expands individual item list.
@@ -6523,6 +6630,17 @@ async function showOnboarding() {
     if (obManifest) {
       renderOnboardingBundle(obManifest);
       renderOnboardingExtras(obManifest);
+      // Default preset is "all" — everything checked (matches the initial
+      // section master states). Wire the radio-preset options.
+      for (const radio of document.querySelectorAll('input[name="ob-preset"]')) {
+        radio.onchange = () => {
+          if (radio.checked) applyBundlePreset(radio.value);
+        };
+      }
+      // Kick off the default "all" preset so extras get pre-checked too
+      // (renderOnboardingBundle defaults extras to unchecked; the initial
+      // radio value is "all" so we apply it here to reconcile).
+      applyBundlePreset('all');
     }
   };
 
