@@ -29,6 +29,13 @@ contextBridge.exposeInMainWorld('nasty', {
     return () => ipcRenderer.removeListener('install-progress', handler);
   },
 
+  // Tier 2 in-app browser installer — opens vendor page in a child
+  // BrowserWindow, intercepts the file download when the user clicks
+  // Download on that page, and runs the installer silently. Same
+  // install-progress event stream as installPluginAuto (statuses:
+  // opening-page, downloading, installing, done, error).
+  installPluginViaWeb: (pluginId, url) => ipcRenderer.invoke('install-plugin-via-web', { pluginId, url }),
+
   // Path to the bundled General MIDI SoundFont on disk.
   sf2Path: () => ipcRenderer.invoke('nasty-sf2-path'),
 

@@ -505,6 +505,170 @@ ipcMain.handle('install-plugin-auto', async (evt, pluginId) => {
 ipcMain.handle('list-auto-installable-plugins', () => Object.keys(OSS_INSTALLERS));
 
 
+// ---------------------------------------------------------------------------
+// Tier 2 in-app browser install — for freeware plugins with no direct download
+// URL (Valhalla, TDR, Klanghelm, u-he, TAL, ...). Opens the vendor's page in
+// an embedded BrowserWindow; when the user clicks Download on that page,
+// Electron intercepts the file save via `will-download` and pipes it to the
+// same installer logic the Tier 1 path uses. User clicks once (the vendor's
+// Download button), plugin lands silently.
+// ---------------------------------------------------------------------------
+
+// Given a downloaded .pkg or .dmg path, run the appropriate installer. Reuses
+// the Tier 1 helpers (runPkgInstaller, installFromDmg) so both tiers share
+// the same "final mile" install code.
+async function installDownloadedFile(filePath) {
+  const lower = filePath.toLowerCase();
+  if (lower.endsWith('.pkg')) {
+    await runPkgInstaller(filePath);
+    return;
+  }
+  if (lower.endsWith('.dmg')) {
+    await installFromDmg(filePath);
+    return;
+  }
+  if (lower.endsWith('.zip')) {
+    // Best-effort: unzip and look inside for .pkg / .dmg / plugin bundles.
+    const { execFileSync } = require('child_process');
+    const outDir = path.join(require('os').tmpdir(), 'nasty-unzip-' + Date.now());
+    fs.mkdirSync(outDir, { recursive: true });
+    execFileSync('unzip', ['-q', filePath, '-d', outDir]);
+    // Find nested installer or plugin bundles.
+    const walk = (d) => {
+      const found = [];
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        const p = path.join(d, e.name);
+        if (e.isDirectory() && (e.name.endsWith('.vst3') || e.name.endsWith('.component'))) {
+          found.push({ kind: 'bundle', path: p });
+        } else if (e.isFile() && (e.name.endsWith('.pkg') || e.name.endsWith('.dmg'))) {
+          found.push({ kind: 'installer', path: p });
+        } else if (e.isDirectory()) {
+          found.push(...walk(p));
+        }
+      }
+      return found;
+    };
+    const items = walk(outDir);
+    const installer = items.find(i => i.kind === 'installer');
+    if (installer) {
+      if (installer.path.toLowerCase().endsWith('.pkg')) await runPkgInstaller(installer.path);
+      else await installFromDmg(installer.path);
+      return;
+    }
+    // No nested installer — copy any .vst3/.component bundles directly.
+    const home = require('os').homedir();
+    const vst3Dir = path.join(home, 'Library', 'Audio', 'Plug-Ins', 'VST3');
+    const auDir   = path.join(home, 'Library', 'Audio', 'Plug-Ins', 'Components');
+    fs.mkdirSync(vst3Dir, { recursive: true });
+    fs.mkdirSync(auDir,   { recursive: true });
+    let copied = 0;
+    for (const item of items) {
+      if (item.kind !== 'bundle') continue;
+      const dest = item.path.endsWith('.vst3')
+        ? path.join(vst3Dir, path.basename(item.path))
+        : path.join(auDir,   path.basename(item.path));
+      fs.cpSync(item.path, dest, { recursive: true });
+      copied++;
+    }
+    if (copied === 0) throw new Error('.zip had no installer or plugin bundles');
+    return;
+  }
+  throw new Error(`don't know how to install ${path.basename(filePath)}`);
+}
+
+// Open the vendor URL in a child BrowserWindow that stays modal to Nasty's
+// main window. Listen for downloads via `will-download`; when the user clicks
+// a Download button on the vendor's page, we intercept the save, run the
+// installer, and resolve. If the user closes the window without downloading,
+// resolve with ok:false so the renderer can move to the next item in the
+// queue instead of hanging.
+ipcMain.handle('install-plugin-via-web', async (evt, { pluginId, url }) => {
+  const emit = (payload) => {
+    if (evt.sender && !evt.sender.isDestroyed()) {
+      evt.sender.send('install-progress', { pluginId, ...payload });
+    }
+  };
+  if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
+    return { ok: false, error: 'invalid url' };
+  }
+
+  emit({ status: 'opening-page' });
+
+  return new Promise((resolve) => {
+    const win = new BrowserWindow({
+      width: 1000,
+      height: 720,
+      parent: mainWindow || undefined,
+      modal: false,
+      title: 'Install plugin — click Download on this page',
+      backgroundColor: '#252932',
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        // Sandboxed webview for the vendor page — no access to Node APIs.
+        sandbox: true,
+      },
+    });
+
+    let downloaded = false;
+
+    // Intercept downloads triggered by the vendor page. We pick the save
+    // path (Nasty's tmp folder) so the user never sees a save-file dialog,
+    // then run the installer once bytes are on disk.
+    win.webContents.session.on('will-download', (event, item /*, webContents*/) => {
+      const suggested = item.getFilename() || 'plugin-download';
+      const dest = path.join(require('os').tmpdir(),
+        `nasty-web-install-${pluginId}-${Date.now()}-${suggested}`);
+      item.setSavePath(dest);
+      emit({ status: 'downloading', percent: 0 });
+
+      item.on('updated', (_e, state) => {
+        if (state === 'progressing') {
+          const total = item.getTotalBytes();
+          const bytes = item.getReceivedBytes();
+          const pct = total ? Math.round(bytes / total * 100) : null;
+          emit({ status: 'downloading', percent: pct, bytes, total });
+        }
+      });
+
+      item.once('done', async (_e, state) => {
+        if (state !== 'completed') {
+          emit({ status: 'error', error: `download ${state}` });
+          try { win.close(); } catch {}
+          return resolve({ ok: false, error: `download ${state}` });
+        }
+        downloaded = true;
+        emit({ status: 'installing' });
+        try {
+          await installDownloadedFile(dest);
+          try { fs.unlinkSync(dest); } catch {}
+          emit({ status: 'done' });
+          try { win.close(); } catch {}
+          resolve({ ok: true });
+        } catch (err) {
+          const msg = String(err && err.message || err);
+          emit({ status: 'error', error: msg });
+          try { win.close(); } catch {}
+          resolve({ ok: false, error: msg });
+        }
+      });
+    });
+
+    // If the user closes the window without triggering a download, treat
+    // it as "skipped this plugin" — resolve so the queue moves on.
+    win.on('closed', () => {
+      if (!downloaded) resolve({ ok: false, skipped: true });
+    });
+
+    win.loadURL(url).catch((err) => {
+      emit({ status: 'error', error: `failed to open ${url}: ${err}` });
+      try { win.close(); } catch {}
+      resolve({ ok: false, error: String(err) });
+    });
+  });
+});
+
+
 // Renderer reads this to send the SF2 path along with GM channel creation.
 ipcMain.handle('nasty-sf2-path', () => {
   const devInstruments  = path.join(__dirname, '..', 'audio-engine', 'bundled-instruments');
