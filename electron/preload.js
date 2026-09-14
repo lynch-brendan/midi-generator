@@ -33,8 +33,9 @@ contextBridge.exposeInMainWorld('nasty', {
   // BrowserWindow, intercepts the file download when the user clicks
   // Download on that page, and runs the installer silently. Same
   // install-progress event stream as installPluginAuto (statuses:
-  // opening-page, downloading, installing, done, error).
-  installPluginViaWeb: (pluginId, url) => ipcRenderer.invoke('install-plugin-via-web', { pluginId, url }),
+  // opening-page, downloading, installing, done, error). `name` is
+  // shown in the loading screen while the vendor page fetches.
+  installPluginViaWeb: (pluginId, url, name) => ipcRenderer.invoke('install-plugin-via-web', { pluginId, url, name }),
 
   // Path to the bundled General MIDI SoundFont on disk.
   sf2Path: () => ipcRenderer.invoke('nasty-sf2-path'),

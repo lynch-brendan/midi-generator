@@ -582,7 +582,7 @@ async function installDownloadedFile(filePath) {
 // installer, and resolve. If the user closes the window without downloading,
 // resolve with ok:false so the renderer can move to the next item in the
 // queue instead of hanging.
-ipcMain.handle('install-plugin-via-web', async (evt, { pluginId, url }) => {
+ipcMain.handle('install-plugin-via-web', async (evt, { pluginId, url, name }) => {
   const emit = (payload) => {
     if (evt.sender && !evt.sender.isDestroyed()) {
       evt.sender.send('install-progress', { pluginId, ...payload });
@@ -600,22 +600,55 @@ ipcMain.handle('install-plugin-via-web', async (evt, { pluginId, url }) => {
       height: 720,
       parent: mainWindow || undefined,
       modal: false,
-      title: 'Install plugin — click Download on this page',
+      title: `Installing ${name || 'plugin'} — click Download when it appears`,
       backgroundColor: '#252932',
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,
-        // Sandboxed webview for the vendor page — no access to Node APIs.
         sandbox: true,
       },
     });
 
+    // Loading screen — shown INSIDE the child window while the vendor
+    // page fetches. Data URL is instant so the user never sees a blank
+    // window. Replaced automatically when we navigate to the vendor URL.
+    const displayName = (name || 'plugin').replace(/[<>&"]/g, '');
+    const loadingHtml = `<!DOCTYPE html><html><head><style>
+      html,body{margin:0;height:100vh;background:#252932;color:#eaecef;
+        font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+        display:flex;align-items:center;justify-content:center;flex-direction:column;gap:20px;}
+      .brand{font-weight:900;font-size:28px;letter-spacing:3px;
+        background:linear-gradient(135deg,#ee6c9e 0%,#ffb0d0 100%);
+        -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+      .msg{font-size:13px;color:#b0b4bd;text-align:center;max-width:400px;line-height:1.5;}
+      .bar{width:220px;height:3px;background:#2a2530;border-radius:2px;overflow:hidden;position:relative;margin-top:6px;}
+      .bar::after{content:"";position:absolute;inset:0;width:30%;
+        background:linear-gradient(90deg,transparent,#ee6c9e,transparent);
+        animation:sweep 1.6s linear infinite;}
+      @keyframes sweep{0%{transform:translateX(-100%);}100%{transform:translateX(400%);}}
+      .hint{font-size:11px;color:#7a8090;margin-top:14px;}
+    </style></head><body>
+      <div class="brand">NASTY</div>
+      <div class="msg">Fetching download page for <b>${displayName}</b>…</div>
+      <div class="bar"></div>
+      <div class="hint">When the page loads, click any Download button. Nasty handles the rest.</div>
+    </body></html>`;
+    win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(loadingHtml));
+
+    // After the loader paints, navigate to the actual vendor URL. Small
+    // delay so the user actually sees the loader for at least a moment
+    // — otherwise a fast vendor page just flickers past it.
+    setTimeout(() => {
+      win.loadURL(url).catch((err) => {
+        emit({ status: 'error', error: `failed to open ${url}: ${err}` });
+        try { win.close(); } catch {}
+        resolve({ ok: false, error: String(err) });
+      });
+    }, 300);
+
     let downloaded = false;
 
-    // Intercept downloads triggered by the vendor page. We pick the save
-    // path (Nasty's tmp folder) so the user never sees a save-file dialog,
-    // then run the installer once bytes are on disk.
-    win.webContents.session.on('will-download', (event, item /*, webContents*/) => {
+    win.webContents.session.on('will-download', (event, item) => {
       const suggested = item.getFilename() || 'plugin-download';
       const dest = path.join(require('os').tmpdir(),
         `nasty-web-install-${pluginId}-${Date.now()}-${suggested}`);
@@ -654,16 +687,8 @@ ipcMain.handle('install-plugin-via-web', async (evt, { pluginId, url }) => {
       });
     });
 
-    // If the user closes the window without triggering a download, treat
-    // it as "skipped this plugin" — resolve so the queue moves on.
     win.on('closed', () => {
       if (!downloaded) resolve({ ok: false, skipped: true });
-    });
-
-    win.loadURL(url).catch((err) => {
-      emit({ status: 'error', error: `failed to open ${url}: ${err}` });
-      try { win.close(); } catch {}
-      resolve({ ok: false, error: String(err) });
     });
   });
 });

@@ -1332,16 +1332,33 @@
     flex: 0 0 auto;
   }
 
-  /* Compact one-block choice — four small radio rows in a single card,
-     plus an optional drop-down list of individual plugins when "Choose"
-     is selected. Replaces the earlier big-card and section-row layout. */
-  #onboarding-overlay .ob-choice-block {
+  /* Single cohesive card containing the whole bundle-choice UI: title,
+     copy, radio options, drop-down, and the Install button (full-width
+     inside the card). */
+  #onboarding-overlay .ob-choice-card {
     width: 100%;
     background: rgba(255,255,255,0.03);
     border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 10px;
-    padding: 12px 16px;
-    margin-bottom: 4px;
+    border-radius: 12px;
+    padding: 24px;
+    display: flex; flex-direction: column; gap: 16px;
+  }
+  #onboarding-overlay .ob-choice-card .ob-step-title,
+  #onboarding-overlay .ob-choice-card .ob-step-desc {
+    margin: 0;
+    text-align: left;
+  }
+  #onboarding-overlay .ob-choice-options {
+    display: flex; flex-direction: column;
+    padding: 12px 14px 8px;
+    background: rgba(0,0,0,0.15);
+    border-radius: 8px;
+  }
+  #onboarding-overlay .ob-choice-cta {
+    flex: 0 0 auto;
+    padding: 14px 24px; font-size: 14px;
+    letter-spacing: 1px;
+    width: 100%; margin: 0;
   }
   #onboarding-overlay .ob-choice-row {
     display: flex; align-items: center; gap: 10px;
@@ -1523,41 +1540,40 @@
     </button>
   </div>
 
-  <!-- Step 2: bundle offer. Single compact choice block — four small
-       radio options and one drop-down list. No separate section cards. -->
+  <!-- Step 2: bundle offer. Single cohesive card — title + copy + choice
+       radios + drop-down + Install button all in one container. -->
   <div class="ob-view ob-view-wide" id="ob-bundle-view" style="display:none;">
-    <div class="ob-step-title">Want free plugins?</div>
-    <div class="ob-step-desc">
-      Wanna download some free plugins so your experience is way better?
-      Most take a minute and a couple clicks; two of them ask you to sign
-      up for a free account.
-    </div>
+    <div class="ob-choice-card">
+      <div class="ob-step-title">Want free plugins?</div>
+      <div class="ob-step-desc">
+        Wanna download some free plugins so your experience is way better?
+        Most take a minute and a couple clicks; two of them ask you to sign
+        up for a free account.
+      </div>
 
-    <div class="ob-choice-block">
-      <label class="ob-choice-row">
-        <input type="radio" name="ob-preset" value="all" checked>
-        <span>Download all</span>
-      </label>
-      <label class="ob-choice-row">
-        <input type="radio" name="ob-preset" value="no-account">
-        <span>Download all except the free-account ones</span>
-      </label>
-      <label class="ob-choice-row">
-        <input type="radio" name="ob-preset" value="none">
-        <span>Download none</span>
-      </label>
-      <label class="ob-choice-row">
-        <input type="radio" name="ob-preset" value="manual">
-        <span>Choose which ones to download</span>
-      </label>
+      <div class="ob-choice-options">
+        <label class="ob-choice-row">
+          <input type="radio" name="ob-preset" value="all" checked>
+          <span>Download all</span>
+        </label>
+        <label class="ob-choice-row">
+          <input type="radio" name="ob-preset" value="no-account">
+          <span>Download all except the free-account ones</span>
+        </label>
+        <label class="ob-choice-row">
+          <input type="radio" name="ob-preset" value="none">
+          <span>Download none</span>
+        </label>
+        <label class="ob-choice-row">
+          <input type="radio" name="ob-preset" value="manual">
+          <span>Choose which ones to download</span>
+        </label>
 
-      <!-- Manual picker — appears only when "Choose which ones" is selected.
-           Single flat list of every plugin with a checkbox each. -->
-      <div class="ob-manual-list" id="ob-manual-list" style="display:none;"></div>
-    </div>
+        <!-- Manual picker — shown only when "Choose which ones" is checked. -->
+        <div class="ob-manual-list" id="ob-manual-list" style="display:none;"></div>
+      </div>
 
-    <div class="ob-step-actions">
-      <button class="ob-btn ob-btn-primary ob-step-cta" id="ob-install">
+      <button class="ob-btn ob-btn-primary ob-choice-cta" id="ob-install">
         Install selected
       </button>
     </div>
@@ -6815,7 +6831,7 @@ async function kickOffBundleInstalls(selectedIds) {
   const vendorPromise = (async () => {
     for (const item of vendorItems) {
       if (canWebInstall) {
-        try { await window.nasty.installPluginViaWeb(item.id, item.url); }
+        try { await window.nasty.installPluginViaWeb(item.id, item.url, item.name); }
         catch (e) { /* error already reported via install-progress */ }
       } else if (canOpen) {
         // Fallback for older builds without the in-app browser: external tab.
