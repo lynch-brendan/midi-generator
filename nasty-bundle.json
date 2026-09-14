@@ -11,33 +11,28 @@
   "vendor_groups": {
     "valhalla": {
       "display_name": "Valhalla free plugins",
-      "url": "https://valhalladsp.com/free-audio-plugins/",
-      "hint": "Valhalla's free-plugin hub. Grab the ones we selected below. Each has its own product page — click the plugin card, scroll to the bottom of its page, and hit Download. Newsletter popups are safe to close."
+      "url": "https://valhalladsp.com/shop/reverb/valhalla-supermassive/",
+      "hint": "You're on the Valhalla Supermassive page. Scroll to the bottom to download it, then use the site's Free Plugins menu to grab Freq Echo and Space Modulator too. Newsletter popups are safe to close."
     },
     "tdr": {
       "display_name": "TDR / Tokyo Dawn Labs free plugins",
-      "url": "https://www.tokyodawn.net/labs/",
-      "hint": "TDR's freeware hub. Click each plugin's product page, scroll to the Downloads section, and grab the macOS package. Download runs silently — give it ~30 seconds."
+      "url": "https://www.tokyodawn.net/tdr-nova/",
+      "hint": "You're on the TDR Nova page. Scroll to Downloads → macOS package. Then use the site's top menu to grab Kotelnikov and SlickEQ from their product pages. Download runs silently — give it ~30 seconds."
     },
     "klanghelm": {
       "display_name": "Klanghelm free plugins",
-      "url": "https://klanghelm.com/contents/products/products.php",
-      "hint": "Klanghelm's product list. The free plugins are IVGI and MJUC jr — grab both. Ignore the paid plugins on the page."
-    },
-    "u-he": {
-      "display_name": "u-he free synths",
-      "url": "https://u-he.com/community/free-synths/",
-      "hint": "u-he's freeware page. Click each synth's product page and grab the macOS installer. Fully free — no license key needed."
+      "url": "https://klanghelm.com/contents/products/IVGI.php",
+      "hint": "You're on Klanghelm IVGI. Scroll to Downloads → macOS. Then use the site's Products menu to grab MJUC jr (the other free one). Ignore SDRR, DC1A, MJUC (those are paid)."
     },
     "voxengo": {
       "display_name": "Voxengo free plugins",
-      "url": "https://www.voxengo.com/group/freeware/",
-      "hint": "Voxengo's freeware hub. Click each plugin, grab the macOS download. Email field is optional — you can skip it."
+      "url": "https://www.voxengo.com/product/span/",
+      "hint": "You're on Voxengo SPAN. Click the macOS download. Then use the site's menu to grab OldSkoolVerb. Email field is optional — skip it if you want."
     },
     "tal": {
       "display_name": "TAL free plugins",
-      "url": "https://tal-software.com/products",
-      "hint": "TAL's product list. Free ones are NoiseMaker (synth) and Reverb 4. Click each, scroll down to Downloads."
+      "url": "https://tal-software.com/products/tal-noisemaker",
+      "hint": "You're on TAL NoiseMaker. Scroll to Downloads → macOS installer. Then use the site's Products menu to grab TAL-Reverb-4."
     }
   },
   "bundles": {
