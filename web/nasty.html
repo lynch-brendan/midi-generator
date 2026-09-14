@@ -6680,8 +6680,7 @@ async function kickOffBundleInstalls(selectedIds) {
     });
   }
 
-  // Fire auto-installs sequentially (one at a time — no parallel .pkg
-  // wrestling matches). Vendor tabs open in parallel with staggering.
+  // Auto-installs (Tier 1) — sequential to avoid parallel .pkg wrestling.
   const autoPromise = (async () => {
     for (const item of autoItems) {
       if (window.nasty && typeof window.nasty.installPluginAuto === 'function') {
@@ -6691,12 +6690,21 @@ async function kickOffBundleInstalls(selectedIds) {
     }
   })();
 
+  // Vendor installs (Tier 2) — sequential in-app-browser flow. Each opens
+  // a child BrowserWindow to the vendor page; user clicks Download; Nasty
+  // catches the download and runs the installer silently. Runs one at a
+  // time so the user isn't looking at 14 vendor pages simultaneously.
+  const canWebInstall = window.nasty && typeof window.nasty.installPluginViaWeb === 'function';
   const vendorPromise = (async () => {
-    for (let i = 0; i < vendorItems.length; i++) {
-      if (canOpen) {
-        try { window.nasty.openExternal(vendorItems[i].url); } catch (e) { /* ignore */ }
+    for (const item of vendorItems) {
+      if (canWebInstall) {
+        try { await window.nasty.installPluginViaWeb(item.id, item.url); }
+        catch (e) { /* error already reported via install-progress */ }
+      } else if (canOpen) {
+        // Fallback for older builds without the in-app browser: external tab.
+        try { window.nasty.openExternal(item.url); } catch (e) { /* ignore */ }
+        await new Promise(r => setTimeout(r, 250));
       }
-      if (i < vendorItems.length - 1) await new Promise(r => setTimeout(r, 250));
     }
   })();
 
