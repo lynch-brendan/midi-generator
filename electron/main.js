@@ -214,6 +214,39 @@ ipcMain.handle('engine-status', () => ({
   audioReady,
 }));
 
+// Kill the audio-engine subprocess and respawn it. Used by onboarding on
+// "I'm done" so the engine re-scans the plugin folders and picks up
+// everything the vendor installers just wrote to disk. The engine's
+// list_plugins command replays a cached list from boot, so nothing short
+// of a restart makes fresh installs visible in Nasty's browser.
+ipcMain.handle('restart-audio-engine', async () => {
+  stopAudioEngine();
+  await new Promise((r) => setTimeout(r, 300));
+  startAudioEngine();
+  return { ok: true };
+});
+
+// List every VST3 / .component bundle in the user's and system plugin
+// directories. Onboarding's verification report uses this to confirm what
+// the vendor installers wrote to disk — the engine's cached plugin_list
+// isn't reliable until it re-scans on restart.
+ipcMain.handle('list-installed-plugin-files', () => {
+  const home = require('os').homedir();
+  const dirs = [
+    path.join(home, 'Library/Audio/Plug-Ins/VST3'),
+    path.join(home, 'Library/Audio/Plug-Ins/Components'),
+    '/Library/Audio/Plug-Ins/VST3',
+    '/Library/Audio/Plug-Ins/Components',
+  ];
+  const files = [];
+  for (const dir of dirs) {
+    try {
+      for (const name of fs.readdirSync(dir)) files.push(name);
+    } catch { /* dir may not exist */ }
+  }
+  return { files };
+});
+
 // Plugin-knowledge preset loading. Renderer asks main to list all files
 // of a given extension under a directory (recursive, ~-expanded), or to
 // read the raw bytes of a single file as base64. Used so cheatsheets can

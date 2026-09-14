@@ -56,6 +56,16 @@ contextBridge.exposeInMainWorld('nasty', {
     // Check whether the engine is running and finished its initial plugin scan.
     status: () => ipcRenderer.invoke('engine-status'),
 
+    // Kill + respawn the audio engine subprocess so it re-scans the plugin
+    // folders. Used by onboarding on "I'm done" — after fresh installs the
+    // engine's cached plugin_list is stale until restart.
+    restart: () => ipcRenderer.invoke('restart-audio-engine'),
+
+    // Disk-truth listing of every plugin bundle installed on the user's Mac.
+    // Onboarding uses this for the verification report so it works even
+    // before the engine has re-scanned.
+    listInstalledFiles: () => ipcRenderer.invoke('list-installed-plugin-files'),
+
     // Subscribe to engine events. Returns an unsubscribe function.
     onEvent: (fn) => {
       const handler = (_evt, msg) => fn(msg);

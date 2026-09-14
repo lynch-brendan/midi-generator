@@ -1660,9 +1660,12 @@
       window when they pop up.
     </div>
     <div id="ob-install-list"></div>
-    <div class="ob-step-actions">
-      <button class="ob-btn ob-btn-primary ob-step-cta" id="ob-done">
-        I'm done — rescan my plugins
+    <div class="ob-step-desc" id="ob-done-hint" style="text-align:center;margin-top:16px;font-size:12px;color:var(--dim);">
+      Wait until all rows show ✓, then continue.
+    </div>
+    <div class="ob-step-actions" style="justify-content:center;">
+      <button class="ob-btn ob-btn-primary ob-step-cta" id="ob-done" disabled>
+        Finish
       </button>
     </div>
   </div>
@@ -6807,19 +6810,50 @@ async function showOnboarding() {
   };
 
   // ---- Step 3: Installing → done ----
-  document.getElementById('ob-done').onclick = () => {
+  document.getElementById('ob-done').onclick = async () => {
+    const btn = document.getElementById('ob-done');
+    const hint = document.getElementById('ob-done-hint');
+    if (btn) { btn.disabled = true; btn.textContent = 'Scanning…'; }
+    if (hint) hint.textContent = 'Restarting the audio engine so Nasty sees your new plugins.';
+
     markOnboarded();
-    if (window.nasty && window.nasty.engine) {
-      try { window.nasty.engine.send({ cmd: 'list_plugins' }); } catch (e) { /* ignore */ }
-    }
     triggerResearchNow();
-    // Give the engine ~4s to complete a rescan (fresh installs need to be
-    // picked up), then log the install-verification report to the DevTools
-    // console. Not shown to the user — this is for Brendan to copy back to
-    // Claude so we can catch bad hints / broken vendor pages.
-    setTimeout(() => logOnboardingInstallReport(), 4000);
+
+    // Kill + respawn the audio engine so it re-scans plugin folders. The
+    // engine's list_plugins command replays a cached list from boot, so a
+    // real restart is the only way fresh installs appear in Nasty's browser.
+    try {
+      if (window.nasty && window.nasty.engine && typeof window.nasty.engine.restart === 'function') {
+        await window.nasty.engine.restart();
+      }
+    } catch (e) { /* ignore — verification still runs off disk */ }
+
+    // Log the disk-based verification report to DevTools. Uses the
+    // filesystem as ground truth so it doesn't depend on the engine's
+    // (possibly still-loading) fresh scan.
+    await logOnboardingInstallReport();
     dismissOnboarding();
   };
+}
+
+// Enable the Finish button once every plugin in the install list has
+// reached a terminal status. Called on every install-progress event; safe
+// to call repeatedly.
+function maybeEnableFinishButton() {
+  const btn = document.getElementById('ob-done');
+  if (!btn) return;
+  const ids = onboardingState._allPluginIds || [];
+  if (ids.length === 0) return;
+  const statuses = onboardingState._lastStatusById || {};
+  const settled = ids.every(id => {
+    const s = statuses[id] && statuses[id].status;
+    return s === 'done' || s === 'error';
+  });
+  if (settled) {
+    btn.disabled = false;
+    const hint = document.getElementById('ob-done-hint');
+    if (hint) hint.textContent = 'All done — click Finish to scan your new plugins into Nasty.';
+  }
 }
 
 // Waits for in-flight installs (identified by pluginId) to reach a
@@ -6847,23 +6881,59 @@ function waitForPendingInstalls(pluginIds, timeoutMs) {
   });
 }
 
-// Prints a compact, copy-paste-friendly report of which selected plugins
-// actually showed up in the engine's plugin_list after installs finished,
-// plus each item's last install-progress status so we can see WHERE it
-// broke (opening-page → user closed window; error → install itself failed;
-// done but not in list → installed to a location Nasty doesn't scan).
-function logOnboardingInstallReport() {
+// Prints a compact, copy-paste-friendly verification report to DevTools.
+// Uses the FILESYSTEM as ground truth (via list-installed-plugin-files
+// IPC) rather than the engine's cached plugin_list, so it works even
+// before the engine has finished re-scanning after our restart. Includes
+// each missing item's last install-progress status so we can see WHERE
+// it broke.
+async function logOnboardingInstallReport() {
   const selected = onboardingState._reportSelectedIds || [];
   if (selected.length === 0) return;
   const byId = onboardingState.byId || {};
   const statuses = onboardingState._lastStatusById || {};
+
+  // Pull the raw filenames present in the user's plugin folders.
+  let installedFiles = [];
+  try {
+    const r = await window.nasty.engine.listInstalledFiles();
+    installedFiles = (r && r.files) || [];
+  } catch (e) { /* fallback: leave installedFiles empty */ }
+  // Normalize aggressively: drop extension, lowercase, strip spaces and
+  // non-alphanumerics so "Klanghelm IVGI" matches "IVGI2.vst3",
+  // "Valhalla Supermassive" matches "ValhallaSupermassive.vst3", etc.
+  const norm = (s) => (s || '')
+    .toLowerCase()
+    .replace(/\.(vst3|component)$/i, '')
+    .replace(/[^a-z0-9]/g, '');
+  const installedNormalized = installedFiles.map(norm);
+
+  const matchesInstalled = (item) => {
+    const candidates = new Set();
+    candidates.add(norm(item.name));
+    candidates.add(norm(item.id));
+    // Vendor prefixes like "Klanghelm IVGI" ship as "IVGI2.vst3" — match
+    // on individual words too so vendor-name mismatches don't cause a
+    // false negative.
+    for (const w of (item.name || '').split(/\s+/)) {
+      const n = norm(w);
+      if (n && n.length >= 3) candidates.add(n);
+    }
+    for (const c of candidates) {
+      if (!c) continue;
+      if (installedNormalized.some(f => f === c || f.includes(c) || c.includes(f))) {
+        return true;
+      }
+    }
+    return false;
+  };
+
   const installed = [];
   const missing = [];
   for (const id of selected) {
     const item = byId[id];
-    if (!item) continue;
-    if (item.kind !== 'plugin') continue;
-    if (isAlreadyInstalled(item)) installed.push(id);
+    if (!item || item.kind !== 'plugin') continue;
+    if (matchesInstalled(item)) installed.push(id);
     else {
       const s = statuses[id];
       const last = s ? (s.status + (s.error ? ` (${s.error})` : '')) : 'never-started';
@@ -6872,7 +6942,7 @@ function logOnboardingInstallReport() {
   }
   const lines = [
     '======================================',
-    '[onboarding] INSTALL VERIFICATION REPORT',
+    '[onboarding] INSTALL VERIFICATION REPORT (disk-based)',
     `Selected: ${selected.length} items`,
     `Installed OK: ${installed.length}  →  ${installed.join(', ') || '(none)'}`,
     `Missing:      ${missing.length}`,
@@ -7043,6 +7113,7 @@ async function kickOffBundleInstalls(selectedIds) {
       try { onboardingState._installProgressUnsub(); } catch (e) { /* ignore */ }
     }
     onboardingState._lastStatusById = {};
+    onboardingState._allPluginIds = rowsToRender.map(r => r.id);
     onboardingState._installProgressUnsub = window.nasty.onInstallProgress((payload) => {
       onboardingState._lastStatusById[payload.pluginId] = payload;
       const row = rowById[payload.pluginId];
@@ -7068,6 +7139,10 @@ async function kickOffBundleInstalls(selectedIds) {
         line.textContent = `Failed: ${payload.error || 'unknown error'}`;
         line.style.color = '#ff9090';
       }
+      // Enable Finish button once every plugin has hit a terminal status
+      // (done or error). Users can also skip mid-flow — that path shows
+      // the button enabled from the start via bailAll handling below.
+      maybeEnableFinishButton();
     });
   }
 
@@ -7107,12 +7182,20 @@ async function kickOffBundleInstalls(selectedIds) {
       }
     }
     // All vendor pages have been shown. Downloads/installs may still be
-    // running in the background. Wait for them to settle (max 90s — group
-    // pages can have multiple parallel downloads).
+    // running in the background. Wait for them to settle (max 90s).
     await waitForPendingInstalls(vendorItems.map(v => v.id), 90000);
-    // Landing on installing-view either way — user can hit "I'm done"
-    // to trigger the rescan + verification report.
     setOnboardingStep('ob-installing-view');
+    // Fallback: once we've hit the 90s wait timeout, force-enable Finish
+    // even if some plugins never emitted a terminal status. Handles
+    // bailAll AND edge cases where a vendor page silently failed.
+    const btn = document.getElementById('ob-done');
+    if (btn) btn.disabled = false;
+    const hint = document.getElementById('ob-done-hint');
+    if (hint) {
+      hint.textContent = bailAll
+        ? 'Skipped remaining. Click Finish when ready.'
+        : 'All done — click Finish to scan your new plugins into Nasty.';
+    }
   })();
 
   Promise.all([autoPromise, vendorPromise]);
