@@ -8,12 +8,44 @@
     "au_user": "~/Library/Audio/Plug-Ins/Components",
     "au_system": "/Library/Audio/Plug-Ins/Components"
   },
+  "vendor_groups": {
+    "valhalla": {
+      "display_name": "Valhalla free plugins",
+      "url": "https://valhalladsp.com/free-audio-plugins/",
+      "hint": "Valhalla's free-plugin hub. Grab the ones we selected below. Each has its own product page — click the plugin card, scroll to the bottom of its page, and hit Download. Newsletter popups are safe to close."
+    },
+    "tdr": {
+      "display_name": "TDR / Tokyo Dawn Labs free plugins",
+      "url": "https://www.tokyodawn.net/labs/",
+      "hint": "TDR's freeware hub. Click each plugin's product page, scroll to the Downloads section, and grab the macOS package. Download runs silently — give it ~30 seconds."
+    },
+    "klanghelm": {
+      "display_name": "Klanghelm free plugins",
+      "url": "https://klanghelm.com/contents/products/products.php",
+      "hint": "Klanghelm's product list. The free plugins are IVGI and MJUC jr — grab both. Ignore the paid plugins on the page."
+    },
+    "u-he": {
+      "display_name": "u-he free synths",
+      "url": "https://u-he.com/community/free-synths/",
+      "hint": "u-he's freeware page. Click each synth's product page and grab the macOS installer. Fully free — no license key needed."
+    },
+    "voxengo": {
+      "display_name": "Voxengo free plugins",
+      "url": "https://www.voxengo.com/group/freeware/",
+      "hint": "Voxengo's freeware hub. Click each plugin, grab the macOS download. Email field is optional — you can skip it."
+    },
+    "tal": {
+      "display_name": "TAL free plugins",
+      "url": "https://tal-software.com/products",
+      "hint": "TAL's product list. Free ones are NoiseMaker (synth) and Reverb 4. Click each, scroll down to Downloads."
+    }
+  },
   "bundles": {
     "starter": ["surge-xt", "dexed", "tal-noisemaker", "valhalla-supermassive", "valhalla-freq-echo", "tdr-nova", "klanghelm-ivgi", "voxengo-span"],
-    "extras_synths": ["obxd", "helm", "odin2", "podolski", "tyrell-n6", "vital"],
-    "extras_drums": ["mt-power-drum-kit-2", "steven-slate-drums-5-5-free"],
-    "extras_effects": ["valhalla-space-modulator", "tdr-kotelnikov", "tdr-slickeq", "klanghelm-mjuc-jr", "xfer-ott", "voxengo-oldskoolverb", "tal-reverb-4", "airwindows-consolidated", "zebralette"],
-    "sound_content": ["surge-xt-extras", "dexed-13k-patches", "vsco-2-ce", "karoryfer-selection", "fluidr3-gm"]
+    "extras_synths": ["obxd", "odin2", "podolski", "tyrell-n6"],
+    "extras_drums": [],
+    "extras_effects": ["valhalla-space-modulator", "tdr-kotelnikov", "tdr-slickeq", "klanghelm-mjuc-jr", "voxengo-oldskoolverb", "tal-reverb-4", "airwindows-consolidated", "zebralette"],
+    "sound_content": []
   },
   "plugins": [
     {
@@ -66,7 +98,8 @@
       "install_path": ["vst3_user", "au_user"],
       "file_size_mb": 25,
       "checksum_placeholder": "N/A_manual_install",
-      "cheatsheet_needed": true
+      "cheatsheet_needed": true,
+      "hint": "Click the macOS download button. discoDSP may ask for an email to email you the file — you can also use the direct link if shown."
     },
     {
       "id": "tal-noisemaker",
@@ -79,7 +112,8 @@
       "install_path": ["vst3_user", "au_user"],
       "file_size_mb": 10,
       "checksum_placeholder": "N/A_manual_install",
-      "cheatsheet_needed": true
+      "cheatsheet_needed": true,
+      "vendor_group": "tal"
     },
     {
       "id": "odin2",
@@ -118,7 +152,8 @@
       "install_path": ["vst3_user", "au_user"],
       "file_size_mb": 40,
       "checksum_placeholder": "N/A_manual_install",
-      "cheatsheet_needed": true
+      "cheatsheet_needed": true,
+      "vendor_group": "u-he"
     },
     {
       "id": "tyrell-n6",
@@ -131,7 +166,8 @@
       "install_path": ["vst3_user", "au_user"],
       "file_size_mb": 50,
       "checksum_placeholder": "N/A_manual_install",
-      "cheatsheet_needed": true
+      "cheatsheet_needed": true,
+      "vendor_group": "u-he"
     },
     {
       "id": "zebralette",
@@ -144,7 +180,8 @@
       "install_path": ["vst3_user", "au_user"],
       "file_size_mb": 30,
       "checksum_placeholder": "N/A_manual_install",
-      "cheatsheet_needed": true
+      "cheatsheet_needed": true,
+      "vendor_group": "u-he"
     },
     {
       "id": "sfizz",
@@ -171,7 +208,8 @@
       "install_path": ["vst3_user", "au_user"],
       "file_size_mb": 150,
       "checksum_placeholder": "N/A_manual_install",
-      "cheatsheet_needed": true
+      "cheatsheet_needed": true,
+      "hint": "Click Download at the top. It's donationware — you can enter $0 and get the full plugin. Bigger download (~150MB), give it a minute."
     },
     {
       "id": "steven-slate-drums-5-5-free",
@@ -198,7 +236,8 @@
       "install_path": ["vst3_user", "au_user"],
       "file_size_mb": 10,
       "checksum_placeholder": "N/A_manual_install",
-      "cheatsheet_needed": true
+      "cheatsheet_needed": true,
+      "vendor_group": "valhalla"
     },
     {
       "id": "valhalla-freq-echo",
@@ -211,7 +250,8 @@
       "install_path": ["vst3_user", "au_user"],
       "file_size_mb": 5,
       "checksum_placeholder": "N/A_manual_install",
-      "cheatsheet_needed": true
+      "cheatsheet_needed": true,
+      "vendor_group": "valhalla"
     },
     {
       "id": "valhalla-space-modulator",
@@ -224,7 +264,8 @@
       "install_path": ["vst3_user", "au_user"],
       "file_size_mb": 5,
       "checksum_placeholder": "N/A_manual_install",
-      "cheatsheet_needed": true
+      "cheatsheet_needed": true,
+      "vendor_group": "valhalla"
     },
     {
       "id": "tdr-nova",
@@ -237,7 +278,8 @@
       "install_path": ["vst3_user", "au_user"],
       "file_size_mb": 10,
       "checksum_placeholder": "N/A_manual_install",
-      "cheatsheet_needed": true
+      "cheatsheet_needed": true,
+      "vendor_group": "tdr"
     },
     {
       "id": "tdr-kotelnikov",
@@ -250,7 +292,8 @@
       "install_path": ["vst3_user", "au_user"],
       "file_size_mb": 10,
       "checksum_placeholder": "N/A_manual_install",
-      "cheatsheet_needed": true
+      "cheatsheet_needed": true,
+      "vendor_group": "tdr"
     },
     {
       "id": "tdr-slickeq",
@@ -263,7 +306,8 @@
       "install_path": ["vst3_user", "au_user"],
       "file_size_mb": 10,
       "checksum_placeholder": "N/A_manual_install",
-      "cheatsheet_needed": true
+      "cheatsheet_needed": true,
+      "vendor_group": "tdr"
     },
     {
       "id": "klanghelm-ivgi",
@@ -276,7 +320,8 @@
       "install_path": ["vst3_user", "au_user"],
       "file_size_mb": 5,
       "checksum_placeholder": "N/A_manual_install",
-      "cheatsheet_needed": true
+      "cheatsheet_needed": true,
+      "vendor_group": "klanghelm"
     },
     {
       "id": "klanghelm-mjuc-jr",
@@ -289,7 +334,8 @@
       "install_path": ["vst3_user", "au_user"],
       "file_size_mb": 5,
       "checksum_placeholder": "N/A_manual_install",
-      "cheatsheet_needed": true
+      "cheatsheet_needed": true,
+      "vendor_group": "klanghelm"
     },
     {
       "id": "xfer-ott",
@@ -302,7 +348,8 @@
       "install_path": ["vst3_user", "au_user"],
       "file_size_mb": 10,
       "checksum_placeholder": "N/A_manual_install",
-      "cheatsheet_needed": true
+      "cheatsheet_needed": true,
+      "hint": "Find OTT in the list and click the macOS download link. It's free — no signup, no newsletter."
     },
     {
       "id": "voxengo-span",
@@ -315,7 +362,8 @@
       "install_path": ["vst3_user", "au_user"],
       "file_size_mb": 10,
       "checksum_placeholder": "N/A_manual_install",
-      "cheatsheet_needed": true
+      "cheatsheet_needed": true,
+      "vendor_group": "voxengo"
     },
     {
       "id": "voxengo-oldskoolverb",
@@ -328,7 +376,8 @@
       "install_path": ["vst3_user", "au_user"],
       "file_size_mb": 10,
       "checksum_placeholder": "N/A_manual_install",
-      "cheatsheet_needed": true
+      "cheatsheet_needed": true,
+      "vendor_group": "voxengo"
     },
     {
       "id": "tal-reverb-4",
@@ -341,7 +390,8 @@
       "install_path": ["vst3_user", "au_user"],
       "file_size_mb": 15,
       "checksum_placeholder": "N/A_manual_install",
-      "cheatsheet_needed": true
+      "cheatsheet_needed": true,
+      "vendor_group": "tal"
     },
     {
       "id": "airwindows-consolidated",

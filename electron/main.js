@@ -582,7 +582,9 @@ async function installDownloadedFile(filePath) {
 // installer, and resolve. If the user closes the window without downloading,
 // resolve with ok:false so the renderer can move to the next item in the
 // queue instead of hanging.
-ipcMain.handle('install-plugin-via-web', async (evt, { pluginId, url, name }) => {
+ipcMain.handle('install-plugin-via-web', async (evt, { pluginId, url, name, hint, opts }) => {
+  const isGroup = !!(opts && opts.isGroup);
+  const expectedCount = (opts && opts.expectedCount) || 1;
   const emit = (payload) => {
     if (evt.sender && !evt.sender.isDestroyed()) {
       evt.sender.send('install-progress', { pluginId, ...payload });
@@ -648,49 +650,261 @@ ipcMain.handle('install-plugin-via-web', async (evt, { pluginId, url, name }) =>
       });
     }, 300);
 
-    let downloaded = false;
+    // After each real page load, inject a hint banner along the top of the
+    // window with vendor-specific instructions (scroll to bottom, ignore
+    // newsletter popup, etc) plus Skip this / Skip all buttons for users
+    // who are stuck. Runs on every did-finish-load so the banner survives
+    // navigations inside the vendor site.
+    let skippedAll = false;
+    let downloadCount = 0;
+    // Track downloads inside grouped pages so the banner shows "1 of 3
+    // downloaded" and the "Move on" button lights up when they've grabbed
+    // everything.
+    const updateBannerCount = () => {
+      if (win.isDestroyed()) return;
+      const js = `(() => { const el = document.getElementById('__nasty_dl_count__');
+        if (el) el.textContent = ${JSON.stringify(String(downloadCount))}; })();`;
+      win.webContents.executeJavaScript(js).catch(() => {});
+    };
+    win.webContents.on('did-finish-load', () => {
+      if (win.isDestroyed()) return;
+      if (win.webContents.getURL().startsWith('data:')) return;
+      const hintPayload = hint || '';
+      const js = `(() => {
+        const existing = document.getElementById('__nasty_hint_banner__');
+        if (existing) existing.remove();
+        const b = document.createElement('div');
+        b.id = '__nasty_hint_banner__';
+        b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;' +
+          'background:linear-gradient(135deg,#3a1f2d 0%,#4a1f3a 100%);' +
+          'color:#ffe6f0;font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;' +
+          'padding:10px 16px 10px 44px;border-bottom:1px solid rgba(238,108,158,0.5);' +
+          'box-shadow:0 2px 12px rgba(0,0,0,0.4);display:flex;align-items:center;gap:10px;';
+        const hasHint = ${JSON.stringify(!!hintPayload)};
+        const isGroup = ${JSON.stringify(isGroup)};
+        const expected = ${JSON.stringify(expectedCount)};
+        const dlCount = ${JSON.stringify(downloadCount)};
+        const bodyHtml =
+          (hasHint
+            ? '<span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);' +
+              'font-size:18px;filter:drop-shadow(0 0 6px rgba(238,108,158,0.6));">💡</span>' +
+              '<span style="flex:1;"><b style="color:#ffb0d0;letter-spacing:0.5px;">Tip from Nasty:</b> ' +
+              ${JSON.stringify(hintPayload)} + '</span>'
+            : '<span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);' +
+              'font-size:18px;filter:drop-shadow(0 0 6px rgba(238,108,158,0.6));">🎁</span>' +
+              '<span style="flex:1;color:#c8ccd6;">' +
+              '<b style="color:#ffb0d0;letter-spacing:0.5px;">Nasty\\'s got you</b> — just click the Download button when you find it. We\\'ll handle the install.</span>');
+        const btnStyle = 'background:transparent;border:1px solid rgba(255,255,255,0.25);' +
+          'color:#ffe6f0;padding:5px 10px;font-size:11px;border-radius:6px;cursor:pointer;font-family:inherit;';
+        let btnHtml;
+        if (isGroup) {
+          btnHtml =
+            '<span style="color:#c8ccd6;font-size:11px;padding:0 6px;">' +
+            'Downloads started: <b id="__nasty_dl_count__" style="color:#ffb0d0;">' + dlCount + '</b>' +
+            ' / ' + expected + '</span>' +
+            '<button id="__nasty_move_on__" style="' + btnStyle + ';background:rgba(238,108,158,0.2);' +
+            'border-color:rgba(238,108,158,0.6);color:#ffe6f0;">Move on to next vendor</button>' +
+            '<button id="__nasty_skip_all__" style="' + btnStyle + 'color:#c8ccd6;">Skip all downloads</button>';
+        } else {
+          btnHtml =
+            '<button id="__nasty_skip_one__" style="' + btnStyle + '">Skip this download</button>' +
+            '<button id="__nasty_skip_all__" style="' + btnStyle + 'color:#c8ccd6;">Skip all downloads</button>';
+        }
+        b.innerHTML = bodyHtml + btnHtml;
+        if (!document.body) return;
+        document.body.appendChild(b);
+        document.body.style.paddingTop = (b.offsetHeight + 8) + 'px';
+        const skipOne = b.querySelector('#__nasty_skip_one__');
+        if (skipOne) skipOne.onclick = () => { window.location.href = 'nasty://skip-one'; };
+        const moveOn = b.querySelector('#__nasty_move_on__');
+        if (moveOn) moveOn.onclick = () => { window.location.href = 'nasty://move-on'; };
+        b.querySelector('#__nasty_skip_all__').onclick = () => {
+          window.location.href = 'nasty://skip-all';
+        };
+      })();`;
+      win.webContents.executeJavaScript(js).catch(() => {});
+    });
 
-    win.webContents.session.on('will-download', (event, item) => {
+    // Intercept the nasty:// pseudo-scheme clicks that the injected banner
+    // buttons trigger. willNavigate fires before any navigation attempt.
+    // We flip stillAcceptingDownloads immediately so any download the user
+    // starts in a LATER vendor window doesn't get scooped up by this
+    // window's listener (which is still attached to the shared session
+    // until the window fully closes).
+    win.webContents.on('will-navigate', (event, targetUrl) => {
+      if (targetUrl.startsWith('nasty://skip-one') ||
+          targetUrl.startsWith('nasty://move-on')) {
+        event.preventDefault();
+        stillAcceptingDownloads = false;
+        try { win.hide(); } catch {}
+        resolve({ ok: downloadCount > 0, downloading: downloadCount > 0 });
+        setTimeout(() => { try { if (!win.isDestroyed()) win.destroy(); } catch {} }, 500);
+      } else if (targetUrl.startsWith('nasty://skip-all')) {
+        event.preventDefault();
+        skippedAll = true;
+        stillAcceptingDownloads = false;
+        try { win.hide(); } catch {}
+        resolve({ ok: downloadCount > 0, skippedAll: true });
+        setTimeout(() => { try { if (!win.isDestroyed()) win.destroy(); } catch {} }, 500);
+      }
+    });
+
+    // Renders the "Downloading…" or "Installing…" full-window overlay inside
+    // the child window. Replaces the vendor page so the user sees a clean
+    // progress card and knows something is happening. `phase` is 'downloading'
+    // or 'installing'. `pct` is 0-100 or null.
+    const showChildProgress = (phase, displayName, pct) => {
+      const nm = (displayName || 'your plugin').replace(/[<>&"]/g, '');
+      const phaseCopy = phase === 'installing'
+        ? { emoji: '⚙', title: 'Installing…', sub: `Setting up ${nm} on your Mac.` }
+        : { emoji: '↓', title: 'Downloading…', sub: `Grabbing ${nm} from the vendor.` };
+      const pctText = (pct != null && phase === 'downloading') ? `${pct}%` : '';
+      const barWidth = (pct != null && phase === 'downloading') ? `${pct}%` : '30%';
+      const barAnim = (pct == null || phase === 'installing')
+        ? 'animation:sweep 1.6s linear infinite;'
+        : 'transition:width 200ms ease;';
+      const js = `(() => {
+        let el = document.getElementById('__nasty_progress__');
+        if (!el) {
+          document.documentElement.innerHTML =
+            '<head><title>${phaseCopy.title.replace(/'/g, "\\'")} — Nasty</title>' +
+            '<style>html,body{margin:0;height:100vh;background:#252932;color:#eaecef;' +
+            'font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;' +
+            'display:flex;align-items:center;justify-content:center;}' +
+            '.card{display:flex;flex-direction:column;align-items:center;gap:16px;' +
+            'padding:40px 48px;background:linear-gradient(180deg,rgba(238,108,158,0.06) 0%,' +
+            'rgba(255,255,255,0.02) 100%);border:1px solid rgba(238,108,158,0.22);' +
+            'border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.4);max-width:460px;' +
+            'text-align:center;}' +
+            '.emoji{font-size:44px;filter:drop-shadow(0 0 12px rgba(238,108,158,0.4));}' +
+            '.title{font-size:22px;font-weight:800;letter-spacing:0.4px;' +
+            'background:linear-gradient(135deg,#ee6c9e 0%,#ffb0d0 100%);' +
+            '-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}' +
+            '.sub{font-size:13px;color:#b0b4bd;line-height:1.55;max-width:360px;}' +
+            '.bar{width:280px;height:6px;background:#2a2530;border-radius:3px;overflow:hidden;position:relative;margin-top:8px;}' +
+            '.fill{height:100%;background:linear-gradient(90deg,#ee6c9e,#ffb0d0);border-radius:3px;}' +
+            '.fillanim{position:absolute;inset:0;width:30%;' +
+            'background:linear-gradient(90deg,transparent,#ee6c9e,transparent);}' +
+            '@keyframes sweep{0%{transform:translateX(-100%);}100%{transform:translateX(400%);}}' +
+            '.pct{font-size:11px;color:#7a8090;font-variant-numeric:tabular-nums;letter-spacing:1px;}' +
+            '</style></head><body><div id="__nasty_progress__" class="card">' +
+            '<div class="emoji" id="__ne__"></div>' +
+            '<div class="title" id="__nt__"></div>' +
+            '<div class="sub" id="__ns__"></div>' +
+            '<div class="bar" id="__nb__"><div class="fill" id="__nf__" style="width:0"></div></div>' +
+            '<div class="pct" id="__np__"></div></div></body>';
+          el = document.getElementById('__nasty_progress__');
+        }
+        document.getElementById('__ne__').textContent = ${JSON.stringify(phaseCopy.emoji)};
+        document.getElementById('__nt__').textContent = ${JSON.stringify(phaseCopy.title)};
+        document.getElementById('__ns__').textContent = ${JSON.stringify(phaseCopy.sub)};
+        const fill = document.getElementById('__nf__');
+        const bar = document.getElementById('__nb__');
+        const pct = document.getElementById('__np__');
+        if (${phase === 'installing' ? 'true' : (pct == null ? 'true' : 'false')}) {
+          fill.style.display = 'none';
+          if (!document.getElementById('__na__')) {
+            const a = document.createElement('div');
+            a.id = '__na__'; a.className = 'fillanim';
+            a.style.animation = 'sweep 1.6s linear infinite';
+            bar.appendChild(a);
+          }
+          pct.textContent = ${JSON.stringify(phase === 'installing' ? 'Almost there…' : 'Starting…')};
+        } else {
+          const a = document.getElementById('__na__'); if (a) a.remove();
+          fill.style.display = ''; fill.style.width = ${JSON.stringify(barWidth)};
+          pct.textContent = ${JSON.stringify(pctText)};
+        }
+      })();`;
+      if (win && !win.isDestroyed()) {
+        win.webContents.executeJavaScript(js).catch(() => {});
+      }
+    };
+
+    // Flag flipped false when this window's flow is done accepting new
+    // downloads (single-plugin: after first will-download; grouped: after
+    // Move on / Skip all / window close). The session is SHARED across
+    // all windows, so if we don't gate this, listeners from prior
+    // vendor windows fire on later downloads and corrupt the dest path
+    // — that was the "unzip: cannot find file" storm we saw earlier.
+    let stillAcceptingDownloads = true;
+    const downloadHandler = (event, item) => {
+      if (!stillAcceptingDownloads) return;
       const suggested = item.getFilename() || 'plugin-download';
       const dest = path.join(require('os').tmpdir(),
         `nasty-web-install-${pluginId}-${Date.now()}-${suggested}`);
       item.setSavePath(dest);
-      emit({ status: 'downloading', percent: 0 });
+      downloadCount++;
+      emit({ status: 'downloading', percent: 0, filename: suggested });
+
+      if (!isGroup) {
+        // Single-plugin flow: we're done accepting downloads for this
+        // window. Flip the gate so future downloads (from other windows)
+        // don't accidentally trigger this handler.
+        stillAcceptingDownloads = false;
+        try { win.hide(); } catch {}
+        resolve({ ok: true, downloading: true });
+      } else {
+        // Grouped flow: keep the window open so the user can trigger the
+        // NEXT download from the same vendor page. Update the banner
+        // counter so they see progress. Resolve happens when they click
+        // "Move on to next vendor" or "Skip all downloads".
+        updateBannerCount();
+      }
 
       item.on('updated', (_e, state) => {
         if (state === 'progressing') {
           const total = item.getTotalBytes();
           const bytes = item.getReceivedBytes();
           const pct = total ? Math.round(bytes / total * 100) : null;
-          emit({ status: 'downloading', percent: pct, bytes, total });
+          emit({ status: 'downloading', percent: pct, bytes, total, filename: suggested });
         }
       });
+
+      // Also flip the gate for group flow — but only after the LAST expected
+      // download in this group. Otherwise the second download in a Valhalla
+      // trip would be blocked.
+      if (isGroup && downloadCount >= expectedCount) {
+        stillAcceptingDownloads = false;
+      }
 
       item.once('done', async (_e, state) => {
         if (state !== 'completed') {
-          emit({ status: 'error', error: `download ${state}` });
-          try { win.close(); } catch {}
-          return resolve({ ok: false, error: `download ${state}` });
+          emit({ status: 'error', error: `download ${state}`, filename: suggested });
+          if (!isGroup) {
+            try { if (!win.isDestroyed()) win.destroy(); } catch {}
+          }
+          return;
         }
-        downloaded = true;
-        emit({ status: 'installing' });
+        emit({ status: 'installing', filename: suggested });
         try {
           await installDownloadedFile(dest);
           try { fs.unlinkSync(dest); } catch {}
-          emit({ status: 'done' });
-          try { win.close(); } catch {}
-          resolve({ ok: true });
+          emit({ status: 'done', filename: suggested });
         } catch (err) {
           const msg = String(err && err.message || err);
-          emit({ status: 'error', error: msg });
-          try { win.close(); } catch {}
-          resolve({ ok: false, error: msg });
+          emit({ status: 'error', error: msg, filename: suggested });
+        }
+        if (!isGroup) {
+          try { if (!win.isDestroyed()) win.destroy(); } catch {}
         }
       });
-    });
+    };
+    win.webContents.session.on('will-download', downloadHandler);
 
     win.on('closed', () => {
-      if (!downloaded) resolve({ ok: false, skipped: true });
+      // Belt-and-braces: flip the gate AND remove the listener from the
+      // shared session so it can't fire for downloads triggered by later
+      // vendor windows.
+      stillAcceptingDownloads = false;
+      try {
+        win.webContents.session.removeListener('will-download', downloadHandler);
+      } catch {}
+      if (downloadCount === 0) {
+        resolve({ ok: false, skipped: true, skippedAll });
+      } else {
+        resolve({ ok: true, downloading: true, skippedAll });
+      }
     });
   });
 });

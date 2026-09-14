@@ -1353,9 +1353,10 @@
     font-size: 26px;
   }
   #onboarding-overlay .ob-choice-card .ob-step-title::before {
-    content: "✨ ";
-    font-size: 22px;
-    filter: drop-shadow(0 0 6px rgba(238, 108, 158, 0.5));
+    content: "🎁 ";
+    font-size: 24px;
+    filter: drop-shadow(0 0 8px rgba(238, 108, 158, 0.6));
+    margin-right: 4px;
   }
   #onboarding-overlay .ob-choice-card .ob-step-desc {
     margin: 0;
@@ -1601,25 +1602,25 @@
        radios + drop-down + Install button all in one container. -->
   <div class="ob-view ob-view-wide" id="ob-bundle-view" style="display:none;">
     <div class="ob-choice-card">
-      <div class="ob-step-title">Want free plugins?</div>
+      <div class="ob-step-title">A few gifts to get you started</div>
       <div class="ob-step-desc">
-        Wanna download some free plugins so your experience is way better?
-        Most take a minute and a couple clicks; two of them ask you to sign
-        up for a free account.
+        We picked some of our favorite free plugins and want you to have them
+        — synths, reverbs, EQs, saturators. Nasty will grab them for you.
+        Most take a minute; a couple ask for a free account.
       </div>
 
       <div class="ob-choice-options">
         <label class="ob-choice-row">
           <input type="radio" name="ob-preset" value="all" checked>
-          <span>Download all</span>
+          <span>Get everything (recommended)</span>
         </label>
         <label class="ob-choice-row">
           <input type="radio" name="ob-preset" value="no-account">
-          <span>Download all except the free-account ones</span>
+          <span>Get everything except the ones that need a free account</span>
         </label>
         <label class="ob-choice-row">
           <input type="radio" name="ob-preset" value="manual">
-          <span>Choose which ones to download</span>
+          <span>Let me pick</span>
         </label>
 
         <!-- Manual picker — shown only when "Choose which ones" is checked. -->
@@ -1628,10 +1629,10 @@
 
       <div class="ob-choice-actions">
         <button class="ob-btn ob-btn-secondary ob-choice-skip" id="ob-skip">
-          Skip for now
+          Maybe later
         </button>
         <button class="ob-btn ob-btn-primary ob-choice-cta" id="ob-install">
-          Install selected
+          Yes, get them
         </button>
       </div>
     </div>
@@ -1647,7 +1648,7 @@
       <div class="ob-success-tagline" id="ob-success-tagline"></div>
       <div class="ob-success-meta" id="ob-success-meta"></div>
       <div class="ob-step-actions" style="width:100%;">
-        <button class="ob-btn ob-btn-secondary" id="ob-success-done">I'm done</button>
+        <button class="ob-btn ob-btn-secondary" id="ob-success-done">Skip remaining</button>
         <button class="ob-btn ob-btn-primary ob-step-cta" id="ob-success-next">
           Install next
         </button>
@@ -1657,10 +1658,10 @@
 
   <!-- Step 5: installing — waiting for vendor installers to complete. -->
   <div class="ob-view ob-view-wide" id="ob-installing-view" style="display:none;">
-    <div class="ob-step-title">Installers opened</div>
+    <div class="ob-step-title">Getting your gifts ready…</div>
     <div class="ob-step-desc" id="ob-installing-desc">
-      We opened vendor pages in your browser. Install each one (they're
-      all free), then come back and click <b>I'm done</b>.
+      Nasty is grabbing your plugins. Follow the tips at the top of each
+      window when they pop up.
     </div>
     <div id="ob-install-list"></div>
     <div class="ob-step-actions">
@@ -6816,8 +6817,75 @@ async function showOnboarding() {
       try { window.nasty.engine.send({ cmd: 'list_plugins' }); } catch (e) { /* ignore */ }
     }
     triggerResearchNow();
+    // Give the engine ~4s to complete a rescan (fresh installs need to be
+    // picked up), then log the install-verification report to the DevTools
+    // console. Not shown to the user — this is for Brendan to copy back to
+    // Claude so we can catch bad hints / broken vendor pages.
+    setTimeout(() => logOnboardingInstallReport(), 4000);
     dismissOnboarding();
   };
+}
+
+// Waits for in-flight installs (identified by pluginId) to reach a
+// terminal status — 'done' or 'error' — as reported via install-progress
+// events. Resolves after the last one settles, or after timeoutMs, so a
+// wedged installer can't hang the flow.
+function waitForPendingInstalls(pluginIds, timeoutMs) {
+  return new Promise((resolve) => {
+    let interval = null;
+    const finish = () => {
+      if (interval) clearInterval(interval);
+      resolve();
+    };
+    const timer = setTimeout(finish, timeoutMs || 60000);
+    const check = () => {
+      const map = onboardingState._lastStatusById || {};
+      const settled = pluginIds.every(id => {
+        const s = map[id] && map[id].status;
+        return s === 'done' || s === 'error';
+      });
+      if (settled) { clearTimeout(timer); finish(); }
+    };
+    interval = setInterval(check, 250);
+    check();
+  });
+}
+
+// Prints a compact, copy-paste-friendly report of which selected plugins
+// actually showed up in the engine's plugin_list after installs finished,
+// plus each item's last install-progress status so we can see WHERE it
+// broke (opening-page → user closed window; error → install itself failed;
+// done but not in list → installed to a location Nasty doesn't scan).
+function logOnboardingInstallReport() {
+  const selected = onboardingState._reportSelectedIds || [];
+  if (selected.length === 0) return;
+  const byId = onboardingState.byId || {};
+  const statuses = onboardingState._lastStatusById || {};
+  const installed = [];
+  const missing = [];
+  for (const id of selected) {
+    const item = byId[id];
+    if (!item) continue;
+    if (item.kind !== 'plugin') continue;
+    if (isAlreadyInstalled(item)) installed.push(id);
+    else {
+      const s = statuses[id];
+      const last = s ? (s.status + (s.error ? ` (${s.error})` : '')) : 'never-started';
+      missing.push(`${id}  [last: ${last}]`);
+    }
+  }
+  const lines = [
+    '======================================',
+    '[onboarding] INSTALL VERIFICATION REPORT',
+    `Selected: ${selected.length} items`,
+    `Installed OK: ${installed.length}  →  ${installed.join(', ') || '(none)'}`,
+    `Missing:      ${missing.length}`,
+    ...missing.map(m => `  - ${m}`),
+    '======================================',
+    '(Paste this into Claude so we can fix any missing plugins.)',
+  ];
+  console.log('%c' + lines.join('\n'),
+    'font-family:monospace;font-size:12px;color:#ffb0d0;background:#1a1218;padding:8px;');
 }
 
 // Look up an item (plugin or sound-content pack) by id in the current
@@ -6829,15 +6897,65 @@ function bundleItemById(id) {
   if (p) return {
     id: p.id, name: p.name,
     url: p.download_url, size: p.file_size_mb || 0,
+    hint: p.hint || '',
+    vendor_group: p.vendor_group || '',
     kind: 'plugin',
   };
   const c = (m.sound_content || []).find(x => x.id === id);
   if (c) return {
     id: c.id, name: c.name,
     url: c.source, size: c.size_mb || 0,
+    hint: c.hint || '',
+    vendor_group: '',
     kind: 'content',
   };
   return null;
+}
+
+// Collapse a flat list of vendor plugin items into per-vendor-group
+// entries. Plugins with the same `vendor_group` become one entry pointing
+// at the group's landing URL, with a combined hint listing all the plugins
+// to grab from that page. Plugins without a group stay as individual
+// entries. Preserves the input order (first occurrence of a group).
+function groupVendorItems(items) {
+  const m = onboardingState.bundleManifest || {};
+  const groupDefs = m.vendor_groups || {};
+  const seen = new Set();
+  const out = [];
+  for (const item of items) {
+    const g = item.vendor_group;
+    if (!g) { out.push({ ...item, isGroup: false, pluginIds: [item.id] }); continue; }
+    if (seen.has(g)) {
+      // Add this plugin to the existing group entry.
+      const existing = out.find(e => e.isGroup && e.groupKey === g);
+      if (existing) {
+        existing.pluginIds.push(item.id);
+        existing.pluginNames.push(item.name);
+      }
+      continue;
+    }
+    seen.add(g);
+    const def = groupDefs[g] || {};
+    out.push({
+      isGroup: true,
+      groupKey: g,
+      id: 'group:' + g, // synthetic id for tracking
+      name: def.display_name || g,
+      url: def.url || item.url,
+      hint: def.hint || item.hint || '',
+      pluginIds: [item.id],
+      pluginNames: [item.name],
+    });
+  }
+  // Enrich each group's hint with the concrete list of plugins to grab.
+  for (const entry of out) {
+    if (entry.isGroup) {
+      const names = entry.pluginNames.join(', ');
+      entry.hint = (entry.hint ? entry.hint + ' ' : '') +
+        '👉 Grab these: ' + names + '. When you\'re done, click "Move on to next vendor".';
+    }
+  }
+  return out;
 }
 
 // Split selected items into two piles:
@@ -6863,10 +6981,15 @@ async function getAutoInstallableSet() {
 // Auto-installable items download+install silently in sequence. Vendor
 // items open one browser tab each (staggered to keep browsers happy).
 async function kickOffBundleInstalls(selectedIds) {
+  // Cache for the post-install verification report Brendan gets in DevTools.
+  onboardingState._reportSelectedIds = selectedIds.slice();
   const items = selectedIds.map(bundleItemById).filter(Boolean);
   const autoSet = await getAutoInstallableSet();
   const autoItems = items.filter(it => autoSet.has(it.id));
-  const vendorItems = items.filter(it => !autoSet.has(it.id));
+  const rawVendorItems = items.filter(it => !autoSet.has(it.id));
+  // Collapse same-vendor plugins into shared landing-page entries — one
+  // trip per vendor instead of 3 for Valhalla, 3 for TDR, etc.
+  const vendorItems = groupVendorItems(rawVendorItems);
 
   setOnboardingStep('ob-installing-view');
 
@@ -6884,21 +7007,26 @@ async function kickOffBundleInstalls(selectedIds) {
   }
 
   // Build the row list. Auto items get a live status; vendor items get
-  // the existing "reopen page" affordance.
+  // the existing "reopen page" affordance. Vendor entries here are already
+  // grouped (one row per vendor page), not one row per individual plugin.
   const listEl = document.getElementById('ob-install-list');
   const canOpen = window.nasty && typeof window.nasty.openExternal === 'function';
   const rowById = {};
+  const rowsToRender = [...autoItems.map(a => ({ ...a, _kind: 'auto' })),
+                       ...vendorItems.map(v => ({ ...v, _kind: 'vendor' }))];
   if (listEl) {
     listEl.innerHTML = '';
-    for (const item of items) {
+    for (const item of rowsToRender) {
       const row = document.createElement('div');
       row.className = 'ob-item';
       row.style.cursor = 'default';
-      const isAuto = autoSet.has(item.id);
+      const isAuto = item._kind === 'auto';
+      const isGroup = !!item.isGroup;
+      const displayName = isGroup ? `${item.name} (${item.pluginIds.length} plugins)` : item.name;
       row.innerHTML = `
         <div class="ob-install-status" style="width:16px;color:var(--accent);">${isAuto ? '⋯' : '◐'}</div>
         <div class="ob-item-body">
-          <div class="ob-item-name">${item.name}</div>
+          <div class="ob-item-name">${displayName}</div>
           <div class="ob-item-meta ob-install-line">${isAuto ? 'Queued for auto-install…' : 'Waiting for you to install…'}</div>
         </div>
         ${isAuto ? '' : `<button class="ob-btn ob-btn-secondary" style="padding:4px 10px;font-size:10px;">Reopen page</button>`}
@@ -6919,7 +7047,9 @@ async function kickOffBundleInstalls(selectedIds) {
     if (onboardingState._installProgressUnsub) {
       try { onboardingState._installProgressUnsub(); } catch (e) { /* ignore */ }
     }
+    onboardingState._lastStatusById = {};
     onboardingState._installProgressUnsub = window.nasty.onInstallProgress((payload) => {
+      onboardingState._lastStatusById[payload.pluginId] = payload;
       const row = rowById[payload.pluginId];
       if (!row) return;
       const status = row.querySelector('.ob-install-status');
@@ -6959,35 +7089,39 @@ async function kickOffBundleInstalls(selectedIds) {
     }
   })();
 
-  // Vendor installs (Tier 2) — sequential, with a "success" pause step
-  // between each so the user gets confirmation + context before the next
-  // vendor window opens. Awaits a Promise that the user resolves by
-  // clicking Install next / I'm done on the success interstitial.
+  // Vendor installs (Tier 2) — PARALLEL. The main.js handler now resolves
+  // as soon as the user clicks Download in the child window (will-download
+  // fires); the actual download+install continues in the background via
+  // the shared session. So this loop advances to the next vendor page
+  // immediately after each click, and downloads run in parallel. Once all
+  // vendors have been navigated, we wait for the in-flight installs to
+  // finish (or a timeout) before showing the final "all set" card.
   const canWebInstall = window.nasty && typeof window.nasty.installPluginViaWeb === 'function';
   const vendorPromise = (async () => {
+    let bailAll = false;
     for (let i = 0; i < vendorItems.length; i++) {
       const item = vendorItems[i];
-      let ok = false;
       if (canWebInstall) {
         try {
-          const result = await window.nasty.installPluginViaWeb(item.id, item.url, item.name);
-          ok = !!(result && result.ok);
+          const opts = {
+            isGroup: !!item.isGroup,
+            expectedCount: item.pluginIds ? item.pluginIds.length : 1,
+          };
+          const result = await window.nasty.installPluginViaWeb(item.id, item.url, item.name, item.hint || '', opts);
+          if (result && result.skippedAll) { bailAll = true; break; }
         } catch (e) { /* error already reported via install-progress */ }
       } else if (canOpen) {
         try { window.nasty.openExternal(item.url); } catch (e) { /* ignore */ }
         await new Promise(r => setTimeout(r, 250));
-        ok = true;
-      }
-      // Show the success interstitial after each successful install.
-      // Skipped/failed items go straight to the next (no celebration).
-      if (ok && i < vendorItems.length - 1) {
-        const cont = await showSuccessInterstitial(item, i + 1, vendorItems.length);
-        if (!cont) break; // user clicked "I'm done"
-      } else if (ok && i === vendorItems.length - 1) {
-        // Last item — show a final "all done" beat.
-        await showSuccessInterstitial(item, i + 1, vendorItems.length);
       }
     }
+    // All vendor pages have been shown. Downloads/installs may still be
+    // running in the background. Wait for them to settle (max 90s — group
+    // pages can have multiple parallel downloads).
+    await waitForPendingInstalls(vendorItems.map(v => v.id), 90000);
+    // Landing on installing-view either way — user can hit "I'm done"
+    // to trigger the rescan + verification report.
+    setOnboardingStep('ob-installing-view');
   })();
 
   Promise.all([autoPromise, vendorPromise]);
@@ -7004,7 +7138,7 @@ function showSuccessInterstitial(item, indexOneBased, total) {
     const metaEl  = document.getElementById('ob-success-meta');
     const nextBtn = document.getElementById('ob-success-next');
     const doneBtn = document.getElementById('ob-success-done');
-    if (titleEl) titleEl.textContent = `You have ${item.name}!`;
+    if (titleEl) titleEl.textContent = `${item.name} is yours 🎉`;
     if (tagEl) tagEl.textContent = pluginTagline(item);
     const isLast = indexOneBased >= total;
     if (metaEl) metaEl.textContent = isLast
@@ -7020,7 +7154,9 @@ function showSuccessInterstitial(item, indexOneBased, total) {
       cleanup();
       if (isLast) {
         markOnboarded();
+        try { window.nasty && window.nasty.engine && window.nasty.engine.send({ cmd: 'list_plugins' }); } catch (e) {}
         triggerResearchNow();
+        setTimeout(() => logOnboardingInstallReport(), 4000);
         dismissOnboarding();
         resolve(false);
       } else {
@@ -7031,7 +7167,9 @@ function showSuccessInterstitial(item, indexOneBased, total) {
     if (doneBtn) doneBtn.onclick = () => {
       cleanup();
       markOnboarded();
+      try { window.nasty && window.nasty.engine && window.nasty.engine.send({ cmd: 'list_plugins' }); } catch (e) {}
       triggerResearchNow();
+      setTimeout(() => logOnboardingInstallReport(), 4000);
       dismissOnboarding();
       resolve(false);
     };
