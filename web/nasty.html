@@ -6508,11 +6508,11 @@ function renderOnboardingBundle(manifest) {
     ...(bundles.extras_drums || []),
     ...(bundles.extras_effects || []),
     ...(bundles.sound_content || []),
-  ].filter(id => !frictionIds.has(id));
+  ].filter(id => !frictionIds.has(id) && !BUNDLED_PLUGIN_IDS.has(id));
   const extrasIds = [
     ...(bundles.extras_synths || []),
     ...(bundles.extras_drums || []),
-  ].filter(id => frictionIds.has(id));
+  ].filter(id => frictionIds.has(id) && !BUNDLED_PLUGIN_IDS.has(id));
 
   // Item lookup — plugins and sound-content merged for convenience.
   const byId = {};
@@ -6534,6 +6534,17 @@ function renderOnboardingBundle(manifest) {
   // No sections to render in the new UI — the section-row DOM is gone.
   // renderSection() is a no-op if the row isn't in the DOM.
 }
+
+// Plugins that ship INSIDE Nasty's .dmg — user gets them for free at
+// install time, so we never show them in the bundle-offer picker. Kept
+// hardcoded here (rather than a manifest field) so the source-of-truth
+// stays one edit away when we bundle a new plugin.
+const BUNDLED_PLUGIN_IDS = new Set([
+  'surge-xt',
+  'dexed',
+  'odin2',
+  'airwindows-consolidated',
+]);
 
 // Check whether a bundle item is already installed on the user's Mac —
 // case-insensitive exact-name match against the engine's plugin_list.

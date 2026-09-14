@@ -9,7 +9,7 @@
     "au_system": "/Library/Audio/Plug-Ins/Components"
   },
   "bundles": {
-    "starter": ["surge-xt", "dexed", "tal-noisemaker", "sitala", "valhalla-supermassive", "valhalla-freq-echo", "tdr-nova", "klanghelm-ivgi", "voxengo-span"],
+    "starter": ["surge-xt", "dexed", "tal-noisemaker", "valhalla-supermassive", "valhalla-freq-echo", "tdr-nova", "klanghelm-ivgi", "voxengo-span"],
     "extras_synths": ["obxd", "helm", "odin2", "podolski", "tyrell-n6", "vital"],
     "extras_drums": ["mt-power-drum-kit-2", "steven-slate-drums-5-5-free"],
     "extras_effects": ["valhalla-space-modulator", "tdr-kotelnikov", "tdr-slickeq", "klanghelm-mjuc-jr", "xfer-ott", "voxengo-oldskoolverb", "tal-reverb-4", "airwindows-consolidated", "zebralette"],
@@ -170,19 +170,6 @@
       "install_method": "manual-vendor-installer",
       "install_path": ["vst3_user", "au_user"],
       "file_size_mb": 150,
-      "checksum_placeholder": "N/A_manual_install",
-      "cheatsheet_needed": true
-    },
-    {
-      "id": "sitala",
-      "name": "Sitala",
-      "category": "drums-sampler",
-      "license": "Decomposer-Freeware-EULA",
-      "redistribution": "link-only",
-      "download_url": "https://decomposer.de/sitala/",
-      "install_method": "manual-vendor-installer",
-      "install_path": ["vst3_user", "au_user"],
-      "file_size_mb": 20,
       "checksum_placeholder": "N/A_manual_install",
       "cheatsheet_needed": true
     },
