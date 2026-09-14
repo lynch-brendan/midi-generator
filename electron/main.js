@@ -666,9 +666,19 @@ ipcMain.handle('install-plugin-via-web', async (evt, { pluginId, url, name, hint
         if (el) el.textContent = ${JSON.stringify(String(downloadCount))}; })();`;
       win.webContents.executeJavaScript(js).catch(() => {});
     };
+    let bannerInjected = false;
     win.webContents.on('did-finish-load', () => {
       if (win.isDestroyed()) return;
-      if (win.webContents.getURL().startsWith('data:')) return;
+      let url;
+      try { url = win.webContents.getURL(); } catch { return; }
+      if (!url || url.startsWith('data:')) return;
+      // Inject the banner once per window. Vendor pages sometimes fire
+      // did-finish-load multiple times (SPA-ish nav, iframes finishing),
+      // and re-running the injection while the window is being torn down
+      // by will-navigate → destroy has crashed the main process. Once is
+      // safer.
+      if (bannerInjected) return;
+      bannerInjected = true;
       const hintPayload = hint || '';
       const js = `(() => {
         const existing = document.getElementById('__nasty_hint_banner__');
@@ -740,14 +750,17 @@ ipcMain.handle('install-plugin-via-web', async (evt, { pluginId, url, name, hint
         stillAcceptingDownloads = false;
         try { win.hide(); } catch {}
         resolve({ ok: downloadCount > 0, downloading: downloadCount > 0 });
-        setTimeout(() => { try { if (!win.isDestroyed()) win.destroy(); } catch {} }, 500);
+        // Longer delay before destroy so any executeJavaScript / pending
+        // Chromium events on this webContents settle. Short delays (500ms)
+        // were racing with did-finish-load injection and SIGSEGVing.
+        setTimeout(() => { try { if (!win.isDestroyed()) win.destroy(); } catch {} }, 2000);
       } else if (targetUrl.startsWith('nasty://skip-all')) {
         event.preventDefault();
         skippedAll = true;
         stillAcceptingDownloads = false;
         try { win.hide(); } catch {}
         resolve({ ok: downloadCount > 0, skippedAll: true });
-        setTimeout(() => { try { if (!win.isDestroyed()) win.destroy(); } catch {} }, 500);
+        setTimeout(() => { try { if (!win.isDestroyed()) win.destroy(); } catch {} }, 2000);
       }
     });
 
