@@ -613,7 +613,9 @@ ipcMain.handle('install-plugin-via-web', async (evt, { pluginId, url, name }) =>
     // page fetches. Data URL is instant so the user never sees a blank
     // window. Replaced automatically when we navigate to the vendor URL.
     const displayName = (name || 'plugin').replace(/[<>&"]/g, '');
-    const loadingHtml = `<!DOCTYPE html><html><head><style>
+    const loadingHtml = `<!DOCTYPE html><html><head>
+      <title>Installing ${displayName} — Nasty</title>
+      <style>
       html,body{margin:0;height:100vh;background:#252932;color:#eaecef;
         font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
         display:flex;align-items:center;justify-content:center;flex-direction:column;gap:20px;}

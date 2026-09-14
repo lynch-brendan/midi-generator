@@ -1369,11 +1369,19 @@
     background: rgba(0,0,0,0.15);
     border-radius: 8px;
   }
-  #onboarding-overlay .ob-choice-cta {
+  #onboarding-overlay .ob-choice-actions {
+    display: flex; gap: 10px; width: 100%;
+  }
+  #onboarding-overlay .ob-choice-skip {
     flex: 0 0 auto;
+    padding: 14px 22px; font-size: 13px;
+    letter-spacing: 0.5px;
+  }
+  #onboarding-overlay .ob-choice-cta {
+    flex: 1;
     padding: 14px 24px; font-size: 14px;
     letter-spacing: 1px;
-    width: 100%; margin: 0;
+    margin: 0;
   }
   #onboarding-overlay .ob-choice-row {
     display: flex; align-items: center; gap: 10px;
@@ -1610,10 +1618,6 @@
           <span>Download all except the free-account ones</span>
         </label>
         <label class="ob-choice-row">
-          <input type="radio" name="ob-preset" value="none">
-          <span>Download none</span>
-        </label>
-        <label class="ob-choice-row">
           <input type="radio" name="ob-preset" value="manual">
           <span>Choose which ones to download</span>
         </label>
@@ -1622,9 +1626,14 @@
         <div class="ob-manual-list" id="ob-manual-list" style="display:none;"></div>
       </div>
 
-      <button class="ob-btn ob-btn-primary ob-choice-cta" id="ob-install">
-        Install selected
-      </button>
+      <div class="ob-choice-actions">
+        <button class="ob-btn ob-btn-secondary ob-choice-skip" id="ob-skip">
+          Skip for now
+        </button>
+        <button class="ob-btn ob-btn-primary ob-choice-cta" id="ob-install">
+          Install selected
+        </button>
+      </div>
     </div>
   </div>
 
@@ -6773,8 +6782,11 @@ async function showOnboarding() {
   };
 
   // ---- Step 2: Bundle → Installing ----
-  // "Download none" preset covers the skip path — install-button handler
-  // just checks whether selectedIds is empty and short-circuits if so.
+  document.getElementById('ob-skip').onclick = () => {
+    markOnboarded();
+    triggerResearchNow();
+    dismissOnboarding();
+  };
   document.getElementById('ob-install').onclick = () => {
     const selected = Array.from(onboardingState.selectedIds);
     if (selected.length === 0) {
