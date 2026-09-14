@@ -82,6 +82,18 @@ void setSubprocessAsAgentApp() {
         nastyParentApp = [NSRunningApplication runningApplicationWithProcessIdentifier:ppid];
     }
 
+    // Escape hatch: some plugins (FL Studio VSTi, other nested-DAW hosts)
+    // need to KEEP focus so their own UI can be interacted with. Setting
+    // NASTY_LET_PLUGINS_KEEP_FOCUS=1 in the engine's env skips installing
+    // the reactivate observer entirely — plugin windows behave like normal
+    // apps. Trade-off: Z-M piano input goes to whichever window is key.
+    const char* keepFocusEnv = std::getenv("NASTY_LET_PLUGINS_KEEP_FOCUS");
+    if (keepFocusEnv && keepFocusEnv[0] == '1') {
+        fprintf(stderr, "[MacHelpers] NASTY_LET_PLUGINS_KEEP_FOCUS=1 — "
+                        "not installing focus-reactivate observer\n");
+        return;
+    }
+
     // Whenever the engine app becomes active, immediately hand activation
     // back to Nasty. Keeps keyboard focus with the DAW even when the user
     // clicks a plugin window.
