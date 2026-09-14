@@ -6982,10 +6982,11 @@ async function kickOffBundleInstalls(selectedIds) {
   const items = selectedIds.map(bundleItemById).filter(Boolean);
   const autoSet = await getAutoInstallableSet();
   const autoItems = items.filter(it => autoSet.has(it.id));
-  const rawVendorItems = items.filter(it => !autoSet.has(it.id));
-  // Collapse same-vendor plugins into shared landing-page entries — one
-  // trip per vendor instead of 3 for Valhalla, 3 for TDR, etc.
-  const vendorItems = groupVendorItems(rawVendorItems);
+  // One page per plugin — user clicks Download, Nasty auto-advances to
+  // the next vendor. Vendor grouping was tried and reverted: users
+  // clicked Move on after the first plugin instead of hunting for
+  // sibling plugins on the same page.
+  const vendorItems = items.filter(it => !autoSet.has(it.id));
 
   setOnboardingStep('ob-installing-view');
 
@@ -7017,12 +7018,10 @@ async function kickOffBundleInstalls(selectedIds) {
       row.className = 'ob-item';
       row.style.cursor = 'default';
       const isAuto = item._kind === 'auto';
-      const isGroup = !!item.isGroup;
-      const displayName = isGroup ? `${item.name} (${item.pluginIds.length} plugins)` : item.name;
       row.innerHTML = `
         <div class="ob-install-status" style="width:16px;color:var(--accent);">${isAuto ? '⋯' : '◐'}</div>
         <div class="ob-item-body">
-          <div class="ob-item-name">${displayName}</div>
+          <div class="ob-item-name">${item.name}</div>
           <div class="ob-item-meta ob-install-line">${isAuto ? 'Queued for auto-install…' : 'Waiting for you to install…'}</div>
         </div>
         ${isAuto ? '' : `<button class="ob-btn ob-btn-secondary" style="padding:4px 10px;font-size:10px;">Reopen page</button>`}
@@ -7099,11 +7098,7 @@ async function kickOffBundleInstalls(selectedIds) {
       const item = vendorItems[i];
       if (canWebInstall) {
         try {
-          const opts = {
-            isGroup: !!item.isGroup,
-            expectedCount: item.pluginIds ? item.pluginIds.length : 1,
-          };
-          const result = await window.nasty.installPluginViaWeb(item.id, item.url, item.name, item.hint || '', opts);
+          const result = await window.nasty.installPluginViaWeb(item.id, item.url, item.name, item.hint || '', {});
           if (result && result.skippedAll) { bailAll = true; break; }
         } catch (e) { /* error already reported via install-progress */ }
       } else if (canOpen) {

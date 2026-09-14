@@ -693,7 +693,9 @@ ipcMain.handle('install-plugin-via-web', async (evt, { pluginId, url, name, hint
             : '<span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);' +
               'font-size:18px;filter:drop-shadow(0 0 6px rgba(238,108,158,0.6));">🎁</span>' +
               '<span style="flex:1;color:#c8ccd6;">' +
-              '<b style="color:#ffb0d0;letter-spacing:0.5px;">Nasty\\'s got you</b> — just click the Download button when you find it. We\\'ll handle the install.</span>');
+              '<b style="color:#ffb0d0;letter-spacing:0.5px;">You\\'re here for ' +
+              ${JSON.stringify((name || 'a plugin').replace(/[<>&"]/g, ''))} +
+              '</b> — click its Download button when you find it. Nasty grabs the file and installs it.</span>');
         const btnStyle = 'background:transparent;border:1px solid rgba(255,255,255,0.25);' +
           'color:#ffe6f0;padding:5px 10px;font-size:11px;border-radius:6px;cursor:pointer;font-family:inherit;';
         let btnHtml;
