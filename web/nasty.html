@@ -1332,42 +1332,68 @@
     flex: 0 0 auto;
   }
 
-  /* Preset choice — three big radio-buttons at the top of the bundle
-     step. Applying a preset just checks/unchecks the section masters
-     below; the sections still show live count + size + Details toggle. */
-  #onboarding-overlay .ob-preset-choice {
-    display: flex; flex-direction: column; gap: 8px;
-    width: 100%; margin-bottom: 4px;
-  }
-  #onboarding-overlay .ob-preset-option {
-    display: flex; align-items: flex-start; gap: 14px;
-    padding: 14px 18px;
+  /* Compact one-block choice — four small radio rows in a single card,
+     plus an optional drop-down list of individual plugins when "Choose"
+     is selected. Replaces the earlier big-card and section-row layout. */
+  #onboarding-overlay .ob-choice-block {
+    width: 100%;
     background: rgba(255,255,255,0.03);
     border: 1px solid rgba(255,255,255,0.06);
     border-radius: 10px;
+    padding: 12px 16px;
+    margin-bottom: 4px;
+  }
+  #onboarding-overlay .ob-choice-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 4px; cursor: pointer;
+    font-size: 13px; color: var(--text);
+  }
+  #onboarding-overlay .ob-choice-row input[type=radio] {
+    accent-color: var(--accent);
+    width: 14px; height: 14px; cursor: pointer; flex-shrink: 0;
+    margin: 0;
+  }
+  #onboarding-overlay .ob-choice-row:hover span {
+    color: var(--accent);
+  }
+
+  /* Manual picker — a flat list of every bundle plugin with checkboxes.
+     Shows only when "Choose which ones" is selected. Scrolls inside a
+     capped max-height so long lists don't push the Install button
+     off-screen. */
+  #onboarding-overlay .ob-manual-list {
+    margin: 10px -4px 4px;
+    padding: 8px 12px;
+    background: rgba(0,0,0,0.2);
+    border-radius: 8px;
+    max-height: 320px; overflow-y: auto;
+  }
+  #onboarding-overlay .ob-manual-list::-webkit-scrollbar {
+    width: 8px;
+  }
+  #onboarding-overlay .ob-manual-list::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.12); border-radius: 4px;
+  }
+  #onboarding-overlay .ob-manual-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 5px 4px;
+    font-size: 12px; color: var(--text);
     cursor: pointer;
-    transition: background 100ms ease, border-color 100ms ease;
   }
-  #onboarding-overlay .ob-preset-option:hover {
-    background: rgba(255,255,255,0.05);
-    border-color: rgba(255,255,255,0.14);
+  #onboarding-overlay .ob-manual-item input[type=checkbox] {
+    accent-color: var(--accent);
+    width: 13px; height: 13px; cursor: pointer; flex-shrink: 0;
+    margin: 0;
   }
-  #onboarding-overlay .ob-preset-option input[type=radio] {
-    margin: 4px 0 0; accent-color: var(--accent);
-    width: 16px; height: 16px; cursor: pointer; flex-shrink: 0;
+  #onboarding-overlay .ob-manual-item .ob-manual-meta {
+    margin-left: auto; font-size: 10px; color: var(--dim);
+    font-variant-numeric: tabular-nums;
   }
-  #onboarding-overlay .ob-preset-option:has(input:checked) {
-    background: rgba(238, 108, 158, 0.08);
-    border-color: rgba(238, 108, 158, 0.35);
+  #onboarding-overlay .ob-manual-item.ob-item-installed {
+    opacity: 0.5; cursor: default;
   }
-  #onboarding-overlay .ob-preset-body {
-    display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0;
-  }
-  #onboarding-overlay .ob-preset-name {
-    font-size: 14px; font-weight: 700; color: var(--text);
-  }
-  #onboarding-overlay .ob-preset-sub {
-    font-size: 11px; color: var(--text-dim);
+  #onboarding-overlay .ob-manual-item.ob-item-installed .ob-manual-meta {
+    color: #4ecc7a;
   }
 
   /* Section rows — one per major bundle grouping. Header has a master
@@ -1497,93 +1523,40 @@
     </button>
   </div>
 
-  <!-- Step 2: bundle offer. Three-way top-level choice + two collapsible
-       section rows below for granular control. -->
+  <!-- Step 2: bundle offer. Single compact choice block — four small
+       radio options and one drop-down list. No separate section cards. -->
   <div class="ob-view ob-view-wide" id="ob-bundle-view" style="display:none;">
-    <div class="ob-step-title">
-      Want some <span class="ob-title-accent">free</span> plugins?
-    </div>
+    <div class="ob-step-title">Want free plugins?</div>
     <div class="ob-step-desc">
-      Nasty's AI works way better with more plugins to reach for. Most
-      of these take a minute and a couple clicks; two need a free vendor
-      account. Everything on this page is 100% free.
+      Wanna download some free plugins so your experience is way better?
+      Most take a minute and a couple clicks; two of them ask you to sign
+      up for a free account.
     </div>
 
-    <!-- Three-way path selector. Clicking one applies its preset to the
-         section masters below and previews the resulting count/size. -->
-    <div class="ob-preset-choice">
-      <label class="ob-preset-option" data-preset="all">
+    <div class="ob-choice-block">
+      <label class="ob-choice-row">
         <input type="radio" name="ob-preset" value="all" checked>
-        <div class="ob-preset-body">
-          <div class="ob-preset-name">Grab everything</div>
-          <div class="ob-preset-sub">Fastest — installs all recommended free plugins.</div>
-        </div>
+        <span>Download all</span>
       </label>
-      <label class="ob-preset-option" data-preset="no-account">
+      <label class="ob-choice-row">
         <input type="radio" name="ob-preset" value="no-account">
-        <div class="ob-preset-body">
-          <div class="ob-preset-name">Grab everything except the account ones</div>
-          <div class="ob-preset-sub">Skip the two that ask for a free vendor account.</div>
-        </div>
+        <span>Download all except the free-account ones</span>
       </label>
-      <label class="ob-preset-option" data-preset="manual">
+      <label class="ob-choice-row">
+        <input type="radio" name="ob-preset" value="none">
+        <span>Download none</span>
+      </label>
+      <label class="ob-choice-row">
         <input type="radio" name="ob-preset" value="manual">
-        <div class="ob-preset-body">
-          <div class="ob-preset-name">Let me pick</div>
-          <div class="ob-preset-sub">Open the sections below and choose individually.</div>
-        </div>
+        <span>Choose which ones to download</span>
       </label>
-    </div>
 
-    <!-- Section 1: Starter pack — all instruments + effects + sound content.
-         Default state: master ON, dropdown collapsed. -->
-    <div class="ob-section-row" data-section="starter">
-      <div class="ob-section-header">
-        <input type="checkbox" class="ob-section-master" checked>
-        <div class="ob-section-body">
-          <div class="ob-section-name">Starter pack</div>
-          <div class="ob-section-reason">
-            Hand-picked essentials — synths, drums, effects, sound content.
-            Everything an AI-DAW needs day one.
-          </div>
-          <div class="ob-section-meta">
-            <span class="ob-section-count">0</span> items ·
-            <span class="ob-section-size">0</span> MB
-          </div>
-        </div>
-        <button class="ob-section-toggle">Details ▼</button>
-      </div>
-      <div class="ob-section-details" style="display:none;">
-        <div class="ob-section-items"></div>
-      </div>
-    </div>
-
-    <!-- Section 2: Needs a free account — Vital + SSD Free, both require
-         vendor signup. Also free, just gated behind a form.
-         Default state: master OFF, dropdown collapsed. -->
-    <div class="ob-section-row" data-section="extras">
-      <div class="ob-section-header">
-        <input type="checkbox" class="ob-section-master">
-        <div class="ob-section-body">
-          <div class="ob-section-name">Needs a free account</div>
-          <div class="ob-section-reason">
-            Also free — the vendor just wants you to sign up on their
-            site. Skip if you'd rather not.
-          </div>
-          <div class="ob-section-meta">
-            <span class="ob-section-count">0</span> items ·
-            <span class="ob-section-size">0</span> MB
-          </div>
-        </div>
-        <button class="ob-section-toggle">Details ▼</button>
-      </div>
-      <div class="ob-section-details" style="display:none;">
-        <div class="ob-section-items"></div>
-      </div>
+      <!-- Manual picker — appears only when "Choose which ones" is selected.
+           Single flat list of every plugin with a checkbox each. -->
+      <div class="ob-manual-list" id="ob-manual-list" style="display:none;"></div>
     </div>
 
     <div class="ob-step-actions">
-      <button class="ob-btn ob-btn-secondary" id="ob-skip">Skip everything</button>
       <button class="ob-btn ob-btn-primary ob-step-cta" id="ob-install">
         Install selected
       </button>
@@ -6350,9 +6323,9 @@ function renderOnboardingScan(known) {
   }
 }
 
-// Apply a top-level preset — "all" checks both section masters; "no-account"
-// checks only starter; "manual" leaves the current selection alone and
-// auto-opens the section details for granular editing.
+// Apply a top-level preset — "all" checks every eligible plugin,
+// "no-account" checks starter only, "none" clears everything,
+// "manual" leaves the current selection alone and reveals the drop-down.
 function applyBundlePreset(preset) {
   const starterIds = (onboardingState.sectionIds && onboardingState.sectionIds.starter) || [];
   const extrasIds  = (onboardingState.sectionIds && onboardingState.sectionIds.extras)  || [];
@@ -6360,36 +6333,66 @@ function applyBundlePreset(preset) {
   const eligible = ids => ids.filter(id => byId[id] && !isAlreadyInstalled(byId[id]));
 
   if (preset === 'all') {
+    onboardingState.selectedIds.clear();
     for (const id of eligible(starterIds)) onboardingState.selectedIds.add(id);
     for (const id of eligible(extrasIds))  onboardingState.selectedIds.add(id);
   } else if (preset === 'no-account') {
+    onboardingState.selectedIds.clear();
     for (const id of eligible(starterIds)) onboardingState.selectedIds.add(id);
-    for (const id of extrasIds) onboardingState.selectedIds.delete(id);
-  } else if (preset === 'manual') {
-    // Leave selections as-is; open both sections for tweaking.
-    for (const key of ['starter', 'extras']) {
-      const row = document.querySelector(`.ob-section-row[data-section="${key}"]`);
-      if (!row) continue;
-      const details = row.querySelector('.ob-section-details');
-      const toggle = row.querySelector('.ob-section-toggle');
-      if (details && details.style.display === 'none') {
-        details.style.display = '';
-        if (toggle) toggle.textContent = 'Hide ▲';
-      }
-    }
+  } else if (preset === 'none') {
+    onboardingState.selectedIds.clear();
   }
+  // preset === 'manual' → leave selectedIds alone; drop-down toggles below.
 
-  // Reflect the preset on the section masters + item checkboxes + counters.
-  for (const key of ['starter', 'extras']) {
-    syncSectionMaster(key);
-    updateSectionMeta(key);
-    const row = document.querySelector(`.ob-section-row[data-section="${key}"]`);
-    if (!row) continue;
-    const ids = onboardingState.sectionIds[key] || [];
-    for (const cb of row.querySelectorAll('.ob-section-items input[type=checkbox]')) {
-      const id = cb.dataset.id;
-      cb.checked = onboardingState.selectedIds.has(id);
+  // Show/hide the manual picker. Rebuild its checkbox list to reflect
+  // current selectedIds.
+  const list = document.getElementById('ob-manual-list');
+  if (list) {
+    list.style.display = (preset === 'manual') ? '' : 'none';
+    if (preset === 'manual') renderManualList();
+  }
+}
+
+// Flat drop-down list of every bundle plugin — starter items first, then
+// account-required. Already-installed items shown as "✓ Installed" and
+// disabled. Toggling a checkbox updates selectedIds directly.
+function renderManualList() {
+  const list = document.getElementById('ob-manual-list');
+  if (!list) return;
+  const starterIds = (onboardingState.sectionIds && onboardingState.sectionIds.starter) || [];
+  const extrasIds  = (onboardingState.sectionIds && onboardingState.sectionIds.extras)  || [];
+  const byId = onboardingState.byId || {};
+  list.innerHTML = '';
+  const rowFor = (id) => {
+    const item = byId[id];
+    if (!item) return null;
+    const installed = isAlreadyInstalled(item);
+    const label = document.createElement('label');
+    label.className = 'ob-manual-item' + (installed ? ' ob-item-installed' : '');
+    const checked = !installed && onboardingState.selectedIds.has(id);
+    const control = installed
+      ? '<span style="color:#4ecc7a;font-weight:700;width:13px;">✓</span>'
+      : `<input type="checkbox" data-id="${id}" ${checked ? 'checked' : ''}>`;
+    const size = item.size ? item.size + ' MB' : '';
+    const meta = installed ? 'Installed' : size;
+    label.innerHTML = `
+      ${control}
+      <span>${item.name}</span>
+      <span class="ob-manual-meta">${meta}</span>
+    `;
+    if (!installed) {
+      label.querySelector('input').addEventListener('change', (e) => {
+        if (e.target.checked) onboardingState.selectedIds.add(id);
+        else onboardingState.selectedIds.delete(id);
+      });
     }
+    return label;
+  };
+  for (const id of starterIds) {
+    const r = rowFor(id); if (r) list.appendChild(r);
+  }
+  for (const id of extrasIds) {
+    const r = rowFor(id); if (r) list.appendChild(r);
   }
 }
 
@@ -6436,9 +6439,8 @@ function renderOnboardingBundle(manifest) {
     }
   }
 
-  renderSection('starter', starterIds, byId, true);
-  renderSection('extras', extrasIds, byId, false);
-  updateOnboardingTotal();
+  // No sections to render in the new UI — the section-row DOM is gone.
+  // renderSection() is a no-op if the row isn't in the DOM.
 }
 
 // Check whether a bundle item is already installed on the user's Mac —
@@ -6644,12 +6646,9 @@ async function showOnboarding() {
     }
   };
 
-  // ---- Step 2: Bundle → Installing (or Skip → done) ----
-  document.getElementById('ob-skip').onclick = () => {
-    markOnboarded();
-    triggerResearchNow();
-    dismissOnboarding();
-  };
+  // ---- Step 2: Bundle → Installing ----
+  // "Download none" preset covers the skip path — install-button handler
+  // just checks whether selectedIds is empty and short-circuits if so.
   document.getElementById('ob-install').onclick = () => {
     const selected = Array.from(onboardingState.selectedIds);
     if (selected.length === 0) {
