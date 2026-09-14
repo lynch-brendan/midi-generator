@@ -42,9 +42,9 @@
   },
   "bundles": {
     "starter": ["surge-xt", "dexed", "tal-noisemaker", "valhalla-supermassive", "valhalla-freq-echo", "tdr-nova", "klanghelm-ivgi", "voxengo-span"],
-    "extras_synths": ["obxd", "odin2", "podolski", "tyrell-n6"],
+    "extras_synths": ["obxd", "odin2"],
     "extras_drums": [],
-    "extras_effects": ["valhalla-space-modulator", "tdr-kotelnikov", "tdr-slickeq", "klanghelm-mjuc-jr", "voxengo-oldskoolverb", "tal-reverb-4", "airwindows-consolidated", "zebralette"],
+    "extras_effects": ["valhalla-space-modulator", "tdr-kotelnikov", "tdr-slickeq", "klanghelm-mjuc-jr", "voxengo-oldskoolverb", "tal-reverb-4", "airwindows-consolidated"],
     "sound_content": []
   },
   "plugins": [
