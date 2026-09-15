@@ -2066,6 +2066,45 @@ let lastClipClickId = null;
 // Right-click drag paint-erase state.
 let rightEraseActive = false;
 let rightEraseKilled = null;
+// Step-cell paint-drag state.
+let stepPaintActive = false;
+let stepPaintTargetOn = false;
+let stepPaintVisited = null;
+
+function paintStepCell(cell) {
+  if (!stepPaintVisited) return;
+  const chId = cell.dataset.chId;
+  const idxStr = cell.dataset.step;
+  if (!chId || idxStr == null) return;
+  const idx = parseInt(idxStr);
+  const key = chId + ':' + idx;
+  if (stepPaintVisited.has(key)) return;
+  stepPaintVisited.add(key);
+  const pat = song.patterns.find(p => p.id === currentPatternId);
+  if (!pat) return;
+  const ch = song.channels.find(c => c.id === chId);
+  if (!ch) return;
+  const isCurrentlyOn = !!findStepNote(pat, ch, idx);
+  if (isCurrentlyOn === stepPaintTargetOn) return;
+  toggleStepNote(pat, ch, idx);
+  cell.classList.toggle('on', stepPaintTargetOn);
+  if (stepPaintTargetOn) cell.style.setProperty('--cell-color', ch.color);
+}
+function onStepPaintMove(e) {
+  if (!stepPaintActive) return;
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  if (!el) return;
+  const cell = el.closest && el.closest('.step-cell');
+  if (cell) paintStepCell(cell);
+}
+function onStepPaintUp() {
+  if (!stepPaintActive) return;
+  stepPaintActive = false;
+  stepPaintVisited = null;
+  document.removeEventListener('mousemove', onStepPaintMove);
+  document.removeEventListener('mouseup', onStepPaintUp);
+  persist();
+}
 
 // ============================================================
 // Persistence
@@ -3579,23 +3618,26 @@ function renderChannelRack() {
     rack.appendChild(row);
   }
 
-  // Step cell clicks (delegated for perf on big grids)
+  // Step-cell paint drag: mousedown on a cell sets a target state (opposite
+  // of its current) and applies it; dragging over other cells applies the
+  // same target. Each visited cell is toggled at most once per drag so a
+  // mouse jitter can't flip a cell back and forth.
   rack.querySelectorAll('.step-cell').forEach(cell => {
-    cell.addEventListener('click', (e) => {
+    cell.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
       e.stopPropagation();
-      if (!pattern) return;
-      const chId = cell.dataset.chId;
-      const idx = parseInt(cell.dataset.step);
-      const ch = song.channels.find(c => c.id === chId);
+      const pat = song.patterns.find(p => p.id === currentPatternId);
+      if (!pat) return;
+      const ch = song.channels.find(c => c.id === cell.dataset.chId);
       if (!ch) return;
-      toggleStepNote(pattern, ch, idx);
-      // Update ONLY the clicked cell + persist. A full render() on every
-      // click stalls the animation frame and jitters the playhead — we
-      // don't need to redraw anything else, just this one class flip.
-      const isOn = !!findStepNote(pattern, ch, idx);
-      cell.classList.toggle('on', isOn);
-      if (isOn) cell.style.setProperty('--cell-color', ch.color);
-      persist();
+      const idx = parseInt(cell.dataset.step);
+      const isOn = !!findStepNote(pat, ch, idx);
+      stepPaintTargetOn = !isOn;
+      stepPaintActive = true;
+      stepPaintVisited = new Set();
+      paintStepCell(cell);
+      document.addEventListener('mousemove', onStepPaintMove);
+      document.addEventListener('mouseup', onStepPaintUp);
     });
   });
 
