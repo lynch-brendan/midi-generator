@@ -310,7 +310,39 @@
   }
   .clip:hover { filter: brightness(1.15); }
   .clip.dragging { cursor: grabbing; opacity: 0.75; z-index: 10; }
-  .clip.selected { outline: 1px solid var(--text); outline-offset: -1px; }
+  .clip { outline: none; }
+  .clip:focus, .clip:focus-visible { outline: none; }
+  .clip.selected {
+    box-shadow: inset 0 0 0 2px #fff, inset 0 -6px 8px rgba(0,0,0,0.15), 0 1px 2px rgba(0,0,0,0.4);
+  }
+  /* Channel-rack ruler — same visual as the arrangement ruler, aligned to
+     the step grid via a sticky spacer that matches .ch-left width. */
+  .ch-ruler {
+    display: flex; height: 22px;
+    background: linear-gradient(#48525c, #3b434c);
+    border-bottom: 1px solid var(--line);
+    margin: 0 4px 2px 4px;
+    min-width: max-content;
+    user-select: none;
+  }
+  .ch-ruler .ruler-spacer {
+    width: 340px; flex-shrink: 0;
+    border-right: 1px solid var(--line);
+    position: sticky; left: 4px; z-index: 2;
+    background: linear-gradient(#48525c, #3b434c);
+  }
+  .ch-ruler .ruler-ticks {
+    position: relative; padding: 0 8px; cursor: pointer;
+    height: 22px;
+  }
+  .ch-ruler .ruler-ticks .rtick {
+    position: absolute; top: 0; height: 22px;
+    border-left: 1px solid #2f353c;
+    color: var(--text-dim); font-size: 10px;
+    padding: 4px 3px;
+    text-shadow: 0 1px 0 rgba(0,0,0,0.4);
+    pointer-events: none;
+  }
   .clip.audio { background: linear-gradient(180deg, #33c58a, #2b9adb); }
   .clip .resize {
     position: absolute; right: 0; top: 0; bottom: 0; width: 5px;
@@ -2027,8 +2059,13 @@ let loopEnabled = false;
 // Ruler-click seek: sample offset applied on the next SONG-mode play so a
 // seek made while stopped survives Stop→Play instead of jumping to bar 1.
 let pendingStartSample = 0;
+// Same idea for PAT mode: channel-rack ruler click stashes the pattern seek.
+let pendingPatternStartSample = 0;
 let lastClipClickAt = 0;
 let lastClipClickId = null;
+// Right-click drag paint-erase state.
+let rightEraseActive = false;
+let rightEraseKilled = null;
 
 // ============================================================
 // Persistence
@@ -2734,7 +2771,8 @@ function playSong() {
   // (loop=1e12) would defer the new smaller loop as pending forever.
   engineTransport.pushPattern(pat);
   engineTransport.seek(0);
-  engineTransport.seekPattern(0);
+  // Honor a channel-rack-ruler seek made while stopped.
+  engineTransport.seekPattern(pendingPatternStartSample || 0);
   engineTransport.setLoopBeats(pat.lengthBars * 4);
   engineTransport.setMetronomeEnabled(!!document.getElementById('metronome')?.checked);
   engineTransport.play();
@@ -3216,26 +3254,26 @@ function renderPlaylist() {
     tick.textContent = b + 1;
     ruler.appendChild(tick);
   }
-  // Click anywhere on the ruler → seek playhead there. Works while playing
-  // (engine seek) and while stopped (stashed on pendingStartSample so the
-  // next Play resumes from the click point instead of jumping to bar 1).
+  // Click anywhere on the ruler = "take me here." Always stops playback
+  // cleanly, positions the playhead visually, stashes the sample offset so
+  // the next Play resumes from here. Also auto-switches to SONG mode —
+  // the arrangement ruler is a SONG-mode surface. User presses Space to play.
   ruler.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
     const rect = ruler.getBoundingClientRect();
     const x = Math.max(0, e.clientX - rect.left);
     const bar = x / BAR_WIDTH;
     const beats = bar * 4;
     const sample = engineTransport.beatsToSamples(beats);
-    engineTransport.seek(sample);
-    engineTransport.seekPattern(sample);
-    pendingStartSample = sample;
-    // Song mode auto-switch: clicking the ruler is a song-mode action. If
-    // we're in PAT mode, this also feels like "take me to the arrangement."
+    if (animationFrame) stopSong();
     if (song.transportMode !== 'song') {
       song.transportMode = 'song';
       document.getElementById('ps-pat')?.classList.remove('active');
       document.getElementById('ps-song')?.classList.add('active');
       if (engineTransport.available()) engineTransport.setMode('song');
     }
+    pendingStartSample = sample;
+    if (engineTransport.available()) engineTransport.seek(sample);
     const ph = document.getElementById('playhead');
     ph.style.display = 'block';
     ph.style.left = (bar * BAR_WIDTH) + 'px';
@@ -3273,16 +3311,9 @@ function renderPlaylist() {
       el.dataset.clipId = clip.id;
       el.dataset.trackId = track.id;
       el.addEventListener('mousedown', onClipMouseDown);
-      // Right-click deletes the clip. preventDefault kills the browser menu.
-      el.addEventListener('contextmenu', (ev) => {
-        ev.preventDefault();
-        const t = song.tracks.find(tt => tt.id === track.id);
-        if (!t) return;
-        t.clips = t.clips.filter(c => c.id !== clip.id);
-        if (selectedClipId === clip.id) selectedClipId = null;
-        render();
-        syncSongArrangement();
-      });
+      // Kill the browser context menu — right-click delete is handled by
+      // startRightEraseDrag on right-mousedown so drag-to-erase works.
+      el.addEventListener('contextmenu', (ev) => ev.preventDefault());
       const rz = document.createElement('div');
       rz.className = 'resize';
       rz.addEventListener('mousedown', onClipResizeStart);
@@ -3401,6 +3432,54 @@ function renderChannelRack() {
   // Always show a comfortable canvas — even a 1-bar pattern gets 4 bars of
   // step cells visible so the user can keep extending to the right.
   const stepCount = pattern ? Math.max(pattern.lengthBars * 16, 64) : 64;
+
+  // Channel-rack ruler — click to seek within the pattern + auto-switch to
+  // PAT mode. Aligned to the step grid via a 340px sticky spacer that
+  // matches .ch-left width, so tick positions match the step columns.
+  const STEP_PX_RULER = 24; // must match STEP_PX in animatePlayhead
+  const rulerBars = Math.max(stepCount / 16, 1);
+  const rulerRow = document.createElement('div');
+  rulerRow.className = 'ch-ruler';
+  const rulerSpacer = document.createElement('div');
+  rulerSpacer.className = 'ruler-spacer';
+  rulerRow.appendChild(rulerSpacer);
+  const rulerTicks = document.createElement('div');
+  rulerTicks.className = 'ruler-ticks';
+  rulerTicks.style.width = (rulerBars * 16 * STEP_PX_RULER) + 'px';
+  for (let b = 0; b < rulerBars; b++) {
+    const t = document.createElement('div');
+    t.className = 'rtick';
+    t.style.left = (b * 16 * STEP_PX_RULER) + 'px';
+    t.textContent = b + 1;
+    rulerTicks.appendChild(t);
+  }
+  rulerTicks.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    const rect = rulerTicks.getBoundingClientRect();
+    const x = Math.max(0, e.clientX - rect.left);
+    const steps = x / STEP_PX_RULER;
+    const beats = steps * 0.25; // 1 step = 1/16 = 0.25 beats
+    const sample = engineTransport.beatsToSamples(beats);
+    if (animationFrame) stopSong();
+    if (song.transportMode !== 'pat') {
+      song.transportMode = 'pat';
+      document.getElementById('ps-song')?.classList.remove('active');
+      document.getElementById('ps-pat')?.classList.add('active');
+      if (engineTransport.available()) engineTransport.setMode('pat');
+    }
+    pendingPatternStartSample = sample;
+    if (engineTransport.available()) engineTransport.seekPattern(sample);
+    // Position the rack playhead visually so the seek is immediately visible
+    // even while stopped. LEFT_START (348) is the offset from rack left to
+    // where the step grid begins — see animatePlayhead.
+    const rp = document.getElementById('rack-playhead');
+    if (rp) {
+      rp.style.display = 'block';
+      rp.style.left = (348 + x) + 'px';
+    }
+  });
+  rulerRow.appendChild(rulerTicks);
+  rack.appendChild(rulerRow);
 
   for (const ch of song.channels) {
     const row = document.createElement('div');
@@ -4544,6 +4623,14 @@ function onLaneDrop(e) {
 }
 
 function onClipMouseDown(e) {
+  // Right button starts a paint-erase drag (delete-on-hover). Kill the
+  // browser context menu too — its own contextmenu handler is separate.
+  if (e.button === 2) {
+    e.preventDefault();
+    e.stopPropagation();
+    startRightEraseDrag(e.currentTarget);
+    return;
+  }
   e.stopPropagation();
   const clipId = e.currentTarget.dataset.clipId;
   const trackId = e.currentTarget.dataset.trackId;
@@ -4551,6 +4638,10 @@ function onClipMouseDown(e) {
   const clip = track && track.clips.find(c => c.id === clipId);
   if (!clip) return;
   selectedClipId = clipId;
+  // Immediate selection visual — the .selected class shows up before any
+  // render() so a click-with-no-drag still looks selected.
+  document.querySelectorAll('.clip.selected').forEach(el => el.classList.remove('selected'));
+  e.currentTarget.classList.add('selected');
   clipDrag = {
     clipId, trackId, startX: e.clientX, startY: e.clientY, origBar: clip.startBar,
     moved: false, copy: e.altKey || e.metaKey, el: e.currentTarget,
@@ -4558,6 +4649,48 @@ function onClipMouseDown(e) {
   e.currentTarget.classList.add('dragging');
   document.addEventListener('mousemove', onClipMouseMove);
   document.addEventListener('mouseup', onClipMouseUp);
+}
+
+// Right-click drag paint-erase: hold right button and sweep — every clip
+// the cursor crosses gets deleted. Single right-click is the degenerate
+// case (mousedown+mouseup on the same clip = one deletion).
+function startRightEraseDrag(initialClipEl) {
+  rightEraseActive = true;
+  rightEraseKilled = new Set();
+  killClipByElement(initialClipEl);
+  document.addEventListener('mousemove', onRightEraseMove);
+  document.addEventListener('mouseup', onRightEraseUp);
+}
+function onRightEraseMove(e) {
+  if (!rightEraseActive) return;
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  if (!el) return;
+  const clipEl = el.closest && el.closest('.clip');
+  if (clipEl && clipEl.dataset.clipId && !rightEraseKilled.has(clipEl.dataset.clipId)) {
+    killClipByElement(clipEl);
+  }
+}
+function onRightEraseUp() {
+  if (!rightEraseActive) return;
+  rightEraseActive = false;
+  document.removeEventListener('mousemove', onRightEraseMove);
+  document.removeEventListener('mouseup', onRightEraseUp);
+  const anyKilled = rightEraseKilled && rightEraseKilled.size > 0;
+  rightEraseKilled = null;
+  if (anyKilled) {
+    render();
+    syncSongArrangement();
+  }
+}
+function killClipByElement(clipEl) {
+  const clipId = clipEl.dataset.clipId;
+  const trackId = clipEl.dataset.trackId;
+  const track = song.tracks.find(t => t.id === trackId);
+  if (!track || !clipId) return;
+  track.clips = track.clips.filter(c => c.id !== clipId);
+  if (selectedClipId === clipId) selectedClipId = null;
+  if (rightEraseKilled) rightEraseKilled.add(clipId);
+  clipEl.remove();
 }
 
 function onClipMouseMove(e) {
@@ -4607,17 +4740,27 @@ function onClipMouseUp(e) {
     render();
   } else if (!clipDrag.moved && clip && clip.type === 'pattern') {
     // Single click = select only (already set in mousedown). Double click
-    // = make this the current pattern + open the channel rack. Piano roll
-    // is F7 / dedicated open, no longer stolen by a stray click here.
+    // = "I'm working on this pattern now": make it current, open the rack,
+    // switch to PAT mode. If audio was already rolling, restart in PAT so
+    // playback follows the intent instead of continuing the SONG arrangement.
     const now = Date.now();
     const isDouble = lastClipClickId === clip.id && (now - lastClipClickAt) < 350;
     lastClipClickAt = now;
     lastClipClickId = clip.id;
     if (isDouble) {
+      const wasPlaying = !!animationFrame;
       currentPatternId = clip.patternId;
-      hotSwapCurrentPatternIfPlaying();
       if (typeof isWindowOpen === 'function' && !isWindowOpen('rack')) setWindow('rack', true);
+      if (song.transportMode !== 'pat') {
+        if (wasPlaying) stopSong();
+        song.transportMode = 'pat';
+        document.getElementById('ps-song')?.classList.remove('active');
+        document.getElementById('ps-pat')?.classList.add('active');
+        if (engineTransport.available()) engineTransport.setMode('pat');
+      }
+      pendingPatternStartSample = 0;
       render();
+      if (wasPlaying) playSong();
     }
   }
   clipDrag = null;
