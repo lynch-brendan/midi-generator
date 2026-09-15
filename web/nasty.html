@@ -3631,10 +3631,30 @@ function renderPatternList() {
         <button data-a="del" data-pid="${p.id}" title="Delete pattern">✕</button>
       </span>
     `;
-    row.addEventListener('click', () => {
+    row.addEventListener('click', (e) => {
+      // Let the row's own buttons (edit / delete) handle their own clicks.
+      if (e.target.closest('button')) return;
+      const wasPlaying = !!animationFrame;
+      const wasInPat = song.transportMode === 'pat';
       currentPatternId = p.id;
-      hotSwapCurrentPatternIfPlaying();
+      // Case A — already playing in PAT: seamless hot-swap, no restart.
+      if (wasPlaying && wasInPat) {
+        hotSwapCurrentPatternIfPlaying();
+        render();
+        return;
+      }
+      // Case B — playing SONG or stopped: switch to PAT and start playing
+      // this pattern immediately. Sidebar click = "I want this now."
+      if (wasPlaying) stopSong();
+      if (!wasInPat) {
+        song.transportMode = 'pat';
+        document.getElementById('ps-song')?.classList.remove('active');
+        document.getElementById('ps-pat')?.classList.add('active');
+        if (engineTransport.available()) engineTransport.setMode('pat');
+      }
+      pendingPatternStartSample = 0;
       render();
+      playSong();
     });
     row.addEventListener('dragstart', (e) => {
       e.dataTransfer.setData('application/x-nasty-pattern', p.id);
