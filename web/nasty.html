@@ -2794,9 +2794,11 @@ function stopSong() {
   document.getElementById('playhead').style.display = 'none';
   if (animationFrame) { cancelAnimationFrame(animationFrame); animationFrame = null; }
   if (midiRecording) stopMidiRecording();
-  // Reset visual transports to bar 1 so the next play starts clean.
+  // Reset visual transports to bar 1 so the next play starts clean. Clear
+  // the transform too — a leftover translate3d from the last animation
+  // would silently override any later style.left the ruler-click sets.
   const rackPh = document.getElementById('rack-playhead');
-  if (rackPh) rackPh.style.display = 'none';
+  if (rackPh) { rackPh.style.display = 'none'; rackPh.style.transform = ''; }
   if (typeof updateTimeLcd === 'function') updateTimeLcd(0);
 }
 
@@ -3436,8 +3438,10 @@ function renderChannelRack() {
   // Channel-rack ruler — click to seek within the pattern + auto-switch to
   // PAT mode. Aligned to the step grid via a 340px sticky spacer that
   // matches .ch-left width, so tick positions match the step columns.
+  // Ruler is EXACTLY pattern.lengthBars wide (not the padded 4-bar canvas)
+  // so clicking never lands past the loop into empty territory.
   const STEP_PX_RULER = 24; // must match STEP_PX in animatePlayhead
-  const rulerBars = Math.max(stepCount / 16, 1);
+  const rulerBars = pattern ? Math.max(pattern.lengthBars, 1) : 1;
   const rulerRow = document.createElement('div');
   rulerRow.className = 'ch-ruler';
   const rulerSpacer = document.createElement('div');
@@ -3456,7 +3460,11 @@ function renderChannelRack() {
   rulerTicks.addEventListener('mousedown', (e) => {
     if (e.button !== 0) return;
     const rect = rulerTicks.getBoundingClientRect();
-    const x = Math.max(0, e.clientX - rect.left);
+    const rawX = Math.max(0, e.clientX - rect.left);
+    // Clamp defensively: never seek past the last valid step (loop end - 1
+    // step), so the engine never lands in the wrap-hold zone.
+    const maxX = Math.max(0, rulerBars * 16 * STEP_PX_RULER - STEP_PX_RULER);
+    const x = Math.min(rawX, maxX);
     const steps = x / STEP_PX_RULER;
     const beats = steps * 0.25; // 1 step = 1/16 = 0.25 beats
     const sample = engineTransport.beatsToSamples(beats);
@@ -3469,13 +3477,15 @@ function renderChannelRack() {
     }
     pendingPatternStartSample = sample;
     if (engineTransport.available()) engineTransport.seekPattern(sample);
-    // Position the rack playhead visually so the seek is immediately visible
-    // even while stopped. LEFT_START (348) is the offset from rack left to
-    // where the step grid begins — see animatePlayhead.
+    // Position the rack playhead using transform to match animatePlayhead's
+    // primitive — mixing style.left with a leftover transform from the last
+    // frame would show the playhead in the wrong spot. LEFT_START (348) is
+    // the offset from rack left to where the step grid begins.
     const rp = document.getElementById('rack-playhead');
     if (rp) {
       rp.style.display = 'block';
-      rp.style.left = (348 + x) + 'px';
+      rp.style.left = '0';
+      rp.style.transform = `translate3d(${348 + x}px, 0, 0)`;
     }
   });
   rulerRow.appendChild(rulerTicks);
