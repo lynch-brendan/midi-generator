@@ -44,6 +44,13 @@ version):
 - No dedicated Width or EQ knobs — stereo width comes from the algorithm
   itself. If you need EQ shaping, place an EQ after it.
 
+## How to tune from chat
+
+All params — `Mode`, `Mix`, `Manual` (Delay Ms), `Feedback`, `Rate`,
+`Depth` — are exposed as VST3 parameters. Use `set_plugin_param` with
+the param name. `Mode` takes an integer index into the algorithm list
+above. No need to open the plugin GUI.
+
 ## Quirks
 
 - **Not tempo-synced.** Rate is in Hz only; no host-BPM division. For rhythmic

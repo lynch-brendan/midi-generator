@@ -23,6 +23,12 @@ great for dubby, wobbly, ethereal, self-oscillating textures.
 - **Feedback Filter** — a single tilt-style cut in the feedback path.
   Darkens repeats (dub) or keeps them bright/metallic.
 
+## How to tune from chat
+
+All 5 params (`Mix`, `Delay Ms`, `Feedback`, `Shift Hz`, `Feedback Filter`)
+are exposed as VST3 parameters. Use `set_plugin_param` with the param
+name — no need to open the plugin GUI.
+
 ## Quirks
 
 - Frequency shift is not pitch shift. Adding a constant Hz value breaks

@@ -48,14 +48,23 @@ through the plugin API.
 - **EQ Low / High (Low Cut / High Cut)** — tail tone shaping. Sirius
   mode has notably steeper/more useful filters than other modes.
 
+## How to switch modes from chat
+
+Mode is exposed as a **VST3 parameter named "Mode"** (integer index into
+the mode list above, roughly in order: 0 = Gemini, 1 = Hydra, etc.).
+Use the `set_plugin_param` tool: `{"name": "Mode", "value": <index>}`
+on the channel that has Supermassive loaded. No need to open the plugin
+GUI. The Mix, Feedback, Density, Delay Ms, etc. are also all
+`set_plugin_param`-controllable by name.
+
 ## Quirks
 
 - Mode roster grows over versions — code that hard-codes a mode list will
   drift. Newer modes (Sirius, Leo, Virgo, Scorpio, Libra) don't exist in
-  older installs.
-- No standard preset-program API — the mode selector is the only
-  "preset" interface. Automate `Mode` directly, don't rely on program
-  change messages.
+  older installs. Ask the user or check the plugin's param list before
+  guessing an index.
+- No standard preset-program API — the Mode param is the only "preset"
+  interface. Don't try program change messages.
 - Feedback near 100% is genuinely infinite; freezing a tail is a
   performance move, not a mistake.
 - CPU is very light for how big it sounds.
