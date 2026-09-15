@@ -2033,6 +2033,19 @@
   </div>
 </div>
 
+<div id="engine-crash-modal" class="modal hidden" style="z-index:9000">
+  <div class="modal-panel" style="max-width:440px">
+    <h3 style="font-size:14px">The audio engine crashed</h3>
+    <p id="engine-crash-body" style="line-height:1.5;font-size:12px;margin:8px 0 0;color:var(--text-dim)">
+      Your project is safe — nothing was lost. Save your work, then click Restart Engine to bring audio back.
+    </p>
+    <div class="row" style="margin-top:14px">
+      <button id="engine-crash-save">Save Now</button>
+      <button id="engine-crash-restart" style="background:var(--accent);border-color:var(--accent);color:white">Restart Engine</button>
+    </div>
+  </div>
+</div>
+
 <input type="file" id="file-input" accept=".json" style="display:none" />
 
 <script>
@@ -4518,6 +4531,52 @@ document.addEventListener('DOMContentLoaded', () => {
   const b = document.getElementById('audio-rate-dismiss');
   if (b) b.addEventListener('click', () => {
     document.getElementById('audio-rate-modal').classList.add('hidden');
+  });
+});
+
+// Engine-crash modal. Fired from the engine event handler when
+// audioEngineProc exits without Nasty asking for it. Renders the culprit
+// plugin's name if the crash landed within a few seconds of a load_plugin
+// / add_effect (see main.js:lastRiskyCommand). Save button dumps the
+// current song to disk; Restart respawns the audio engine subprocess.
+function showEngineCrashModal(msg) {
+  const modal = document.getElementById('engine-crash-modal');
+  const body  = document.getElementById('engine-crash-body');
+  if (!modal || !body) return;
+  const culprit = msg && msg.culprit;
+  // 10s window ties the blame to a recent load. Beyond that the exit is
+  // more likely spontaneous — don't put a wrong name in front of the user.
+  let nameable = null;
+  if (culprit && culprit.at && (Date.now() - culprit.at < 10000)) {
+    // main.js only sees the raw id we sent over IPC. The friendly display
+    // name lives in enginePluginsList on the renderer — look it up here so
+    // the modal reads "Dexed crashed" not "VST3-Dexed-5b25143b-d7709eec crashed".
+    const fromList = (enginePluginsList || []).find(p => p.id === culprit.pluginId);
+    nameable = (fromList && fromList.name) || culprit.pluginName || culprit.pluginId;
+  }
+  body.textContent = nameable
+    ? `${nameable} crashed and took the audio engine with it. Your project is safe — nothing was lost. Save your work, then click Restart Engine to bring audio back.`
+    : `Your project is safe — nothing was lost. Save your work, then click Restart Engine to bring audio back.`;
+  modal.classList.remove('hidden');
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const saveBtn    = document.getElementById('engine-crash-save');
+  const restartBtn = document.getElementById('engine-crash-restart');
+  if (saveBtn) saveBtn.addEventListener('click', () => {
+    try { saveToFile(); } catch (e) { console.error('[nasty] save failed:', e); }
+  });
+  if (restartBtn) restartBtn.addEventListener('click', async () => {
+    restartBtn.disabled = true;
+    restartBtn.textContent = 'Restarting…';
+    try {
+      if (window.nasty && window.nasty.engine) {
+        await window.nasty.engine.restart();
+      }
+    } finally {
+      document.getElementById('engine-crash-modal').classList.add('hidden');
+      restartBtn.disabled = false;
+      restartBtn.textContent = 'Restart Engine';
+    }
   });
 });
 document.addEventListener('DOMContentLoaded', () => {
@@ -7630,6 +7689,8 @@ if (window.nasty && window.nasty.engine) {
       if (!isOnboarded()) {
         setTimeout(() => { showOnboarding(); }, 550);
       }
+    } else if (msg.event === 'engine_crashed') {
+      showEngineCrashModal(msg);
     } else if (msg.event === 'transport_position') {
       // The engine emits these at ~60 Hz while playing. Store the latest
       // pattern position AND the wall-clock instant we received it so the

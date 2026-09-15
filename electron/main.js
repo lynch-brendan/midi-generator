@@ -18,6 +18,16 @@ let audioEngineProc = null;
 let engineReady = false;
 let audioReady = false;
 let engineStdinRl = null;
+// Tracks the most recent plugin-instantiating command we forwarded to the
+// engine. If the engine dies inside the next few seconds, this is almost
+// always the culprit and we surface its name in the crash modal so the
+// user knows which plugin to avoid on the next launch. `null` when idle.
+let lastRiskyCommand = null;
+// Set to true when Nasty *asked* the engine to exit — SIGTERM from
+// stopAudioEngine, app quit, or the `restart-audio-engine` IPC. When the
+// exit handler sees this flag, the exit is treated as clean and no crash
+// modal fires. Anything else that trips the exit handler is a real crash.
+let engineShutdownIntentional = false;
 
 function findAudioEngineBinary() {
   const candidates = [
@@ -173,16 +183,36 @@ function startAudioEngine() {
     process.stderr.write('[engine] ' + buf.toString());
   });
 
-  audioEngineProc.on('exit', (code) => {
-    console.log('[nasty] audio engine exited', code);
+  audioEngineProc.on('exit', (code, signal) => {
+    console.log('[nasty] audio engine exited', { code, signal });
     audioEngineProc = null;
     engineReady = false;
     audioReady = false;
+
+    // Clean shutdown paths (SIGTERM from stopAudioEngine, restart IPC, app
+    // quit) set engineShutdownIntentional before killing. Anything else
+    // that trips the exit handler is a crash — bubble it up to the
+    // renderer so the crash modal can name the culprit and offer restart.
+    if (engineShutdownIntentional) {
+      engineShutdownIntentional = false;
+      return;
+    }
+    const culprit = lastRiskyCommand;
+    lastRiskyCommand = null;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('engine-event', {
+        event: 'engine_crashed',
+        code,
+        signal,
+        culprit,
+      });
+    }
   });
 }
 
 function stopAudioEngine() {
   if (audioEngineProc) {
+    engineShutdownIntentional = true;
     try { audioEngineProc.kill('SIGTERM'); } catch {}
     audioEngineProc = null;
     engineReady = false;
@@ -196,6 +226,17 @@ ipcMain.handle('engine-cmd', (_evt, msg) => {
     return { ok: false, error: 'audio engine not running' };
   }
   try {
+    // Snapshot plugin-instantiating commands so a crash within the next
+    // few seconds can name the culprit. Nasty's crash class is dominated
+    // by plugin init — this is where the blame trail starts.
+    if (msg && (msg.cmd === 'load_plugin' || msg.cmd === 'add_effect')) {
+      lastRiskyCommand = {
+        cmd: msg.cmd,
+        pluginId: msg.pluginId || msg.plugin_id || null,
+        pluginName: msg.pluginName || msg.plugin_name || msg.name || null,
+        at: Date.now(),
+      };
+    }
     audioEngineProc.stdin.write(JSON.stringify(msg) + '\n');
     return { ok: true };
   } catch (e) {
