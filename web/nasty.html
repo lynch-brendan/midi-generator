@@ -2059,9 +2059,10 @@ const PR_BEAT_WIDTH = 60;
 const PR_PITCH_MIN = 24;
 const PR_PITCH_MAX = 108;
 const STORAGE_KEY = 'nasty.song.fl.v1';
+const SONG_SCHEMA_VERSION = 1;
 const PALETTE = ['#ff5c93','#6b7cff','#33c58a','#ffb020','#a95cff','#ff7c47','#42c8e0','#e05cff','#ffdd57','#5cff8f'];
 
-let song = { bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] }, transportMode: 'song' };
+let song = { version: SONG_SCHEMA_VERSION, bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] }, transportMode: 'song' };
 let recArmed = false;
 let chatHistory = [];
 let selectedClipId = null;
@@ -2228,6 +2229,13 @@ function loadFromStorage() {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && parsed.song && parsed.song.channels) {
+        // Autosave came from a newer build (user rolled back a deploy). Don't
+        // clobber their session — start empty rather than risk silent data loss.
+        const v = parsed.song.version ?? 1;
+        if (v > SONG_SCHEMA_VERSION) {
+          console.warn('[nasty] autosave is from schema v' + v + ', this build is v' + SONG_SCHEMA_VERSION + ' — starting fresh');
+          return;
+        }
         song = ensureShape(parsed.song);
         currentPatternId = parsed.currentPatternId || (song.patterns[0] && song.patterns[0].id) || null;
       }
@@ -2235,6 +2243,10 @@ function loadFromStorage() {
   } catch (e) {}
 }
 function ensureShape(s) {
+  // Unversioned files predate the version field — treat them as v1 and let the
+  // migrations below reshape them. `saveToFile` always stamps the current
+  // version, so once a song is saved by this build it round-trips cleanly.
+  s.version = s.version ?? 1;
   s.bpm = s.bpm || 120;
   s.bars = Math.max(MIN_BARS, s.bars || MIN_BARS);
   s.channels = s.channels || [];
@@ -2315,6 +2327,9 @@ function ensureShape(s) {
     t.solo = !!t.solo;
     t.clips = t.clips || [];
   });
+  // Migrations have run — stamp the file as current so a load-then-save
+  // round trip advances the version forward.
+  s.version = SONG_SCHEMA_VERSION;
   return s;
 }
 function ensureDefaults() {
@@ -5482,6 +5497,11 @@ function loadFromFile() {
       try {
         const parsed = JSON.parse(reader.result);
         if (!parsed.channels) { alert('This file uses the old format. Load an FL-model song.'); return; }
+        const v = parsed.version ?? 1;
+        if (v > SONG_SCHEMA_VERSION) {
+          alert('This song was saved by a newer version of Nasty (schema v' + v + '). Update Nasty before opening it.');
+          return;
+        }
         song = ensureShape(parsed);
         currentPatternId = song.patterns[0]?.id || null;
         chatHistory = [];
@@ -5802,7 +5822,7 @@ document.querySelectorAll('.patsong .ps-btn').forEach(btn => {
 });
 document.getElementById('clear-btn').addEventListener('click', () => {
   if (!confirm('Clear the song? (channels, patterns, and playlist all reset)')) return;
-  song = { bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] }, transportMode: 'song' };
+  song = { version: SONG_SCHEMA_VERSION, bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] }, transportMode: 'song' };
   chatHistory = [];
   currentPatternId = null;
   ensureDefaults();
