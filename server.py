@@ -2028,9 +2028,27 @@ def nasty_chat(req: NastyChatRequest):
     # Always send the block (with count) so Claude can distinguish "scan not
     # done yet" from "user has no plugins" from "user has N plugins."
     plugins = req.plugins or []
+    # Slim the plugin manifest before injecting: keep the identifying fields
+    # Claude needs to pick and load a plugin, drop the ballooning `presets`
+    # arrays (some plugins expose 100+ preset names — that's the bulk of the
+    # manifest size). If Claude needs preset info for a specific plugin it
+    # calls get_plugin_cheatsheet, which returns curated per-plugin knowledge
+    # including preset paths. Trims typical manifest 5-10K → ~1-2K tokens.
+    slim_plugins = []
+    for p in plugins:
+        if not isinstance(p, dict):
+            continue
+        slim_plugins.append({
+            "id":           p.get("id"),
+            "name":         p.get("name"),
+            "manufacturer": p.get("manufacturer"),
+            "format":       p.get("format"),
+            "category":     p.get("category"),
+            "isInstrument": p.get("isInstrument"),
+        })
     plugin_block = (
         f"Installed plugins (VST3/AU scanned by the engine — count: {len(plugins)}):\n"
-        f"```json\n{json.dumps(plugins, indent=2)}\n```\n\n"
+        f"```json\n{json.dumps(slim_plugins, indent=2)}\n```\n\n"
     )
 
     # Match community plugin-knowledge entries against the user's installed
