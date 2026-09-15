@@ -3618,13 +3618,15 @@ function renderChannelRack() {
     rack.appendChild(row);
   }
 
-  // Step-cell paint drag: mousedown on a cell sets a target state (opposite
-  // of its current) and applies it; dragging over other cells applies the
-  // same target. Each visited cell is toggled at most once per drag so a
-  // mouse jitter can't flip a cell back and forth.
+  // Step-cell paint drag. Left button: target state is the opposite of the
+  // starting cell (empty → paint on, filled → paint off). Right button:
+  // always erase (target = off) regardless of starting cell — FL convention.
+  // Each visited cell is toggled at most once per drag so mouse jitter
+  // can't flip a cell back and forth.
   rack.querySelectorAll('.step-cell').forEach(cell => {
     cell.addEventListener('mousedown', (e) => {
-      if (e.button !== 0) return;
+      if (e.button !== 0 && e.button !== 2) return;
+      e.preventDefault();
       e.stopPropagation();
       const pat = song.patterns.find(p => p.id === currentPatternId);
       if (!pat) return;
@@ -3632,13 +3634,16 @@ function renderChannelRack() {
       if (!ch) return;
       const idx = parseInt(cell.dataset.step);
       const isOn = !!findStepNote(pat, ch, idx);
-      stepPaintTargetOn = !isOn;
+      stepPaintTargetOn = (e.button === 2) ? false : !isOn;
       stepPaintActive = true;
       stepPaintVisited = new Set();
       paintStepCell(cell);
       document.addEventListener('mousemove', onStepPaintMove);
       document.addEventListener('mouseup', onStepPaintUp);
     });
+    // Kill the browser context menu so right-click starts the erase drag
+    // without the OS menu popping up.
+    cell.addEventListener('contextmenu', (e) => e.preventDefault());
   });
 
   rack.querySelectorAll('.cvol').forEach(i => i.addEventListener('input', onChannelVol));
