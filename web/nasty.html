@@ -2039,6 +2039,10 @@
     <p id="engine-crash-body" style="line-height:1.5;font-size:12px;margin:8px 0 0;color:var(--text-dim)">
       Your project is safe — nothing was lost. Save your work, then click Restart Engine to bring audio back.
     </p>
+    <label id="engine-crash-skip-row" style="display:none;align-items:center;gap:8px;margin-top:12px;font-size:12px;color:var(--text-dim);cursor:pointer">
+      <input type="checkbox" id="engine-crash-skip" style="margin:0">
+      <span id="engine-crash-skip-label">Don't reload this plugin on restart</span>
+    </label>
     <div class="row" style="margin-top:14px">
       <button id="engine-crash-save">Save Now</button>
       <button id="engine-crash-restart" style="background:var(--accent);border-color:var(--accent);color:white">Restart Engine</button>
@@ -4554,6 +4558,10 @@ document.addEventListener('DOMContentLoaded', () => {
 // plugin's name if the crash landed within a few seconds of a load_plugin
 // / add_effect (see main.js:lastRiskyCommand). Save button dumps the
 // current song to disk; Restart respawns the audio engine subprocess.
+// Culprit for the currently-open crash modal, stashed on the module so the
+// Restart handler can consult it after the user clicks. Cleared each open.
+let currentCrashCulprit = null;
+
 function showEngineCrashModal(msg) {
   const modal = document.getElementById('engine-crash-modal');
   const body  = document.getElementById('engine-crash-body');
@@ -4562,16 +4570,36 @@ function showEngineCrashModal(msg) {
   // 10s window ties the blame to a recent load. Beyond that the exit is
   // more likely spontaneous — don't put a wrong name in front of the user.
   let nameable = null;
+  let culpritId = null;
   if (culprit && culprit.at && (Date.now() - culprit.at < 10000)) {
     // main.js only sees the raw id we sent over IPC. The friendly display
     // name lives in enginePluginsList on the renderer — look it up here so
     // the modal reads "Dexed crashed" not "VST3-Dexed-5b25143b-d7709eec crashed".
     const fromList = (enginePluginsList || []).find(p => p.id === culprit.pluginId);
     nameable = (fromList && fromList.name) || culprit.pluginName || culprit.pluginId;
+    culpritId = culprit.pluginId;
   }
+  currentCrashCulprit = culpritId ? { pluginId: culpritId, name: nameable } : null;
+
   body.textContent = nameable
     ? `${nameable} crashed and took the audio engine with it. Your project is safe — nothing was lost. Save your work, then click Restart Engine to bring audio back.`
     : `Your project is safe — nothing was lost. Save your work, then click Restart Engine to bring audio back.`;
+
+  // Only offer the skip checkbox when we can name the culprit. If the crash
+  // was spontaneous (>10s after the last load) we don't know what to skip,
+  // so hiding the row is honest about that.
+  const skipRow   = document.getElementById('engine-crash-skip-row');
+  const skipCheck = document.getElementById('engine-crash-skip');
+  const skipLabel = document.getElementById('engine-crash-skip-label');
+  if (skipRow && skipCheck && skipLabel) {
+    if (currentCrashCulprit) {
+      skipRow.style.display = 'flex';
+      skipCheck.checked = false;
+      skipLabel.textContent = `Don't reload ${nameable} on restart`;
+    } else {
+      skipRow.style.display = 'none';
+    }
+  }
   modal.classList.remove('hidden');
 }
 document.addEventListener('DOMContentLoaded', () => {
@@ -4581,6 +4609,15 @@ document.addEventListener('DOMContentLoaded', () => {
     try { saveToFile(); } catch (e) { console.error('[nasty] save failed:', e); }
   });
   if (restartBtn) restartBtn.addEventListener('click', async () => {
+    // Snapshot the checkbox + culprit BEFORE kicking off the restart. The
+    // engine-ready handler that follows will call hydratePluginChannels,
+    // which reads skippedPluginIds to decide what to omit.
+    const skipCheck = document.getElementById('engine-crash-skip');
+    if (skipCheck && skipCheck.checked && currentCrashCulprit && currentCrashCulprit.pluginId) {
+      skippedPluginIds.add(currentCrashCulprit.pluginId);
+      console.log('[nasty] will skip re-hydrating plugin id on next boot:',
+                  currentCrashCulprit.pluginId, `(${currentCrashCulprit.name})`);
+    }
     restartBtn.disabled = true;
     restartBtn.textContent = 'Restarting…';
     try {
@@ -4591,6 +4628,7 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('engine-crash-modal').classList.add('hidden');
       restartBtn.disabled = false;
       restartBtn.textContent = 'Restart Engine';
+      currentCrashCulprit = null;
     }
   });
 });
@@ -6422,6 +6460,14 @@ function renderBrowser() {
 // State for the plugins tab, populated by engine events
 let enginePluginsList = null;
 
+// Plugin ids the user has chosen to NOT rehydrate after a crash. Populated
+// via the "Don't reload this plugin on restart" checkbox in the engine-crash
+// modal. Session-only: closing Nasty clears the set, so the next launch tries
+// the plugin again from a clean slate. Applies to both instrument channels
+// (load_plugin) and mixer effect slots (add_effect) since a crash can come
+// from either surface.
+const skippedPluginIds = new Set();
+
 // Community plugin-knowledge, fetched once from the server. Maps
 // lowercase plugin name → { name, preset_paths: ["dir:ext", ...] }.
 // Used to know which plugins have preset files on disk we can scan.
@@ -6649,6 +6695,13 @@ async function hydratePluginChannels() {
       console.log('[nasty] skipping auto-hydrate of', c.name, '- open manually');
       continue;
     }
+    // User asked us not to reload this plugin after a crash. The channel
+    // stays in the song JSON so no work is lost; the engine slot just stays
+    // empty until they open Nasty fresh (which clears skippedPluginIds).
+    if (skippedPluginIds.has(c.pluginId)) {
+      console.log('[nasty] skipping crash-flagged plugin on channel', c.id, c.pluginId);
+      continue;
+    }
     window.nasty.engine.send({
       cmd: 'load_plugin', channelId: c.id, pluginId: c.pluginId,
       state: c.pluginState || '',
@@ -6682,6 +6735,12 @@ async function hydratePluginChannels() {
     const engineId = ownerId === 'master' ? 'master_bus' : ownerId;
     latestEffectStates[engineId] = latestEffectStates[engineId] || {};
     for (const fx of plugins) {
+      // Same skip-after-crash rule as instrument channels — an effect that
+      // took the engine down doesn't get another chance until Nasty restarts.
+      if (skippedPluginIds.has(fx.pluginId)) {
+        console.log('[nasty] skipping crash-flagged effect on', engineId, 'slot', fx.slotId, fx.pluginId);
+        continue;
+      }
       const savedState = (savedStatesMap && savedStatesMap[fx.slotId]) || '';
       window.nasty.engine.send({
         cmd: 'add_effect', channelId: engineId, slotId: fx.slotId,
