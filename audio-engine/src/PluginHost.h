@@ -77,6 +77,14 @@ public:
                             const juce::String& presetName = {});
     void unloadPlugin(const juce::String& channelId);
 
+    // Tear down every channel + effect and return the graph to its empty
+    // startup shape (master audio output + metronome intact; no channels,
+    // no buses, no effect nodes). Called from the load-from-file path so
+    // opening a song starts from a clean slate instead of double-adding on
+    // top of the previous song's state. The JS side re-issues the normal
+    // hydrate commands (create_bus, load_plugin, add_effect, ...) after.
+    void resetGraph();
+
     // Create a General MIDI channel using the bundled FluidSynth + SoundFont.
     // Gives every user 128 built-in instruments (piano, strings, brass, drums,
     // etc.) with no plugin browsing. Returns error string on failure, empty

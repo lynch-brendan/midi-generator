@@ -82,6 +82,7 @@ static bool commandMutatesGraph(const juce::String& cmd) {
         || cmd == "bypass_effect"
         || cmd == "set_channel_target"
         || cmd == "create_bus"
+        || cmd == "reset_graph"
         || cmd == "show_plugin_ui"
         || cmd == "hide_plugin_ui"
         || cmd == "set_output_device";
@@ -192,6 +193,14 @@ juce::var StdioBridge::handleCommand(const juce::var& msg) {
 
     if (cmd == "unload_plugin") {
         host.unloadPlugin(msg["channelId"].toString());
+        return {};
+    }
+
+    if (cmd == "reset_graph") {
+        // Tear down every channel + effect. JS follows up with the usual
+        // hydrate sequence (create_bus, load_plugin, add_effect, ...) to
+        // rebuild from the loaded song's JSON.
+        host.resetGraph();
         return {};
     }
 

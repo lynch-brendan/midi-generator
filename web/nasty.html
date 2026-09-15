@@ -5506,6 +5506,14 @@ function loadFromFile() {
         currentPatternId = song.patterns[0]?.id || null;
         chatHistory = [];
         document.getElementById('chat-messages').innerHTML = '';
+        // Wipe the engine's current graph before rebuilding — otherwise the
+        // previously-loaded channels/effects stay on top of what we hydrate
+        // next, and old drum channels keep playing while the loaded song's
+        // effects silently miss the audio graph.
+        if (window.nasty && window.nasty.engine) {
+          window.nasty.engine.send({ cmd: 'reset_graph' });
+        }
+        hydratePluginChannels();
         render();
       } catch (e) { alert('Bad file: ' + e.message); }
     };

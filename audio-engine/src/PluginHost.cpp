@@ -968,6 +968,23 @@ void PluginHost::unloadPlugin(const juce::String& channelId) {
     channels.erase(it);
 }
 
+void PluginHost::resetGraph() {
+    std::cerr << "[resetGraph] START" << std::endl;
+    // Snapshot the channel IDs first, then unload each. unloadPlugin handles
+    // editor-window teardown + graph-node removal + map erase, matching the
+    // per-channel unload path exactly — reusing it keeps the two teardown
+    // paths from drifting.
+    std::vector<juce::String> channelIds;
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        channelIds.reserve(channels.size());
+        for (const auto& kv : channels) channelIds.push_back(kv.first);
+    }
+    for (const auto& id : channelIds) unloadPlugin(id);
+    std::cerr << "[resetGraph] DONE — cleared " << channelIds.size()
+              << " channels" << std::endl;
+}
+
 // Rebuild the audio graph for one channel. Called after any effect-chain
 // mutation (add/remove/reorder/bypass) or after routing changes.  Must be
 // called with `mutex` held.
