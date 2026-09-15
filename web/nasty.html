@@ -3282,9 +3282,16 @@ function renderPlaylist() {
       ph.style.left = (bar * BAR_WIDTH) + 'px';
     }
     // Always stash + engine-seek so the position lands (live) and survives
-    // a subsequent Stop→Play as the resume point.
+    // a subsequent Stop→Play as the resume point. Call BOTH seeks: the
+    // arrangement playhead visual reads engineTransport.patternPosition
+    // (only updated by seekPattern) — transport_seek alone leaves the JS
+    // clock stale and the playhead visually stuck until the engine's next
+    // position event catches up.
     pendingStartSample = sample;
-    if (engineTransport.available()) engineTransport.seek(sample);
+    if (engineTransport.available()) {
+      engineTransport.seek(sample);
+      engineTransport.seekPattern(sample);
+    }
   });
   timeline.insertBefore(ruler, timeline.firstChild);
 
