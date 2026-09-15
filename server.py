@@ -1360,27 +1360,72 @@ def _load_plugin_knowledge() -> tuple[dict[str, str], dict[str, dict]]:
     return entries, parsed
 
 
-def _load_sound_goals() -> list[str]:
+def _load_sound_goals() -> dict[str, str]:
     # Discovery-layer sheets organized by sound goal (Reverbs, Bass, Pads,
-    # etc.) instead of by plugin. Injected on every Nasty chat so Claude can
-    # match musical intent -> tool by reading a category first, then dive
-    # into the specific plugin's execution sheet only when it actually loads
-    # the plugin. Returned as an ordered list of full-file contents so we
-    # can slot them into the system-prompt block in a stable order.
-    sheets: list[tuple[str, str]] = []
+    # etc.). Returned as a dict keyed by lowercase category name (e.g.
+    # "reverbs", "bass") so the chat handler can pick only the categories
+    # the user asked about instead of shipping the whole library on every
+    # message. Full library ≈ 16K tokens, single category ≈ 1-2K tokens.
+    sheets: dict[str, str] = {}
     if not _SOUND_GOALS_DIR.is_dir():
-        return []
+        return sheets
     for md in sorted(_SOUND_GOALS_DIR.rglob("*.md")):
         try:
             content = md.read_text(encoding="utf-8")
         except Exception:
             continue
-        # Path relative to sound-goals/ gives us a stable ordering key.
-        rel = md.relative_to(_SOUND_GOALS_DIR).as_posix()
-        sheets.append((rel, content))
-    # Sorted: instruments/*.md come before effects/*.md alphabetically —
-    # good enough. Return only the contents.
-    return [c for _, c in sheets]
+        # Category key is the filename stem, lowercase.
+        sheets[md.stem.lower()] = content
+    return sheets
+
+
+# Simple keyword → sound-goal-category routing. Kept intentionally shallow;
+# a fancier classifier would burn tokens/cost more than it saves. When the
+# user's message hits multiple categories we ship all of them — cheap
+# compared to shipping all 20.
+_SOUND_GOAL_KEYWORDS: dict[str, list[str]] = {
+    "reverbs":     ["reverb", "verb", "hall", "room", "plate", "shimmer",
+                    "cathedral", "space", "ambien"],
+    "delays":      ["delay", "echo", "slap", "dub", "throw"],
+    "compression": ["compress", "punch", "glue", "sidechain", "duck",
+                    "squash", "attack", "release", "limiter"],
+    "eq":          ["eq", " boost", "notch", "high pass", "low pass",
+                    "hipass", "lopass", "highpass", "lowpass"],
+    "saturation":  ["satur", "distort", "warm", "tape", "tube", "grit",
+                    "drive", "crunch", "overdrive", "fuzz"],
+    "modulation":  ["chorus", "flang", "phaser", "phase", "ensemble",
+                    "vibrato", "modulat"],
+    "stereo":      ["stereo", "wide", "width", " pan", "mono"],
+    "pitch":       ["pitch", "autotune", "auto-tune", "tune vocal",
+                    "octaver", "harmoniz"],
+    "filters":     ["filter", "cutoff", "resonance", "wah"],
+    "utility":     ["gain stag", "trim", "volume balance", "level"],
+    "bass":        ["bass", "sub ", " 808"],
+    "lead":        ["lead", "melody"],
+    "pads":        ["pad", "atmos"],
+    "drums":       ["drum", "kick", "snare", "hi-hat", "hihat", "hat",
+                    "cymbal", "percussion", "beat"],
+    "vocal":       ["vocal", " vox", "singer", "voice"],
+    "strings":     ["string", "violin", "viola", "cello", "orchestra"],
+    "keys":        ["piano", "rhodes", "wurli", "organ", "keys"],
+    "winds":       ["flute", "clarinet", "sax ", "saxophone", "oboe",
+                    "bassoon", "trumpet", "brass"],
+    "world":       ["tabla", "sitar", "world", "ethnic", "koto"],
+    "textures":    ["texture", "glitch", "noise", "granul", "atmospher"],
+}
+
+
+def _pick_sound_goal_categories(user_message: str) -> list[str]:
+    """Return the lowercase categories relevant to this message. Empty
+    list = no match; the caller ships nothing (Claude falls back on its
+    own musical knowledge — fine for the common tool-focused turns like
+    'set BPM to 90' or 'delete pattern 2')."""
+    m = (user_message or "").lower()
+    matched: list[str] = []
+    for cat, keywords in _SOUND_GOAL_KEYWORDS.items():
+        if any(kw in m for kw in keywords):
+            matched.append(cat)
+    return matched
 
 
 # Cached at module import — Railway redeploys on every push, so cache
@@ -2017,16 +2062,23 @@ def nasty_chat(req: NastyChatRequest):
     #    tool for the intent. Same across all users — cache-friendly.
     # 2. Plugin sheets (execution) — how to actually load presets, param
     #    quirks, license limits for the plugins THIS user has installed.
+    # Only ship the sound-goal categories the user's message actually
+    # asked about. Full library is ~16K tokens on every message; a single
+    # matched category is ~1-2K. Empty match = ship nothing (fine for
+    # tool-focused turns like "set BPM to 90"). See _pick_sound_goal_categories.
     sound_goals_block = ""
     if _SOUND_GOALS:
-        sound_goals_block = (
-            "Sound-goal cheatsheets (discovery layer — organized by what the "
-            "user asks for, not by plugin). Read the relevant category first "
-            "to pick the right tool for a musical intent, then read the "
-            "specific plugin's sheet below for how to actually load it:\n\n"
-            + "\n\n===\n\n".join(_SOUND_GOALS)
-            + "\n\n"
-        )
+        picked = _pick_sound_goal_categories(req.message)
+        selected_sheets = [_SOUND_GOALS[c] for c in picked if c in _SOUND_GOALS]
+        if selected_sheets:
+            sound_goals_block = (
+                f"Sound-goal cheatsheets (discovery layer, relevant to this "
+                f"message — categories: {', '.join(picked)}). Read these to "
+                f"pick the right tool for the musical intent, then call "
+                f"get_plugin_cheatsheet for the specific plugin you choose:\n\n"
+                + "\n\n===\n\n".join(selected_sheets)
+                + "\n\n"
+            )
 
     knowledge_block = ""
     if knowledge_index:
@@ -2040,22 +2092,20 @@ def nasty_chat(req: NastyChatRequest):
             + "\n".join(knowledge_index)
             + "\n\n"
         )
-    # Song state changes every turn; manifest + cheatsheets are stable for the
-    # session. Split them so the stable half rides in `system` behind an
-    # ephemeral cache breakpoint (5-min TTL — well within one Nasty session).
+    # Song state + sound-goals change per message; plugin manifest and
+    # cheatsheet index are stable per session. Put the DYNAMIC bits into
+    # the user message so the cached system prefix stays cache-hit across
+    # turns — that's the whole point of prompt caching.
     user_content = (
         f"Current song state:\n```json\n{json.dumps(req.song, indent=2)}\n```\n\n"
-        f"User: {req.message}"
+        + sound_goals_block
+        + f"User: {req.message}"
     )
-    # System prompt as a list of blocks: base prompt (small, always identical
-    # across users) + this user's plugin manifest and matched cheatsheets
-    # (large, stable per session). Cache breakpoint sits on the manifest block,
-    # so the full prefix hits cache from turn 2 onward.
     system_blocks = [
         {"type": "text", "text": _NASTY_SYSTEM_PROMPT},
         {
             "type": "text",
-            "text": plugin_block + sound_goals_block + knowledge_block,
+            "text": plugin_block + knowledge_block,
             "cache_control": {"type": "ephemeral"},
         },
     ]
