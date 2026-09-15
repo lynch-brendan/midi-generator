@@ -71,3 +71,18 @@ target_link_libraries(nasty-audio-engine PRIVATE
     juce::juce_recommended_lto_flags
     juce::juce_recommended_warning_flags
 )
+
+# --- unit tests ---
+# Standalone binary — no JUCE, no FluidSynth. Transport + PatternPlayer are
+# pure headers that only depend on <atomic> and <cstdint>, so their tests
+# should also depend on nothing. Fast to build (~1s), fast to run (<1ms).
+#
+# Build:  cmake --build . --target nasty-tests
+# Run:    ./nasty-tests
+add_executable(nasty-tests
+    tests/test_main.cpp
+    tests/test_transport.cpp
+    tests/test_pattern_player.cpp
+)
+target_include_directories(nasty-tests PRIVATE src)
+set_target_properties(nasty-tests PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
