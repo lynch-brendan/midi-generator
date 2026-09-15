@@ -3637,14 +3637,14 @@ function renderPatternList() {
       const wasPlaying = !!animationFrame;
       const wasInPat = song.transportMode === 'pat';
       currentPatternId = p.id;
-      // Case A — already playing in PAT: seamless hot-swap, no restart.
+      // Same mode + playing → seamless hot-swap, no restart or pause.
       if (wasPlaying && wasInPat) {
         hotSwapCurrentPatternIfPlaying();
         render();
         return;
       }
-      // Case B — playing SONG or stopped: switch to PAT and start playing
-      // this pattern immediately. Sidebar click = "I want this now."
+      // Cross mode (SONG→PAT) or stopped: switch to PAT, wait for Play.
+      // Consistent with the ruler rule — mode changes always pause.
       if (wasPlaying) stopSong();
       if (!wasInPat) {
         song.transportMode = 'pat';
@@ -3654,7 +3654,6 @@ function renderPatternList() {
       }
       pendingPatternStartSample = 0;
       render();
-      playSong();
     });
     row.addEventListener('dragstart', (e) => {
       e.dataTransfer.setData('application/x-nasty-pattern', p.id);
