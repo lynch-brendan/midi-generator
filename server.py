@@ -1336,6 +1336,15 @@ def _load_plugin_knowledge() -> tuple[dict[str, str], dict[str, dict]]:
         name = name_match.group(1).strip()
         key = name.lower()
         entries[key] = content
+        # Extract the first paragraph after the H1 heading as a short summary
+        # for the on-demand lightweight index. This is what Claude sees on
+        # every message — the full cheatsheet ships only when it calls the
+        # `get_plugin_cheatsheet` tool for a specific plugin.
+        body_after_fm = content[m.end():]
+        summary = ""
+        first_para = re.search(r"^# .+?\n\n(.+?)(?:\n\n|\Z)", body_after_fm, re.DOTALL)
+        if first_para:
+            summary = " ".join(first_para.group(1).split())  # collapse whitespace
         # Pull structured `preset_paths` (list under the yaml key). Each entry
         # is "<dir>:<ext>" — one directory to scan recursively, one extension
         # to match. Client-side (Electron) does the actual disk walk.
@@ -1347,7 +1356,7 @@ def _load_plugin_knowledge() -> tuple[dict[str, str], dict[str, dict]]:
                 s = line.strip()
                 if s.startswith("- "):
                     preset_paths.append(s[2:].strip().strip('"').strip("'"))
-        parsed[key] = {"name": name, "preset_paths": preset_paths}
+        parsed[key] = {"name": name, "preset_paths": preset_paths, "summary": summary}
     return entries, parsed
 
 
@@ -1930,6 +1939,27 @@ _NASTY_TOOLS = [
             "required": ["clip_id", "times"],
         },
     },
+    {
+        "name": "get_plugin_cheatsheet",
+        "description": (
+            "Fetch the full cheatsheet for a specific plugin the user has "
+            "installed. Call this BEFORE loading, tuning, or picking presets "
+            "for a plugin — the cheatsheet lists modes, params, quirks, and "
+            "how to control it from chat. Use the plugin's `name` from the "
+            "plugin cheatsheet index in the system prompt (e.g. "
+            "'ValhallaSupermassive', 'MJUCjr')."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "The plugin's name as shown in the index (case-insensitive).",
+                },
+            },
+            "required": ["name"],
+        },
+    },
 ]
 
 
@@ -1967,11 +1997,19 @@ def nasty_chat(req: NastyChatRequest):
     # the batched research script drains this to auto-generate entries.
     _log_plugin_gaps(plugins)
 
-    knowledge_matches: list[str] = []
+    # Build a LIGHTWEIGHT index of every plugin the user has that we also
+    # have a cheatsheet for. One line per plugin: name + short summary.
+    # The full cheatsheet ships only when Claude calls the
+    # get_plugin_cheatsheet tool for a specific plugin. This drops the
+    # per-message context from ~50K tokens to ~15K tokens.
+    knowledge_index: list[str] = []
     for p in plugins:
         name = (p.get("name") or "").strip().lower() if isinstance(p, dict) else ""
         if name and name in _PLUGIN_KNOWLEDGE:
-            knowledge_matches.append(_PLUGIN_KNOWLEDGE[name])
+            parsed = _PLUGIN_KNOWLEDGE_PARSED.get(name, {})
+            display_name = parsed.get("name", name)
+            summary = parsed.get("summary", "").strip() or "cheatsheet available"
+            knowledge_index.append(f"- **{display_name}** — {summary}")
 
     # Two-layer knowledge injection:
     # 1. Sound-goal sheets (discovery) — organized by what the user asks for
@@ -1991,13 +2029,15 @@ def nasty_chat(req: NastyChatRequest):
         )
 
     knowledge_block = ""
-    if knowledge_matches:
+    if knowledge_index:
         knowledge_block = (
-            "Community plugin knowledge (execution layer — cheatsheets for "
-            "plugins you have installed. Read the relevant entry BEFORE "
-            "actually loading a plugin so you know its presets, params, and "
-            "quirks):\n\n"
-            + "\n\n---\n\n".join(knowledge_matches)
+            "Plugin cheatsheet index (execution layer — plugins on THIS user's "
+            "machine that we have detailed cheatsheets for). Each entry is "
+            "one-line: pick the right one via the sound-goal layer above, "
+            "then call the `get_plugin_cheatsheet` tool with the plugin name "
+            "to fetch the full sheet BEFORE loading or tuning it. Only fetch "
+            "the sheet when you actually need it — don't preload everything.\n\n"
+            + "\n".join(knowledge_index)
             + "\n\n"
         )
     # Song state changes every turn; manifest + cheatsheets are stable for the
@@ -2025,24 +2065,44 @@ def nasty_chat(req: NastyChatRequest):
     if tools:
         tools[-1] = {**tools[-1], "cache_control": {"type": "ephemeral"}}
 
-    messages = list(req.history) + [{"role": "user", "content": user_content}]
+    # Truncate history to the last 8 messages. Longer conversations balloon
+    # per-turn input cost linearly; 8 is enough for context, more just burns
+    # tokens on stale turns.
+    trimmed_history = list(req.history)[-8:]
+    messages = trimmed_history + [{"role": "user", "content": user_content}]
     client = _nasty_anthropic.Anthropic()
 
     all_tool_calls: list[dict] = []
     text_parts: list[str] = []
     stop_reason = None
 
-    for _ in range(6):
+    for iter_idx in range(6):
         try:
             resp = client.messages.create(
                 model="claude-sonnet-4-6",
-                max_tokens=16000,
+                # 4000 is plenty for chat replies. Cap prevents runaway output
+                # cost on chatty turns; hitting the cap is fine (Claude stops
+                # cleanly and the tool-use loop continues).
+                max_tokens=4000,
                 system=system_blocks,
                 tools=tools,
                 messages=messages,
             )
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Claude error: {e}")
+
+        # Log token + cache stats so we can verify caching is hitting.
+        # Prints to Railway logs; grep for "[nasty-chat]" to see hit rate.
+        u = getattr(resp, "usage", None)
+        if u:
+            in_tok = getattr(u, "input_tokens", 0)
+            out_tok = getattr(u, "output_tokens", 0)
+            cread = getattr(u, "cache_read_input_tokens", 0) or 0
+            cwrite = getattr(u, "cache_creation_input_tokens", 0) or 0
+            print(
+                f"[nasty-chat] iter={iter_idx} in={in_tok} out={out_tok} "
+                f"cache_read={cread} cache_write={cwrite}"
+            )
 
         stop_reason = resp.stop_reason
         turn_tool_uses = []
@@ -2056,16 +2116,28 @@ def nasty_chat(req: NastyChatRequest):
         if stop_reason != "tool_use" or not turn_tool_uses:
             break
 
-        # Feed synthetic tool_results back so Claude can continue chaining.
-        # The actual state lives in the client; we just acknowledge and echo the
-        # id Claude invented so it can reference it in follow-up calls.
+        # Feed tool_results back so Claude can continue chaining.
+        # `get_plugin_cheatsheet` is real (returns the actual sheet content);
+        # everything else is a synthetic "applied" ack — actual state changes
+        # live in the client, we just echo the id back.
         messages.append({"role": "assistant", "content": resp.content})
         tool_results = []
         for block in turn_tool_uses:
-            result_text = "applied"
             inp = block.input or {}
-            if block.name in ("add_track", "add_clip") and "id" in inp:
+            if block.name == "get_plugin_cheatsheet":
+                plugin_name = str(inp.get("name", "")).strip().lower()
+                sheet = _PLUGIN_KNOWLEDGE.get(plugin_name)
+                if sheet:
+                    result_text = sheet
+                else:
+                    result_text = (
+                        f"No cheatsheet found for '{inp.get('name','')}'. "
+                        "Only ask for names shown in the index."
+                    )
+            elif block.name in ("add_track", "add_clip") and "id" in inp:
                 result_text = f"applied; id={inp['id']}"
+            else:
+                result_text = "applied"
             tool_results.append({
                 "type": "tool_result",
                 "tool_use_id": block.id,

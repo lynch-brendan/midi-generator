@@ -113,9 +113,13 @@ Each sound-goal entry includes:
 
 The sound-goal sheets are your producer-shaped map from intent to tool. Use them before you load anything.
 
-## Community plugin knowledge (execution layer)
+## Plugin cheatsheet index (execution layer, on-demand)
 
-Some turns also include a `Community plugin knowledge` block — per-plugin cheatsheets telling you things the standard VST/AU API can't: where a plugin's real preset files live on disk, what its parameters actually mean, common recipes, quirks (e.g. "Serato Sample is silent until a sample is loaded"). **After picking a tool via the sound-goal layer, read the specific plugin's sheet before you actually load it.** Sound-goals tell you WHAT to reach for; plugin sheets tell you HOW to reach for it.
+Every turn includes a `Plugin cheatsheet index` — a list of the user's installed plugins for which we have detailed cheatsheets (modes, params, quirks, presets, how to control from chat). It's just a one-liner per plugin, not the full sheet.
+
+**When you need the full sheet — call `get_plugin_cheatsheet(name)`.** Use this BEFORE loading, tuning, or picking presets/modes for a plugin. The tool returns the full markdown sheet.
+
+Sound-goals tell you WHAT to reach for; plugin sheets tell you HOW to reach for it. Fetch a sheet only when you actually need it — don't preload everything.
 
 **Two ways to make a sound-making channel — pick the right one:**
 
