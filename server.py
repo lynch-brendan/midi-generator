@@ -2075,6 +2075,11 @@ def nasty_chat(req: NastyChatRequest):
     all_tool_calls: list[dict] = []
     text_parts: list[str] = []
     stop_reason = None
+    # Sum token accounting across iterations for the training-corpus log.
+    total_in = 0
+    total_out = 0
+    total_cread = 0
+    total_cwrite = 0
 
     for iter_idx in range(6):
         try:
@@ -2099,9 +2104,14 @@ def nasty_chat(req: NastyChatRequest):
             out_tok = getattr(u, "output_tokens", 0)
             cread = getattr(u, "cache_read_input_tokens", 0) or 0
             cwrite = getattr(u, "cache_creation_input_tokens", 0) or 0
+            total_in += in_tok
+            total_out += out_tok
+            total_cread += cread
+            total_cwrite += cwrite
             print(
                 f"[nasty-chat] iter={iter_idx} in={in_tok} out={out_tok} "
-                f"cache_read={cread} cache_write={cwrite}"
+                f"cache_read={cread} cache_write={cwrite}",
+                flush=True,
             )
 
         stop_reason = resp.stop_reason
@@ -2144,6 +2154,34 @@ def nasty_chat(req: NastyChatRequest):
                 "content": result_text,
             })
         messages.append({"role": "user", "content": tool_results})
+
+    # Log this conversation turn to the DB as training-corpus material.
+    # Wrapped in try/except so a DB hiccup can't kill the chat response.
+    if SessionLocal is not None:
+        try:
+            from core.models import NastyChatLog
+            plugin_names_csv = ",".join(
+                (p.get("name") or "").strip() for p in plugins
+                if isinstance(p, dict) and p.get("name")
+            )
+            with SessionLocal() as db:
+                row = NastyChatLog(
+                    session_id=getattr(req, "session_id", None),
+                    user_message=req.message,
+                    ai_text="\n".join(text_parts).strip() or None,
+                    tool_calls_json=json.dumps(all_tool_calls) if all_tool_calls else None,
+                    song_state_json=json.dumps(req.song) if req.song else None,
+                    plugin_names=plugin_names_csv or None,
+                    input_tokens=total_in or None,
+                    output_tokens=total_out or None,
+                    cache_read_tokens=total_cread or None,
+                    cache_write_tokens=total_cwrite or None,
+                    stop_reason=stop_reason,
+                )
+                db.add(row)
+                db.commit()
+        except Exception as e:
+            print(f"[nasty-chat] log write failed (non-fatal): {e}", flush=True)
 
     return {
         "text": "\n".join(text_parts).strip(),

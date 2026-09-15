@@ -57,6 +57,21 @@ on the channel that has Supermassive loaded. No need to open the plugin
 GUI. The Mix, Feedback, Density, Delay Ms, etc. are also all
 `set_plugin_param`-controllable by name.
 
+## IMPORTANT: default mode when loading for "reverb"
+
+Supermassive's plugin default is delay-heavy (Warp near 0%), so if you
+just `add_plugin_effect` and stop, the user will hear ECHOES, not
+smooth reverb. **Always immediately follow up with `set_plugin_param`
+to pick a mode when the user asked for reverb:**
+
+- Classic smooth reverb → Mode = **Andromeda** (dense clouds, long tails)
+- Tighter room-style reverb → Mode = **Gemini** (fast attack, cleaner)
+- Cinematic ambient wash → Mode = **Cassiopeia**
+- Shimmer / ethereal → Mode = **Great Annihilator**
+
+If the user asked for "delay" specifically, keep default mode or pick
+Sirius/Lyra. If they said "reverb" — always set a reverb-y mode above.
+
 ## Quirks
 
 - Mode roster grows over versions — code that hard-codes a mode list will

@@ -88,3 +88,33 @@ class WebhookEvent(Base):
     stripe_event_id = Column(String, primary_key=True)
     event_type = Column(String, nullable=False)
     received_at = Column(DateTime(timezone=True), default=_now, nullable=False)
+
+
+class NastyChatLog(Base):
+    """Per-chat log of Nasty AI Chat conversations. Purpose: build a training
+    corpus for a future Nasty-tuned model. Every /nasty/chat request writes
+    one row. Anonymous by default (no user id linkage unless we add it later).
+    """
+    __tablename__ = "nasty_chat_logs"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    created_at = Column(DateTime(timezone=True), default=_now, nullable=False, index=True)
+    # Session grouping — same "session_id" across turns of one Nasty session.
+    # Client sends this from localStorage so we can reconstruct conversations.
+    session_id = Column(String, nullable=True, index=True)
+    # What the user asked and what Claude said back.
+    user_message = Column(Text, nullable=False)
+    ai_text = Column(Text, nullable=True)
+    # Full tool_calls array as JSON string so we can reconstruct what Claude DID.
+    tool_calls_json = Column(Text, nullable=True)
+    # Snapshot of song state at request time (JSON string), for context.
+    song_state_json = Column(Text, nullable=True)
+    # Plugin names the user had installed at request time (comma-separated).
+    plugin_names = Column(Text, nullable=True)
+    # Token accounting: sum across all tool-use iterations for this message.
+    input_tokens = Column(Integer, nullable=True)
+    output_tokens = Column(Integer, nullable=True)
+    cache_read_tokens = Column(Integer, nullable=True)
+    cache_write_tokens = Column(Integer, nullable=True)
+    # stop_reason from the final iteration.
+    stop_reason = Column(String, nullable=True)
