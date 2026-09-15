@@ -5769,6 +5769,12 @@ document.getElementById('new-pattern-ok').addEventListener('click', () => {
 });
 document.getElementById('mixer-btn').addEventListener('click', openMixer);
 document.getElementById('mixer-close').addEventListener('click', closeMixer);
+// Click on the modal backdrop (anywhere outside #mixer-panel) closes the
+// mixer. e.target === currentTarget means the mousedown landed on the
+// backdrop itself, not on the panel or any of its children.
+document.getElementById('mixer-modal').addEventListener('mousedown', (e) => {
+  if (e.target === e.currentTarget) closeMixer();
+});
 document.getElementById('save-btn').addEventListener('click', saveToFile);
 document.getElementById('load-btn').addEventListener('click', loadFromFile);
 document.getElementById('export-btn').addEventListener('click', exportWAV);
