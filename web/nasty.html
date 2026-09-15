@@ -2024,6 +2024,11 @@ let currentPatternId = null;
 let pianoRollActiveChannelId = null;
 let saveTimer = null;
 let loopEnabled = false;
+// Ruler-click seek: sample offset applied on the next SONG-mode play so a
+// seek made while stopped survives Stop→Play instead of jumping to bar 1.
+let pendingStartSample = 0;
+let lastClipClickAt = 0;
+let lastClipClickId = null;
 
 // ============================================================
 // Persistence
@@ -2700,8 +2705,10 @@ function playSong() {
     // edits during playback are a later delta-push optimisation.
     engineTransport.pushSongArrangement();
     const lenBeats = engineTransport.songLengthBeats();
-    engineTransport.seek(0);
-    engineTransport.seekPattern(0);
+    // Honor a ruler-click seek made while stopped. Falls back to 0 when the
+    // user hasn't manually placed the playhead since the last full reset.
+    engineTransport.seek(pendingStartSample || 0);
+    engineTransport.seekPattern(pendingStartSample || 0);
     // setLoopBeats sizes the PatternPlayer loop — not what SONG uses for
     // playback, but keeps the "pattern position" state consistent and lets
     // animatePlayhead's SONG branch use songLengthBeats for its own wrap.
@@ -3201,6 +3208,7 @@ function renderPlaylist() {
   const ruler = document.createElement('div');
   ruler.className = 'ruler';
   ruler.style.width = totalWidth + 'px';
+  ruler.style.cursor = 'pointer';
   for (let b = 0; b < song.bars; b++) {
     const tick = document.createElement('div');
     tick.className = 'tick';
@@ -3208,6 +3216,30 @@ function renderPlaylist() {
     tick.textContent = b + 1;
     ruler.appendChild(tick);
   }
+  // Click anywhere on the ruler → seek playhead there. Works while playing
+  // (engine seek) and while stopped (stashed on pendingStartSample so the
+  // next Play resumes from the click point instead of jumping to bar 1).
+  ruler.addEventListener('mousedown', (e) => {
+    const rect = ruler.getBoundingClientRect();
+    const x = Math.max(0, e.clientX - rect.left);
+    const bar = x / BAR_WIDTH;
+    const beats = bar * 4;
+    const sample = engineTransport.beatsToSamples(beats);
+    engineTransport.seek(sample);
+    engineTransport.seekPattern(sample);
+    pendingStartSample = sample;
+    // Song mode auto-switch: clicking the ruler is a song-mode action. If
+    // we're in PAT mode, this also feels like "take me to the arrangement."
+    if (song.transportMode !== 'song') {
+      song.transportMode = 'song';
+      document.getElementById('ps-pat')?.classList.remove('active');
+      document.getElementById('ps-song')?.classList.add('active');
+      if (engineTransport.available()) engineTransport.setMode('song');
+    }
+    const ph = document.getElementById('playhead');
+    ph.style.display = 'block';
+    ph.style.left = (bar * BAR_WIDTH) + 'px';
+  });
   timeline.insertBefore(ruler, timeline.firstChild);
 
   const patternById = new Map(song.patterns.map(p => [p.id, p]));
@@ -3241,6 +3273,16 @@ function renderPlaylist() {
       el.dataset.clipId = clip.id;
       el.dataset.trackId = track.id;
       el.addEventListener('mousedown', onClipMouseDown);
+      // Right-click deletes the clip. preventDefault kills the browser menu.
+      el.addEventListener('contextmenu', (ev) => {
+        ev.preventDefault();
+        const t = song.tracks.find(tt => tt.id === track.id);
+        if (!t) return;
+        t.clips = t.clips.filter(c => c.id !== clip.id);
+        if (selectedClipId === clip.id) selectedClipId = null;
+        render();
+        syncSongArrangement();
+      });
       const rz = document.createElement('div');
       rz.className = 'resize';
       rz.addEventListener('mousedown', onClipResizeStart);
@@ -4564,7 +4606,19 @@ function onClipMouseUp(e) {
     autoExpandBars();
     render();
   } else if (!clipDrag.moved && clip && clip.type === 'pattern') {
-    openPianoRoll(clip.patternId);
+    // Single click = select only (already set in mousedown). Double click
+    // = make this the current pattern + open the channel rack. Piano roll
+    // is F7 / dedicated open, no longer stolen by a stray click here.
+    const now = Date.now();
+    const isDouble = lastClipClickId === clip.id && (now - lastClipClickAt) < 350;
+    lastClipClickAt = now;
+    lastClipClickId = clip.id;
+    if (isDouble) {
+      currentPatternId = clip.patternId;
+      hotSwapCurrentPatternIfPlaying();
+      if (typeof isWindowOpen === 'function' && !isWindowOpen('rack')) setWindow('rack', true);
+      render();
+    }
   }
   clipDrag = null;
   if (didChange) syncSongArrangement();
