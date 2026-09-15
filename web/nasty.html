@@ -1771,8 +1771,8 @@
     <div class="t-sep"></div>
     <div class="t-group">
       <div class="patsong" title="PAT: loop the current pattern. SONG: play the whole playlist.">
-        <div class="ps-btn" id="ps-pat" data-mode="pat">PAT</div>
-        <div class="ps-btn active" id="ps-song" data-mode="song">SONG</div>
+        <div class="ps-btn active" id="ps-pat" data-mode="pat">PAT</div>
+        <div class="ps-btn" id="ps-song" data-mode="song">SONG</div>
       </div>
       <button class="t-btn big" id="rec-btn" title="Arm recording — hit Play to record MIDI notes into the current pattern">●</button>
       <span class="rec-led" id="rec-led"></span>
@@ -1793,7 +1793,7 @@
       <label style="font-size:10px;color:var(--dim);display:flex;align-items:center;gap:3px">
         <input type="checkbox" id="quantize" /> quantize</label>
       <label style="font-size:10px;color:var(--dim);display:flex;align-items:center;gap:3px">
-        <input type="checkbox" id="metronome" checked /> metronome</label>
+        <input type="checkbox" id="metronome" /> metronome</label>
       <label style="font-size:10px;color:var(--dim);display:flex;align-items:center;gap:3px">
         <input type="checkbox" id="count-in" checked /> count-in</label>
     </div>
@@ -2066,7 +2066,7 @@ const STORAGE_KEY = 'nasty.song.fl.v1';
 const SONG_SCHEMA_VERSION = 1;
 const PALETTE = ['#ff5c93','#6b7cff','#33c58a','#ffb020','#a95cff','#ff7c47','#42c8e0','#e05cff','#ffdd57','#5cff8f'];
 
-let song = { version: SONG_SCHEMA_VERSION, bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] }, transportMode: 'song' };
+let song = { version: SONG_SCHEMA_VERSION, bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] }, transportMode: 'pat' };
 let recArmed = false;
 let chatHistory = [];
 let selectedClipId = null;
@@ -5868,7 +5868,7 @@ document.querySelectorAll('.patsong .ps-btn').forEach(btn => {
 });
 document.getElementById('clear-btn').addEventListener('click', () => {
   if (!confirm('Clear the song? (channels, patterns, and playlist all reset)')) return;
-  song = { version: SONG_SCHEMA_VERSION, bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] }, transportMode: 'song' };
+  song = { version: SONG_SCHEMA_VERSION, bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] }, transportMode: 'pat' };
   chatHistory = [];
   currentPatternId = null;
   ensureDefaults();
@@ -8126,6 +8126,7 @@ toggleWindow = function(name) {
 // ============================================================
 loadFromStorage();
 ensureDefaults();
+song.transportMode = 'pat';
 render();
 initMIDI();
 initPianoRollDrop();
