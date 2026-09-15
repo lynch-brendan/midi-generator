@@ -3256,10 +3256,10 @@ function renderPlaylist() {
     tick.textContent = b + 1;
     ruler.appendChild(tick);
   }
-  // Click anywhere on the ruler = "take me here." Always stops playback
-  // cleanly, positions the playhead visually, stashes the sample offset so
-  // the next Play resumes from here. Also auto-switches to SONG mode —
-  // the arrangement ruler is a SONG-mode surface. User presses Space to play.
+  // Click anywhere on the ruler = "take me here." Two behaviors:
+  //   * same mode + playing (SONG→SONG click): live seek, keep rolling.
+  //   * cross mode OR stopped: stop + switch + wait for Play.
+  // The mode switch justifies the pause — a pure position change doesn't.
   ruler.addEventListener('mousedown', (e) => {
     if (e.button !== 0) return;
     const rect = ruler.getBoundingClientRect();
@@ -3267,18 +3267,24 @@ function renderPlaylist() {
     const bar = x / BAR_WIDTH;
     const beats = bar * 4;
     const sample = engineTransport.beatsToSamples(beats);
-    if (animationFrame) stopSong();
-    if (song.transportMode !== 'song') {
-      song.transportMode = 'song';
-      document.getElementById('ps-pat')?.classList.remove('active');
-      document.getElementById('ps-song')?.classList.add('active');
-      if (engineTransport.available()) engineTransport.setMode('song');
+    const wasPlaying = !!animationFrame;
+    const sameMode = song.transportMode === 'song';
+    if (!sameMode || !wasPlaying) {
+      if (wasPlaying) stopSong();
+      if (!sameMode) {
+        song.transportMode = 'song';
+        document.getElementById('ps-pat')?.classList.remove('active');
+        document.getElementById('ps-song')?.classList.add('active');
+        if (engineTransport.available()) engineTransport.setMode('song');
+      }
+      const ph = document.getElementById('playhead');
+      ph.style.display = 'block';
+      ph.style.left = (bar * BAR_WIDTH) + 'px';
     }
+    // Always stash + engine-seek so the position lands (live) and survives
+    // a subsequent Stop→Play as the resume point.
     pendingStartSample = sample;
     if (engineTransport.available()) engineTransport.seek(sample);
-    const ph = document.getElementById('playhead');
-    ph.style.display = 'block';
-    ph.style.left = (bar * BAR_WIDTH) + 'px';
   });
   timeline.insertBefore(ruler, timeline.firstChild);
 
@@ -3468,25 +3474,29 @@ function renderChannelRack() {
     const steps = x / STEP_PX_RULER;
     const beats = steps * 0.25; // 1 step = 1/16 = 0.25 beats
     const sample = engineTransport.beatsToSamples(beats);
-    if (animationFrame) stopSong();
-    if (song.transportMode !== 'pat') {
-      song.transportMode = 'pat';
-      document.getElementById('ps-song')?.classList.remove('active');
-      document.getElementById('ps-pat')?.classList.add('active');
-      if (engineTransport.available()) engineTransport.setMode('pat');
+    const wasPlaying = !!animationFrame;
+    const sameMode = song.transportMode === 'pat';
+    if (!sameMode || !wasPlaying) {
+      if (wasPlaying) stopSong();
+      if (!sameMode) {
+        song.transportMode = 'pat';
+        document.getElementById('ps-song')?.classList.remove('active');
+        document.getElementById('ps-pat')?.classList.add('active');
+        if (engineTransport.available()) engineTransport.setMode('pat');
+      }
+      // Position rack playhead using transform to match animatePlayhead —
+      // mixing style.left with a leftover transform would show it wrong.
+      const rp = document.getElementById('rack-playhead');
+      if (rp) {
+        rp.style.display = 'block';
+        rp.style.left = '0';
+        rp.style.transform = `translate3d(${348 + x}px, 0, 0)`;
+      }
     }
+    // Always stash + engine-seek so the seek lands (live during playback)
+    // and survives a subsequent Stop→Play as the resume point.
     pendingPatternStartSample = sample;
     if (engineTransport.available()) engineTransport.seekPattern(sample);
-    // Position the rack playhead using transform to match animatePlayhead's
-    // primitive — mixing style.left with a leftover transform from the last
-    // frame would show the playhead in the wrong spot. LEFT_START (348) is
-    // the offset from rack left to where the step grid begins.
-    const rp = document.getElementById('rack-playhead');
-    if (rp) {
-      rp.style.display = 'block';
-      rp.style.left = '0';
-      rp.style.transform = `translate3d(${348 + x}px, 0, 0)`;
-    }
   });
   rulerRow.appendChild(rulerTicks);
   rack.appendChild(rulerRow);
