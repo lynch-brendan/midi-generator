@@ -4598,6 +4598,14 @@ function onClipResizeUp() {
 }
 
 function onLaneMouseDown(e) {
+  // Right-click on empty lane starts a paint-erase drag instead of creating
+  // a clip — so you can begin the sweep in dead space and drag into clips.
+  if (e.button === 2) {
+    e.preventDefault();
+    startRightEraseDragFromLane(e);
+    return;
+  }
+  if (e.button !== 0) return;
   if (e.target !== e.currentTarget) return;
   if (!currentPatternId) return;
   const row = e.currentTarget;
@@ -4688,6 +4696,15 @@ function startRightEraseDrag(initialClipEl) {
   document.addEventListener('mousemove', onRightEraseMove);
   document.addEventListener('mouseup', onRightEraseUp);
 }
+// Same drag but starting from an empty lane area — no initial kill because
+// the cursor isn't over a clip yet. Movement handler will pick clips up as
+// the cursor sweeps into them.
+function startRightEraseDragFromLane(_e) {
+  rightEraseActive = true;
+  rightEraseKilled = new Set();
+  document.addEventListener('mousemove', onRightEraseMove);
+  document.addEventListener('mouseup', onRightEraseUp);
+}
 function onRightEraseMove(e) {
   if (!rightEraseActive) return;
   const el = document.elementFromPoint(e.clientX, e.clientY);
@@ -4753,6 +4770,9 @@ function onClipMouseUp(e) {
   document.removeEventListener('mousemove', onClipMouseMove);
   document.removeEventListener('mouseup', onClipMouseUp);
   if (!clipDrag) return;
+  // Always clear the .dragging class — its 0.75 opacity would otherwise
+  // stick to a clip after a click-with-no-move (nothing else re-renders).
+  if (clipDrag.el) clipDrag.el.classList.remove('dragging');
   const track = song.tracks.find(t => t.id === clipDrag.trackId);
   const clip = track && track.clips.find(c => c.id === clipDrag.clipId);
   const didChange = clipDrag.moved;
