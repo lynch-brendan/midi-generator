@@ -132,6 +132,45 @@ juce::var StdioBridge::handleCommand(const juce::var& msg) {
         return juce::var(o);
     }
 
+    if (cmd == "rescan_plugins") {
+        // Runtime re-walk of the VST3/AU search paths + preset cache. Called
+        // from the browser dock's Rescan button after the user installs a new
+        // plugin. The plugin-cache short-circuits every unchanged file, so a
+        // rescan with one new plugin costs ~ one plugin instantiation. Runs
+        // on this background stdio thread — safe because createPluginInstance
+        // needs the message thread to PUMP, not to be idle.
+        auto supportDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+            .getChildFile("nasty");
+        supportDir.createDirectory();
+        auto pluginCacheFile = supportDir.getChildFile("plugin-cache.xml");
+        auto presetCacheFile = supportDir.getChildFile("plugin-presets.json");
+
+        host.scanDefaultPaths([this](const juce::String& name, int idx, int total) {
+            sendEvent({
+                {"event", juce::var("scanning")},
+                {"name",  juce::var(name)},
+                {"index", juce::var(idx)},
+                {"total", juce::var(total)},
+            });
+        });
+        host.savePluginCache(pluginCacheFile);
+
+        host.scanAllPluginPresets([this](const juce::String& name, int idx, int total) {
+            sendEvent({
+                {"event", juce::var("scanning_presets")},
+                {"name",  juce::var(name)},
+                {"index", juce::var(idx)},
+                {"total", juce::var(total)},
+            });
+        });
+        host.savePresetCache(presetCacheFile);
+
+        auto* o = new juce::DynamicObject();
+        o->setProperty("event",   "plugin_list");
+        o->setProperty("plugins", host.pluginListAsJson());
+        return juce::var(o);
+    }
+
     if (cmd == "load_plugin") {
         auto err = host.loadPlugin(msg["channelId"].toString(),
                                    msg["pluginId"].toString(),

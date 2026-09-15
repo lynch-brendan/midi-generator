@@ -6256,6 +6256,28 @@ function renderBrowser() {
         '</div>';
       return;
     }
+    // Rescan button — for when you install a new plugin without relaunching.
+    const rescanBar = document.createElement('div');
+    rescanBar.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--border);font-size:11px;';
+    const btn = document.createElement('button');
+    btn.textContent = engineRescanning ? 'Rescanning…' : '↻ Rescan plugins';
+    btn.disabled = engineRescanning;
+    btn.style.cssText = 'background:var(--panel-hi);color:var(--fg);border:1px solid var(--border);border-radius:3px;padding:3px 8px;font-size:11px;cursor:' + (engineRescanning ? 'default' : 'pointer') + ';';
+    btn.title = 'Re-scan your VST/AU folders — use after installing a new plugin';
+    btn.addEventListener('click', () => {
+      if (engineRescanning) return;
+      engineRescanning = true;
+      window.nasty.engine.send({ cmd: 'rescan_plugins' });
+      renderBrowser();
+    });
+    rescanBar.appendChild(btn);
+    if (engineRescanning && engineScanning) {
+      const status = document.createElement('span');
+      status.style.cssText = 'color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+      status.textContent = engineScanning;
+      rescanBar.appendChild(status);
+    }
+    tree.appendChild(rescanBar);
     // Group plugins by category
     const groups = {};
     for (const p of enginePluginsList) {
@@ -6546,6 +6568,10 @@ async function augmentPluginPresetsFromDisk() {
 }
 let enginePluginsError = null;
 let engineScanning = null;
+// True from the moment the user clicks the browser-dock Rescan button until
+// the engine responds with a fresh plugin_list. Drives the button label +
+// disabled state so the browser dock reflects the actual scan lifecycle.
+let engineRescanning = false;
 
 // Channel IDs where we should auto-pop the plugin UI once the engine reports
 // it's loaded. Set for user-initiated adds; NOT set on song-restore re-loads.
@@ -7741,12 +7767,14 @@ if (window.nasty && window.nasty.engine) {
       }
       if (browserTab === 'plugins') renderBrowser();
     } else if (msg.event === 'scanning_presets') {
+      engineScanning = msg.name;
       engineBoot.phase = 'scanning_presets';
       if (msg.index != null && msg.total) {
         setBootPhase(`indexing presets (${msg.index}/${msg.total})`, msg.name);
       } else {
         setBootPhase('indexing presets…', msg.name);
       }
+      if (engineRescanning && browserTab === 'plugins') renderBrowser();
     } else if (msg.event === 'ready') {
       engineScanning = null;
       engineBoot.phase = 'ready';
@@ -7800,6 +7828,8 @@ if (window.nasty && window.nasty.engine) {
     } else if (msg.event === 'plugin_list') {
       enginePluginsList = msg.plugins || [];
       enginePluginsError = null;
+      engineRescanning = false;
+      engineScanning = null;
       // Kick off a disk scan for plugins with cheatsheet preset_paths. This
       // fills in file-based presets (Surge XT .fxp, etc.) that the standard
       // VST/AU program API doesn't expose. Runs async — the browser stays
