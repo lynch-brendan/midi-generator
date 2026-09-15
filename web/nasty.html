@@ -5780,6 +5780,10 @@ document.getElementById('load-btn').addEventListener('click', loadFromFile);
 document.getElementById('export-btn').addEventListener('click', exportWAV);
 document.getElementById('midi-select').addEventListener('change', (e) => attachMidiInput(e.target.value));
 document.getElementById('pr-close').addEventListener('click', closePianoRoll);
+// Click on the piano-roll backdrop (outside #piano-roll-panel) closes it.
+document.getElementById('piano-roll').addEventListener('mousedown', (e) => {
+  if (e.target === e.currentTarget) closePianoRoll();
+});
 document.getElementById('piano-roll-panel').addEventListener('contextmenu', (e) => e.preventDefault());
 document.getElementById('pr-active-channel').addEventListener('change', (e) => {
   pianoRollActiveChannelId = e.target.value;
