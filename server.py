@@ -2136,19 +2136,24 @@ def nasty_chat(req: NastyChatRequest):
         + sound_goals_block
         + f"User: {req.message}"
     )
+    # 1-hour cache TTL (default is 5 minutes). Brendan pauses to listen /
+    # think / test between chat messages, and every pause >5 min under the
+    # old TTL forced a full cache rewrite (~30K tokens re-billed at cache-
+    # write rate). 1h TTL costs 2x per cache-write ($7.50/M vs $3.75/M) but
+    # avoids that rewrite for real music-making sessions with think time.
     system_blocks = [
         {"type": "text", "text": _NASTY_SYSTEM_PROMPT},
         {
             "type": "text",
             "text": plugin_block + knowledge_block,
-            "cache_control": {"type": "ephemeral"},
+            "cache_control": {"type": "ephemeral", "ttl": "1h"},
         },
     ]
     # Tools JSON is the other big stable chunk — cache_control on the last
     # tool marks the whole tools list as cacheable.
     tools = [dict(t) for t in _NASTY_TOOLS]
     if tools:
-        tools[-1] = {**tools[-1], "cache_control": {"type": "ephemeral"}}
+        tools[-1] = {**tools[-1], "cache_control": {"type": "ephemeral", "ttl": "1h"}}
 
     # Truncate history to the last 8 messages. Longer conversations balloon
     # per-turn input cost linearly; 8 is enough for context, more just burns
