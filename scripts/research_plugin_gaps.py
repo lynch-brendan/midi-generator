@@ -360,7 +360,10 @@ def research_one(client: Anthropic, entry: dict, today: str) -> dict:
         effect_cats=", ".join(EFFECT_CATEGORIES),
     )
     resp = client.messages.create(
-        model="claude-opus-4-7",
+        # Sonnet 4.6 does plugin-research-quality writing (read web pages, emit
+        # structured cheatsheet) at ~1/5 the price of Opus 4.7. Drop back to
+        # Opus only if cheatsheet quality regresses in a way you can feel.
+        model="claude-sonnet-4-6",
         max_tokens=4000,
         tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 5}],
         messages=[{"role": "user", "content": prompt}],
