@@ -9,6 +9,22 @@ Anything that lives in the low register — sub bass, growl bass, 808s, funky ba
 
 ## Options
 
+### Odin2
+
+- **Character:** Warm, analog-flavored, punchy; capable of earth-shaking low end thanks to Ladder/SEM filter emulations and analog oscillators.
+- **Best for:** Classic subtractive bass, growly reese-style bass via unison/detune, FM/phase-mod digital basses, chiptune/8-bit bass.
+- **Emotional tags:** gritty, dark, weighty, retro, gnarly
+- **Comparison:** Warmer and more analog-voiced than Vital or Surge XT; less polished/preset-driven than Serum; free alternative to Thor-style semi-modular basses.
+- **How to use:** `load_instrument(channel_id=..., plugin_id="Odin2", preset_name="...")`
+
+### TAL-NoiseMaker
+
+- **Character:** Chunky, warm, analog-flavored subtractive bass; can go from smooth round sub to filthy, driven, gritty bass with filter drive and bitcrusher.
+- **Best for:** Fast, no-nonsense analog bass patches — synthwave sub-bass, old-school house/techno bass, retro game bass, driven acid-style lines using self-resonating LP filter.
+- **Emotional tags:** Retro, punchy, warm, nostalgic, filthy, grounded.
+- **Comparison:** Warmer and simpler than Serum or Vital; less pristine than Diva but far lighter on CPU; sits in the same territory as Tyrell N6 or a stripped-down Juno-style VA.
+- **How to use:** `load_instrument(channel_id=..., plugin_id="tal-noisemaker", preset_name="<bass preset name>")`
+
 ### Vital
 
 - **Character:** Clean, modern, digital; can be aggressive and growling with unison + wavetable position modulation, or deep and sub-heavy with a simple sine/triangle table. Very low aliasing and low noise floor.

@@ -9,6 +9,14 @@ Harmonic addition — warmth, grit, fuzz, tape saturation, tube warmth, bitcrush
 
 ## Options
 
+### AUDistortion
+
+- **Character:** Digital, gritty, and often extreme — a multi-stage effect that can range from mild crunch through bitcrushed lo-fi to clangy, metallic ring-modulated destruction. Not a warm analog-style saturator; sounds distinctly digital.
+- **Best for:** Aggressive lo-fi textures, sci-fi/robotic voice effects, bell-like inharmonic tones via the ring mod stage, bitcrushed drums and synths, sound-design mangling on macOS-only sessions.
+- **Emotional tags:** aggressive, harsh, alien, robotic, broken, industrial, sci-fi
+- **Comparison:** Much more extreme and digital-sounding than typical tape/tube saturators (Decapitator, Saturn); closer in spirit to a combined bitcrusher + ring modulator than to a guitar amp. Free and always-available on macOS, but less musical/refined than dedicated third-party distortion plugins.
+- **How to use:** `add_plugin_effect(channel_id=..., plugin_id="AUDistortion", preset_name="...")`
+
 ### Surge XT Effects — Distortion / Overdrive / Waveshaper
 
 - **Character:** varies by algorithm — soft-clip warmth, hard-clip aggression, waveshaper for harmonic richness, bitcrusher for lo-fi digital grit

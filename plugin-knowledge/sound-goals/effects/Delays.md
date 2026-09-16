@@ -9,6 +9,14 @@ Echo and repeat effects — slap delay, ping-pong, tempo-synced dub delay, tape 
 
 ## Options
 
+### AUDelay
+
+- **Character:** Clean, plain, transparent digital delay with a lowpass-filtered feedback path for gently darkening repeats. No modulation, no analog coloration — a utilitarian "just a delay" sound.
+- **Best for:** Simple single-tap echoes, slapback thickening on vocals/guitars/organs, and short-time comb-filter/flanger-style tonal effects (delay times of ~0.0001–0.0099 s with 50% mix and zero feedback). Good as a lightweight always-available fallback when no third-party delay is installed.
+- **Emotional tags:** neutral, dry, functional, vintage-basic, no-frills
+- **Comparison:** Much simpler and more dated than Logic's Stereo Delay, Tape Delay, Delay Designer, or the TieDye Delay in Pedalboard; lacks the warmth of a tape/analog emulation and the rhythmic power of tempo-synced or ping-pong delays. Closer in spirit to a mono textbook digital delay line than to a musical "character" delay.
+- **How to use:** `add_plugin_effect(channel_id=..., plugin_id="AUDelay", preset_name="...")`
+
 ### Surge XT Effects — Delay algorithms
 
 - **Character:** varies by algorithm — Digital Delay, Analog Delay, Tape Delay, Ensemble delay

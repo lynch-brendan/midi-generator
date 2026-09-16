@@ -9,6 +9,22 @@ Non-melodic sonic material — noise, hits, risers, impacts, drones, ambient bed
 
 ## Options
 
+### AUSampler
+
+- **Character:** Whatever you feed it — arbitrary WAV/AIFF samples mapped across the keyboard. Best thought of as a blank sample-playback engine for atmospheres, foley, and found-sound instruments.
+- **Best for:** Turning field recordings, one-shots, or ambient loops into playable keyzones; quick custom sample instruments for sound design and texture work.
+- **Emotional tags:** experimental, personal, unpredictable, cinematic (depending on source material)
+- **Comparison:** Much more bare-bones than Kontakt or Ableton Sampler; closer in spirit to a stripped-down TX16Wx. No built-in effects or granular engine — purely straight sample playback with basic envelopes/filter.
+- **How to use:** `load_instrument(channel_id=..., plugin_id="AUSampler", preset_name="<path to custom .aupreset>")` — author the preset in AU Lab first; loading raw audio files directly at runtime is not supported by the plugin GUI.
+
+### Odin2
+
+- **Character:** Experimental and mad — noise oscillator, drawable spectrum/wavetable, phase-mod and FM combined with heavy mod-matrix routing yield abstract, otherworldly FX.
+- **Best for:** Sound-design FX, risers/impacts, drones, glitchy chiptune textures, evolving atmospheres via mod-matrix + XY-Pad.
+- **Emotional tags:** alien, unsettling, abstract, mysterious, weird
+- **Comparison:** More sound-design capable than typical VA synths; less granular-focused than dedicated texture tools, but broader synthesis palette than Helm or Synth1.
+- **How to use:** `load_instrument(channel_id=..., plugin_id="Odin2", preset_name="...")`
+
 ### Surge XT — FX and non-melodic patches
 
 - **Character:** hybrid wavetable/FM/subtractive — capable of arbitrary sound-design

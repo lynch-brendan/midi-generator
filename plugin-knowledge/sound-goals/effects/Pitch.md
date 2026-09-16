@@ -9,6 +9,22 @@ Pitch correction, harmonizers, pitch shifters, vocoders. Reach for these on "Aut
 
 ## Options
 
+### AUPitch
+
+- **Character:** Basic, utilitarian real-time pitch-shifter; clean at small shifts, gets grainy/phasey on large transpositions or complex material. Not a "colored" effect — it's a workhorse.
+- **Best for:** Quick semitone/cent transposition of audio without changing tempo, transposing samples, karaoke-style key changes, small tuning corrections, creative octave shifts on FX or vocals.
+- **Emotional tags:** neutral, corrective, functional; can be alien/warbly when pushed to extreme cents.
+- **Comparison:** Rougher and less transparent than Logic's Pitch Shifter II, Waves SoundShifter, or Celemony/Melodyne; simpler and lower-CPU than Serato Pitch 'n Time or iZotope Radius. Free and always-available on macOS, which is its main advantage.
+- **How to use:** `add_plugin_effect(channel_id=..., plugin_id="AUPitch", params={"Pitch": 100, "Effect Blend": 100, "Smoothness": 0, "Tightness": 0})` — set Pitch in cents (±2400), keep Effect Blend at 100 for full shift, tweak Smoothness/Tightness to reduce artifacts.
+
+### AUNewPitch
+
+- **Character:** Clean, transparent, surgical — a no-frills real-time pitch shifter with a single Pitch Scale control measured in cents for very fine adjustments.
+- **Best for:** Precise cent-level detuning, subtle pitch offsets on loops/one-shots, whole-step transposition via automation, quick tuning fixes on WAV samples that can't be transposed like Apple Loops.
+- **Emotional tags:** neutral, utilitarian, precise, subtle
+- **Comparison:** Simpler and more minimal than Logic's Pitch Shifter (which has Semi Tones, Cents, Mix and algorithm modes like Drums/Speech/Vocals); less musical/creative than dedicated harmonizers like Eventide Quadravox or MicroPitch, but better than Pitch Shifter when you need fine cent-resolution tuning or automatable pitch-scale sweeps.
+- **How to use:** `add_plugin_effect(channel_id=..., plugin_id="AUNewPitch")` — then automate the `Pitch Scale` parameter (in cents; 100 = one semitone, 1200 = one octave) for pitch sweeps, or set a static value for tuning correction.
+
 ### Auto-Tune Pro (Antares) — industry-standard pitch correction
 
 - **Character:** varies by Retune Speed — natural correction (60+) to obvious T-Pain effect (0-20)

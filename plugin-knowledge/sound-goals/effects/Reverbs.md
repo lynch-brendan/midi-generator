@@ -9,6 +9,22 @@ Space and depth effects — halls, rooms, plates, cathedrals. Reach for these on
 
 ## Options
 
+### AUReverb2
+
+- **Character:** Clean, neutral, utilitarian algorithmic reverb. Not colored or lush — sits closer to a generic digital plate/room than to a boutique reverb. Tone can be shaped from bright to dark via the split low/high decay controls.
+- **Best for:** Quick, CPU-cheap ambience on any source when a host needs a built-in reverb; sketching/roughing arrangements; iOS/macOS apps that want a system-provided verb without bundling a third-party engine.
+- **Emotional tags:** neutral, clean, functional, transparent, unobtrusive
+- **Comparison:** Less characterful and less lush than Valhalla VintageVerb or Logic's ChromaVerb; simpler and more generic than Space Designer (which is convolution-based). Comparable in role to a stock DAW reverb — get-the-job-done rather than sound-design centerpiece.
+- **How to use:** `add_plugin_effect(channel_id=..., plugin_id="AUReverb2", params={"DryWetMix": 30, "DecayTimeAt0Hz": 1.8, "DecayTimeAtNyquist": 0.6, "MaxDelayTime": 0.05})`
+
+### TENSjr
+
+- **Character:** Studio spring reverb modeled after AKG BX-series units; dense, fast-building, plate-like rather than the boingy spring sound of guitar amps. Character fader ranges from splashy/bright to dark and moody.
+- **Best for:** Vintage vocal and guitar ambience, drum room/slap, dub/reggae effects, lo-fi and retro production, synth sweetening, short-to-long decays (0.5–20 s) that sit between spring and plate territory.
+- **Emotional tags:** vintage, retro, dubby, moody, splashy, atmospheric, nostalgic
+- **Comparison:** More plate-like and less "boingy" than typical guitar-amp spring reverbs (e.g. AudioThing Springs, GSi Spring Reverb); simpler and free compared to its bigger sibling TENS (which adds Metallic/Whoosh/Tension, amp drive, 40 s decays, envelope follower); warmer/more colored than clean digital plates like Valhalla Plate.
+- **How to use:** `add_plugin_effect(channel_id=..., plugin_id="TENSjr", params={"Decay": 2.5, "Modulation": 0.3, "Character": 0.5, "Mix": 0.25})`
+
 ### AUMatrixReverb (Apple, ships with macOS)
 
 - **Character:** clean, transparent, algorithmic reverb — hall/plate/room shapes

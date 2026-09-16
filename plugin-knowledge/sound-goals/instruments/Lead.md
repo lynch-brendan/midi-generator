@@ -9,6 +9,22 @@ Front-and-center melodic voices — bright leads, aggressive leads, plucks, arps
 
 ## Options
 
+### Odin2
+
+- **Character:** Cutting and expressive; can go from smooth analog leads to aggressive FM/phase-mod screamers with the Ladder or Korg-35 filters biting on top.
+- **Best for:** Soaring analog leads, wavetable/vector leads, chiptune leads, FM bell-leads, arpeggiated sequences via the built-in arp.
+- **Emotional tags:** soaring, playful, retro, 80s, adventurous
+- **Comparison:** More semi-modular and Thor-like than Vital; warmer character than Dexed or Helm; less refined preset library than commercial synths.
+- **How to use:** `load_instrument(channel_id=..., plugin_id="Odin2", preset_name="...")`
+
+### TAL-NoiseMaker
+
+- **Character:** Classic analog-style lead — bold, chunky, and expressive; ring mod + sync + FM available for more aggressive/metallic timbres.
+- **Best for:** Retro/synthwave leads, portamento mono leads, chiptune-adjacent sync/ring-mod leads, 80s-style lead lines with chorus and delay.
+- **Emotional tags:** Nostalgic, driving, playful, punchy, retro-futuristic.
+- **Comparison:** Simpler and more focused than Surge XT or Vital leads; more analog-flavored than u-he Zebra; not as hi-fi as Diva but instantly usable and CPU-light.
+- **How to use:** `load_instrument(channel_id=..., plugin_id="tal-noisemaker", preset_name="<lead preset name>")` — note: no built-in mod-wheel vibrato, use MIDI learn or LFO routing.
+
 ### Vital
 
 - **Character:** Bright, articulate, high-fidelity. Wavetable morphing gives leads a lot of motion and expression; MPE support enables per-note pitch/timbre.

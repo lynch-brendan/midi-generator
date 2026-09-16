@@ -9,6 +9,22 @@ Sustained background textures — warm pads, ethereal pads, evolving atmospheres
 
 ## Options
 
+### Odin2
+
+- **Character:** Lush and evolving when unison + wavetable/vector oscillators are combined with the onboard chorus and reverb; can be either warm-analog or cold-digital depending on osc choice.
+- **Best for:** Evolving wavetable pads, vector-morph pads, drifting analog string pads, ambient textures modulated via the XY-Pad and LFOs.
+- **Emotional tags:** dreamy, ethereal, nostalgic, cinematic, drifting
+- **Comparison:** Less spectral/animated than Vital, but more analog-warm; more modular flexibility than Synth1 or Helm; comparable to Reason's Thor for pad duty.
+- **How to use:** `load_instrument(channel_id=..., plugin_id="Odin2", preset_name="...")`
+
+### TAL-NoiseMaker
+
+- **Character:** Warm, smooth analog-style pads; the improved amplitude ADSR handles long slow envelopes well, and the Juno-style chorus adds classic width and shimmer.
+- **Best for:** Slow-evolving analog pads, synthwave/ambient beds, lo-fi warm pads, retro string-machine-style layers using detuned saws through chorus + reverb.
+- **Emotional tags:** Dreamy, warm, nostalgic, calm, wistful.
+- **Comparison:** Simpler than Omnisphere or Pigments pads but much lighter on CPU; less lush than Diva but faster to dial in; a solid free alternative in the Juno-pad space.
+- **How to use:** `load_instrument(channel_id=..., plugin_id="tal-noisemaker", preset_name="<pad preset name>")`
+
 ### Vital
 
 - **Character:** Wide, evolving, lush. The stereo-split LFO and drawable wavetables produce pads with constant motion and huge stereo image; can go from warm and analog-ish to glassy and spectral.
