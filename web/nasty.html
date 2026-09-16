@@ -669,7 +669,19 @@
   #mixer-strips {
     flex: 1; display: flex; padding: 10px; gap: 4px;
     overflow-x: auto; overflow-y: hidden;
+    position: relative;
   }
+  /* Send-routing overlay — draws curved yellow wires from source strip to
+     target strip whenever a sidechain (or any send) is set. Fills the same
+     bounding box as the strips grid so the paths line up with strip tops. */
+  #mixer-wires {
+    position: absolute; inset: 0; pointer-events: none; z-index: 5;
+  }
+  #mixer-wires path {
+    fill: none; stroke: #f5b800; stroke-width: 1.5;
+    filter: drop-shadow(0 0 3px rgba(245, 184, 0, 0.6));
+  }
+  #mixer-wires .arrow { fill: #f5b800; stroke: none; }
   .mixer-strip {
     width: 62px; flex-shrink: 0; height: 100%;
     background: var(--panel-2); border: 1px solid var(--line);
@@ -4238,8 +4250,79 @@ function renderMixer() {
     s.classList.toggle('selected', s.dataset.id === selectedStripId);
   });
 
+  drawMixerWires();
   renderMixerSlots();
 }
+
+// Draw FL-style routing wires from each source strip to its send destination.
+// Yellow curves overlay the strips container; source is the top of the SC
+// LED and destination is the top of the target's IN LED. Redraws whenever
+// renderMixer runs; also on window resize + strips-scroll so wires track
+// with the strip positions.
+function drawMixerWires() {
+  const strips = document.getElementById('mixer-strips');
+  if (!strips) return;
+  let svg = document.getElementById('mixer-wires');
+  if (!svg) {
+    svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.id = 'mixer-wires';
+    strips.appendChild(svg);
+  }
+  svg.innerHTML = '';
+  const buses = (song.mixer && song.mixer.busses) || [];
+  const container = strips.getBoundingClientRect();
+  const width = strips.scrollWidth;
+  const height = strips.clientHeight;
+  svg.setAttribute('width', width);
+  svg.setAttribute('height', height);
+  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  const stripEls = new Map();
+  strips.querySelectorAll('.mixer-strip').forEach(el => {
+    stripEls.set(el.dataset.id, el);
+  });
+  for (const bus of buses) {
+    if (!bus.sends || !bus.sends.length) continue;
+    for (const send of bus.sends) {
+      const srcEl = stripEls.get(bus.id);
+      const dstEl = stripEls.get(send.targetChannelId);
+      if (!srcEl || !dstEl) continue;
+      const sr = srcEl.getBoundingClientRect();
+      const dr = dstEl.getBoundingClientRect();
+      // Anchor near the top of each strip's SC row so the wire visually
+      // matches where sends originate/terminate.
+      const scrollX = strips.scrollLeft;
+      const sx = sr.left - container.left + sr.width / 2 + scrollX;
+      const dx = dr.left - container.left + dr.width / 2 + scrollX;
+      const sy = 30;  // just below the strip number
+      const dy = 30;
+      // Arc height scales with horizontal distance so nearby strips get a
+      // gentle bump and far ones a taller arch that stays inside the mixer.
+      const dist = Math.abs(dx - sx);
+      const arc = Math.min(60, 12 + dist * 0.15);
+      const midX = (sx + dx) / 2;
+      const midY = sy - arc;
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', `M ${sx} ${sy} Q ${midX} ${midY} ${dx} ${dy}`);
+      svg.appendChild(path);
+      // Arrowhead near the destination — small triangle rotated toward dst.
+      const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+      const dir = dx > sx ? 1 : -1;
+      const ax = dx - dir * 6;
+      const ay = dy - 4;
+      arrow.setAttribute('points', `${ax},${ay - 3} ${ax},${ay + 3} ${dx},${dy}`);
+      arrow.setAttribute('class', 'arrow');
+      svg.appendChild(arrow);
+    }
+  }
+}
+
+// Redraw wires when the strips scroll (they extend past the viewport for
+// >20 inserts) or when the window resizes.
+document.addEventListener('DOMContentLoaded', () => {
+  const strips = document.getElementById('mixer-strips');
+  if (strips) strips.addEventListener('scroll', drawMixerWires, { passive: true });
+  window.addEventListener('resize', drawMixerWires);
+});
 
 function buildStrip({ id, name, volume, color, kind, fxCount, muted, solo, num, audioInputEnabled, recArmed, sidechainActive, sidechainLabel }) {
   const strip = document.createElement('div');

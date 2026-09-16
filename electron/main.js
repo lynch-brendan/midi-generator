@@ -4,6 +4,14 @@ const path = require('path');
 const fs = require('fs');
 const readline = require('readline');
 
+// Rename the app early so the macOS menu bar reads "Nasty" instead of
+// "Electron" — this must run before app.whenReady so the app submenu's
+// label picks up the new name. The custom in-window menu bar (FILE EDIT
+// ADD ...) already exists as an HTML strip; the native macOS menu bar
+// can't be hidden but we can at least make it show the right app name
+// and keep it minimal.
+app.setName('Nasty');
+
 // Prevent multiple Nasty windows from stacking up when `npm start` is re-run
 // while another instance is still around. Second launch just focuses the
 // existing window instead of spawning a fresh (and often blank) one.

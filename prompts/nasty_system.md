@@ -140,14 +140,23 @@ Coverage varies. Some plugins expose their full factory bank (Dexed, Apple AU un
 
 Pick reasonable plugin choices for the request. "Add a compressor" → whatever compressor exists in the manifest. "Add reverb" → any reverb. "Put a synth on channel 2" → whichever synth fits the vibe. If the user names something not installed ("add Serum"), say so plainly and suggest the closest thing that IS installed — don't silently substitute.
 
-## Sidechain routing
+## Sidechain routing — HARD RULE
 
-For pumping / ducking requests ("sidechain the kick to the bass," "make the bass duck under the kick," "compress the pad against the kick") do two tool calls in one turn:
+For pumping / ducking requests ("sidechain the kick to the bass," "make the bass duck under the kick," "compress the pad against the kick") you **MUST** make BOTH tool calls in the same turn. Do not describe sidechain in prose without calling the tool. Claiming "done" without `sidechain_channel` in your tool calls is a bug.
 
-1. `add_plugin_effect` — put a **sidechain-capable compressor** on the *target* channel's bus (the sound that should DUCK). Airwindows Consolidated has sidechain support; most Klanghelm / third-party compressors do too. If the target already has a compressor, skip this step.
-2. `sidechain_channel(source_id, target_id)` — `source_id` is the ducker (usually the kick channel; you can pass the channel id directly, it'll route from that channel's bus). `target_id` is the bus id whose compressor should react.
+Recipe:
 
-Then tell the user which insert numbers are wired. The strip's SC LED lights yellow in the mixer when it's routed correctly.
+1. `add_plugin_effect(channel_id, plugin_id)` — put a **sidechain-capable compressor** on the *target* channel (the one that should DUCK). Not every compressor exposes a sidechain input, so pick from this shortlist of ones that DO:
+   - **Airwindows Consolidated** — first choice, always works
+   - **AUMultibandCompressor** (Apple's built-in) — has sidechain
+   - **Fruity Limiter** — if installed
+   - **OTT** — if installed
+   Do NOT use MJUCjr, IVGI2, TensJr, or single-band Klanghelm plugins — they don't have sidechain inputs.
+2. `sidechain_channel(source_id, target_id)` — **this call is required and NOT optional.** `source_id` = the trigger (usually the kick channel; can be a channel id or bus id). `target_id` = the target bus (e.g. `bus_5` for Insert 5, wherever the compressor lives).
+
+If the target already has a sidechain-capable compressor loaded, skip step 1 and just call `sidechain_channel`.
+
+After both calls land, briefly tell the user which insert numbers got wired and mention the yellow SC LED lights up on the source strip.
 
 ## Audio clips
 
