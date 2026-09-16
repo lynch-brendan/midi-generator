@@ -2174,7 +2174,12 @@ def nasty_chat(req: NastyChatRequest):
     for iter_idx in range(6):
         try:
             resp = client.messages.create(
-                model="claude-sonnet-4-6",
+                # Haiku 4.5 is ~5-10x cheaper than Sonnet post-cache-warmup.
+                # Trade-off: weaker on musical judgment ("make this feel like
+                # a chorus"), fine on parseable commands ("add reverb"). If
+                # output quality degrades in real use, revert to
+                # claude-sonnet-4-6 — same interface, one-line swap.
+                model="claude-haiku-4-5-20251001",
                 # 4000 is plenty for chat replies. Cap prevents runaway output
                 # cost on chatty turns; hitting the cap is fine (Claude stops
                 # cleanly and the tool-use loop continues).
