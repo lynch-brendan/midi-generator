@@ -696,6 +696,62 @@
     text-align: center; font-size: 9px; color: var(--dim);
     padding: 2px; letter-spacing: 0.5px;
   }
+  /* Sidechain send button — one per bus strip. Sits above IN and shows
+     which insert this strip's signal is feeding into. Yellow / gold when
+     active, matching FL's send-arrow color. */
+  .mixer-strip .mixsend {
+    display: flex; align-items: center; justify-content: center; gap: 4px;
+    font-size: 9px; letter-spacing: 0.5px; color: var(--dim);
+    padding: 3px 0; cursor: pointer;
+    border-top: 1px solid #14171c;
+    user-select: none;
+  }
+  .mixer-strip .mixsend:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+  .mixer-strip .mixsend.on { color: #f5b800; font-weight: 600; }
+  .mixer-strip .mixsend .mixsend-led {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #1a1d22; border: 1px solid #333;
+  }
+  .mixer-strip .mixsend.on .mixsend-led {
+    background: #f5b800; box-shadow: 0 0 4px #f5b800;
+    border-color: #f5b800;
+  }
+  /* Arm-for-recording disc button — appears when a bus has an audio input
+     routed. Red-filled when armed; click to toggle. */
+  .mixer-strip .mixarm {
+    display: flex; align-items: center; justify-content: center;
+    padding: 3px 0; cursor: pointer; user-select: none;
+  }
+  .mixer-strip .mixarm .mixarm-disc {
+    width: 12px; height: 12px; border-radius: 50%;
+    background: #1a1d22; border: 1.5px solid #555;
+    transition: background 0.1s, box-shadow 0.1s;
+  }
+  .mixer-strip .mixarm:hover .mixarm-disc { border-color: #888; }
+  .mixer-strip .mixarm.on .mixarm-disc {
+    background: var(--record);
+    border-color: var(--record);
+    box-shadow: 0 0 5px var(--record);
+  }
+  /* "IN" button — FL-style audio-input picker per mixer insert. Compact so it
+     never crowds the fader. Red = mic feeding this insert. */
+  .mixer-strip .mixin {
+    display: flex; align-items: center; justify-content: center; gap: 4px;
+    font-size: 9px; letter-spacing: 0.5px; color: var(--dim);
+    padding: 3px 0; cursor: pointer;
+    border-top: 1px solid #14171c; border-bottom: 1px solid #14171c;
+    user-select: none;
+  }
+  .mixer-strip .mixin:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+  .mixer-strip .mixin.on { color: var(--record); font-weight: 600; }
+  .mixer-strip .mixin .mixin-led {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #1a1d22; border: 1px solid #333;
+  }
+  .mixer-strip .mixin.on .mixin-led {
+    background: var(--record); box-shadow: 0 0 4px var(--record);
+    border-color: var(--record);
+  }
   .mixer-strip .faderwrap {
     flex: 1; display: flex; align-items: center; justify-content: center;
     padding: 0; min-height: 0;
@@ -793,6 +849,30 @@
   #mixer-slots-hint {
     padding: 8px 10px; font-size: 10px; color: var(--dim);
     border-top: 1px solid var(--line); line-height: 1.4;
+  }
+
+  /* FL-style IN row on the mixer's right panel — mirrors the small IN LED on
+     each strip, but for the currently-selected strip. Click the button to
+     open the mic picker; when a mic is routed, the label shows the device
+     name and the row glows pink. */
+  #mixer-input-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px; border-bottom: 1px solid var(--line);
+    background: var(--panel-2); font-size: 11px;
+  }
+  #mixer-input-row.hidden { display: none; }
+  #mixer-input-row .miri-label {
+    color: var(--dim); font-weight: 700; letter-spacing: 0.5px;
+  }
+  #mixer-input-row.active .miri-label { color: var(--record); }
+  #mixer-input-btn {
+    flex: 1; text-align: left; padding: 3px 8px;
+    background: var(--panel-3); border: 1px solid var(--line);
+    color: var(--text); font-size: 11px; border-radius: 3px; cursor: pointer;
+  }
+  #mixer-input-btn:hover { background: var(--panel-1); }
+  #mixer-input-row.active #mixer-input-btn {
+    color: var(--record); border-color: var(--record);
   }
 
   /* Floating slot picker — click a slot to pick a plugin, no drag needed.
@@ -2013,6 +2093,12 @@
         <div id="mixer-slots-header">
           <span>Effects: <span class="mshdr-name" id="mixer-slots-title">—</span></span>
         </div>
+        <!-- FL-style IN row for the selected mixer strip. Reads "IN: (none)"
+             for an empty strip, or the device name when a mic is routed. -->
+        <div id="mixer-input-row" class="hidden">
+          <span class="miri-label">IN</span>
+          <button id="mixer-input-btn" type="button" title="Route a mic / audio input into this insert">(none)</button>
+        </div>
         <div id="mixer-slots-list"></div>
         <div id="mixer-slots-hint">
           Empty slot → click to add. Filled slot → click to open. LED bypasses, × removes.
@@ -2099,6 +2185,39 @@
   </div>
 </div>
 
+<!-- Picker modal for sidechain send destinations. -->
+<div id="send-picker-modal" class="modal hidden" style="z-index:400">
+  <div class="modal-panel" style="max-width:420px">
+    <h3 style="font-size:14px;margin:0 0 8px" id="send-picker-title">Sidechain to…</h3>
+    <p style="font-size:12px;line-height:1.5;color:var(--text-dim);margin:0 0 10px">
+      Pick a mixer insert to feed. A compressor / limiter on that insert with a sidechain input will duck against this strip's signal.
+    </p>
+    <label style="font-size:12px;color:var(--text-dim)">Destination</label>
+    <select id="send-picker-select" style="width:100%"></select>
+    <div class="row" style="margin-top:14px">
+      <button id="send-picker-cancel">Cancel</button>
+      <button id="send-picker-clear">Remove</button>
+      <button id="send-picker-ok" style="background:var(--accent);border-color:var(--accent);color:white">Set</button>
+    </div>
+  </div>
+</div>
+
+<!-- Picker modal for the input device backing microphone channels. -->
+<div id="mic-picker-modal" class="modal hidden" style="z-index:400">
+  <div class="modal-panel" style="max-width:420px">
+    <h3 style="font-size:14px;margin:0 0 8px">Pick a microphone</h3>
+    <p style="font-size:12px;line-height:1.5;color:var(--text-dim);margin:0 0 10px">
+      Choose the USB mic or audio interface to route into a new channel. You'll hear yourself through Nasty as soon as you click Add.
+    </p>
+    <label style="font-size:12px;color:var(--text-dim)">Input device</label>
+    <select id="mic-picker-select" style="width:100%"></select>
+    <div class="row" style="margin-top:14px">
+      <button id="mic-picker-cancel">Cancel</button>
+      <button id="mic-picker-ok" style="background:var(--accent);border-color:var(--accent);color:white">Add</button>
+    </div>
+  </div>
+</div>
+
 <input type="file" id="file-input" accept=".json" style="display:none" />
 
 <script>
@@ -2112,7 +2231,7 @@ const PR_BEAT_WIDTH = 60;
 const PR_PITCH_MIN = 24;
 const PR_PITCH_MAX = 108;
 const STORAGE_KEY = 'nasty.song.fl.v1';
-const SONG_SCHEMA_VERSION = 1;
+const SONG_SCHEMA_VERSION = 2;
 const PALETTE = ['#ff5c93','#6b7cff','#33c58a','#ffb020','#a95cff','#ff7c47','#42c8e0','#e05cff','#ffdd57','#5cff8f'];
 
 let song = { version: SONG_SCHEMA_VERSION, bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] }, transportMode: 'pat' };
@@ -2480,6 +2599,20 @@ function ensureShape(s) {
     c.color = c.color || PALETTE[i % PALETTE.length];
     if (!c.insertId) c.insertId = 'master';
   });
+  // Drop any legacy channel-rack "audio input" rows — mics now live only as
+  // per-bus IN toggles that the user explicitly clicks on a mixer strip. We
+  // deliberately do NOT auto-flag the bus.audioInputEnabled here; adding a
+  // mic is a manual action, like FL Studio.
+  if (s.channels.some(c => c.instrument === 'audioInput')) {
+    s.channels = s.channels.filter(c => c.instrument !== 'audioInput');
+  }
+  // v1 → v2: an earlier build auto-migrated old audio-input channels into a
+  // per-bus IN flag. Clear those on load so the user only sees IN routes they
+  // explicitly turned on. Later versions where the user manually flips IN are
+  // v2+ and won't be touched by this pass.
+  if ((s.version || 1) < 2) {
+    for (const b of (s.mixer.busses || [])) delete b.audioInputEnabled;
+  }
   s.patterns.forEach((p, i) => {
     p.notes = p.notes || [];
     p.color = p.color || PALETTE[i % PALETTE.length];
@@ -3085,8 +3218,17 @@ function animatePlayhead() {
     const isPat = song.transportMode === 'pat';
     const isRecording = !!midiRecording;
     const barsElapsed = (displayElapsed * song.bpm / 60) / 4;
-    // Playlist playhead only in SONG mode.
-    if (!isPat) ph.style.left = (barsElapsed * BAR_WIDTH) + 'px';
+    // Playlist playhead only in SONG mode — reads session time (which never
+    // wraps) instead of the pattern loop position (which does). Reading the
+    // pattern position here made the arrangement playhead wrap every N bars
+    // matching the current pattern's loop length — surprising when there's
+    // a 3-bar audio clip that plays through in full while the playhead
+    // ticks past 1 bar and jumps back.
+    if (!isPat) {
+      const songSec = engineTransport.transportSecondsLive();
+      const songBars = (songSec * song.bpm / 60) / 4;
+      ph.style.left = (songBars * BAR_WIDTH) + 'px';
+    }
     // Channel-rack playhead in PAT mode. Positioned within the step grid:
     // starts at the end of the sticky left cluster (340px) + steps padding
     // (8px) = 348px, then travels across step_width * total_steps.
@@ -3384,6 +3526,47 @@ async function applyToolCalls(calls) {
             ? `+ ${plug.name} / "${input.preset_name}" on ${ownerLabel} (routed from ${ch.name})`
             : `+ ${plug.name} on ${ownerLabel} (routed from ${ch.name})`;
           summaries.push(label);
+        }
+      } else if (name === 'sidechain_channel') {
+        // AI-driven sidechain. Source can be a channel id (in which case we
+        // resolve to its target bus) or a bus id directly.
+        const busses = (song.mixer && song.mixer.busses) || [];
+        const resolveSourceBus = (id) => {
+          const bus = busses.find(b => b.id === id);
+          if (bus) return bus;
+          const ch = song.channels.find(c => c.id === id);
+          if (!ch) return null;
+          const n = ch.targetInsertNum || 0;
+          return busses.find(b => b.num === n) || null;
+        };
+        const src = resolveSourceBus(input.source_id);
+        const tgt = input.target_id ? busses.find(b => b.id === input.target_id) : null;
+        if (!src) {
+          summaries.push(`× sidechain: source "${input.source_id}" not found`);
+        } else if (input.target_id && !tgt) {
+          summaries.push(`× sidechain: target bus "${input.target_id}" not found`);
+        } else {
+          src.sends = src.sends || [];
+          const existing = src.sends.find(s => s.targetInput === 'sidechain');
+          const sendId = existing ? existing.sendId : ('send_' + Math.random().toString(36).slice(2, 8));
+          src.sends = src.sends.filter(s => s.targetInput !== 'sidechain');
+          if (tgt) {
+            src.sends.push({ sendId, targetChannelId: tgt.id, targetInput: 'sidechain' });
+            if (window.nasty && window.nasty.engine) {
+              window.nasty.engine.send({
+                cmd: 'set_channel_send',
+                channelId: src.id, sendId,
+                targetChannelId: tgt.id, targetInput: 'sidechain',
+              });
+            }
+            summaries.push(`↳ sidechain Insert ${src.num} → Insert ${tgt.num}`);
+          } else if (existing && window.nasty && window.nasty.engine) {
+            window.nasty.engine.send({
+              cmd: 'remove_channel_send',
+              channelId: src.id, sendId: existing.sendId,
+            });
+            summaries.push(`− sidechain from Insert ${src.num}`);
+          }
         }
       } else if (name === 'create_pattern') {
         if (!song.patterns.find(p => p.id === input.id)) {
@@ -4020,14 +4203,28 @@ function renderMixer() {
     arr.push(c);
     channelsByInsert.set(n, arr);
   }
+  const busByNum = new Map((song.mixer.busses || []).map(b => [b.num, b]));
   for (const b of (song.mixer.busses || [])) {
     const routed = channelsByInsert.get(b.num) || [];
     const color = routed[0] ? routed[0].color : null;
-    const label = routed.length ? routed.map(c => c.name).join(' + ') : b.name;
+    const label = b.audioInputEnabled
+      ? (b.name && b.name !== ('Insert ' + b.num) ? b.name : (song.audioInputDevice || 'Mic'))
+      : (routed.length ? routed.map(c => c.name).join(' + ') : b.name);
+    const scSend = (b.sends || []).find(s => s.targetInput === 'sidechain');
+    const scTargetLabel = scSend
+      ? (() => {
+          const t = (song.mixer.busses || []).find(bb => bb.id === scSend.targetChannelId);
+          return t ? ('SC→' + (t.num || t.name)) : 'SC→?';
+        })()
+      : 'SC';
     strips.appendChild(buildStrip({
       id: b.id, name: label, volume: b.volume ?? 1.0,
       color, kind: 'bus', fxCount: pluginEffectsCount(b),
       muted: false, solo: false, num: b.num,
+      audioInputEnabled: !!b.audioInputEnabled,
+      recArmed: !!b.recArmed,
+      sidechainActive: !!scSend,
+      sidechainLabel: scTargetLabel,
     }));
   }
 
@@ -4044,12 +4241,13 @@ function renderMixer() {
   renderMixerSlots();
 }
 
-function buildStrip({ id, name, volume, color, kind, fxCount, muted, solo, num }) {
+function buildStrip({ id, name, volume, color, kind, fxCount, muted, solo, num, audioInputEnabled, recArmed, sidechainActive, sidechainLabel }) {
   const strip = document.createElement('div');
   strip.className = 'mixer-strip' + (kind === 'master' ? ' master' : '');
   strip.dataset.id = id;
   strip.dataset.kind = kind;
   const isMaster = kind === 'master';
+  const isBus = kind === 'bus';
   strip.innerHTML = `
     ${color ? `<div class="colordot" style="background:${color}"></div>` : '<div class="colordot"></div>'}
     ${num != null
@@ -4059,6 +4257,9 @@ function buildStrip({ id, name, volume, color, kind, fxCount, muted, solo, num }
     <div class="mstate">
       <div class="led ${muted ? '' : 'on'}" title="active"></div>
     </div>
+    ${isBus ? `<div class="mixsend ${sidechainActive ? 'on' : ''}" data-send-id="${id}" title="${sidechainActive ? 'Sidechaining to ' + sidechainLabel + ' — click to change' : 'Sidechain this strip to another insert'}"><span class="mixsend-led"></span>${sidechainLabel || 'SC'}</div>` : ''}
+    ${isBus ? `<div class="mixin ${audioInputEnabled ? 'on' : ''}" data-mixin-id="${id}" title="${audioInputEnabled ? 'Mic feeding this insert — click to remove' : 'Route a mic / audio input into this insert'}"><span class="mixin-led"></span>IN</div>` : ''}
+    ${isBus && audioInputEnabled ? `<div class="mixarm ${recArmed ? 'on' : ''}" data-arm-id="${id}" title="${recArmed ? 'Armed — recording will capture this input' : 'Arm for recording'}"><span class="mixarm-disc"></span></div>` : ''}
     <div class="fxcount">${fxCount ? fxCount + ' FX' : '·'}</div>
     <div class="faderwrap">
       <input class="fader" type="range" min="0" max="1" step="0.001" value="${faderGainToPosition(volume)}" data-id="${id}" />
@@ -4069,9 +4270,34 @@ function buildStrip({ id, name, volume, color, kind, fxCount, muted, solo, num }
     // Don't hijack clicks inside the fader / editable name.
     const tag = (e.target.tagName || '').toLowerCase();
     if (tag === 'input' || e.target.isContentEditable) return;
+    // IN button is its own click target — never let strip-select run for it.
+    if (e.target.closest('.mixin')) return;
+    if (e.target.closest('.mixarm')) return;
+    if (e.target.closest('.mixsend')) return;
     selectedStripId = id;
     renderMixer();
   });
+  const mixinBtn = strip.querySelector('.mixin');
+  if (mixinBtn) {
+    mixinBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      onMixerInputClick(id);
+    });
+  }
+  const armBtn = strip.querySelector('.mixarm');
+  if (armBtn) {
+    armBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      onMixerArmClick(id);
+    });
+  }
+  const sendBtn = strip.querySelector('.mixsend');
+  if (sendBtn) {
+    sendBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openSendPicker(id);
+    });
+  }
   const fader = strip.querySelector('.fader');
   fader.addEventListener('input', () => onStripFader(id, kind, faderPositionToGain(parseFloat(fader.value))));
   const nameEl = strip.querySelector('.mname');
@@ -4157,6 +4383,24 @@ function renderMixerSlots() {
     }
   }
   title.textContent = ownerLabel;
+
+  // FL-style IN row — visible only for buses (not master). Reflects the
+  // selected strip's audio-input assignment; click opens the picker.
+  const inRow = document.getElementById('mixer-input-row');
+  const inBtn = document.getElementById('mixer-input-btn');
+  if (inRow && inBtn) {
+    const bus = (song.mixer.busses || []).find(b => b.id === selectedStripId);
+    if (!bus) {
+      inRow.classList.add('hidden');
+    } else {
+      inRow.classList.remove('hidden');
+      inRow.classList.toggle('active', !!bus.audioInputEnabled);
+      inBtn.textContent = bus.audioInputEnabled
+        ? (song.audioInputDevice || 'Mic')
+        : '(none)';
+      inBtn.onclick = () => onMixerInputClick(bus.id);
+    }
+  }
 
   const pluginEffects = owner
     ? (owner.effects || []).filter(e => e && e.type === 'plugin')
@@ -4677,6 +4921,260 @@ async function addChannelFromInstrument({ id, name, pluginId, gmProgram, drumPit
   render();
   persist();
 }
+
+// ------------------------------------------------------------
+// FL-style "IN" per mixer insert — Phase 1 of "record over a beat"
+// ------------------------------------------------------------
+// Each mixer bus can toggle a mic feed via the small IN button on its strip.
+// One global input device (song.audioInputDevice) — CoreAudio can only stream
+// one input device at a time in our current setup. `pendingMicBusId` remembers
+// which strip requested the picker so we can wire the mic in once the engine
+// confirms the device is open.
+let pendingMicBusId = null;
+
+// ------------------------------------------------------------
+// Sidechain / signal routing
+// ------------------------------------------------------------
+// Every mixer bus can have a list of `sends` — each one taps this bus's
+// output and delivers it to a specific input port on the target
+// (main or sidechain). Data model built for the general routing case;
+// UI so far only wires up the sidechain-send flow.
+let sendPickerSourceId = null;
+
+function openSendPicker(sourceBusId) {
+  const source = (song.mixer.busses || []).find(b => b.id === sourceBusId);
+  if (!source) return;
+  sendPickerSourceId = sourceBusId;
+  const modal = document.getElementById('send-picker-modal');
+  const sel = document.getElementById('send-picker-select');
+  const title = document.getElementById('send-picker-title');
+  const clearBtn = document.getElementById('send-picker-clear');
+  title.textContent = 'Sidechain Insert ' + (source.num || '') + ' → …';
+  sel.innerHTML = '';
+  const currentSc = (source.sends || []).find(s => s.targetInput === 'sidechain');
+  const empty = document.createElement('option');
+  empty.value = '';
+  empty.textContent = '— pick an insert —';
+  sel.appendChild(empty);
+  for (const b of (song.mixer.busses || [])) {
+    if (b.id === sourceBusId) continue;
+    const opt = document.createElement('option');
+    opt.value = b.id;
+    opt.textContent = 'Insert ' + (b.num || '') + (b.name && b.name !== 'Insert ' + b.num ? ' — ' + b.name : '');
+    if (currentSc && currentSc.targetChannelId === b.id) opt.selected = true;
+    sel.appendChild(opt);
+  }
+  clearBtn.style.display = currentSc ? '' : 'none';
+  modal.classList.remove('hidden');
+}
+
+function closeSendPicker() {
+  document.getElementById('send-picker-modal').classList.add('hidden');
+  sendPickerSourceId = null;
+}
+
+function applySendPickerChoice(targetBusId) {
+  const source = (song.mixer.busses || []).find(b => b.id === sendPickerSourceId);
+  if (!source) return;
+  source.sends = source.sends || [];
+  // One sidechain send per source for MVP — replace any existing one.
+  const existing = source.sends.find(s => s.targetInput === 'sidechain');
+  const sendId = existing ? existing.sendId : ('send_' + Math.random().toString(36).slice(2, 8));
+  source.sends = source.sends.filter(s => s.targetInput !== 'sidechain');
+  if (targetBusId) {
+    source.sends.push({ sendId, targetChannelId: targetBusId, targetInput: 'sidechain' });
+    if (window.nasty && window.nasty.engine) {
+      window.nasty.engine.send({
+        cmd: 'set_channel_send',
+        channelId: source.id, sendId,
+        targetChannelId: targetBusId,
+        targetInput: 'sidechain',
+      });
+    }
+  } else if (existing && window.nasty && window.nasty.engine) {
+    window.nasty.engine.send({
+      cmd: 'remove_channel_send',
+      channelId: source.id, sendId: existing.sendId,
+    });
+  }
+  renderMixer();
+  persist();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const cancel = document.getElementById('send-picker-cancel');
+  const clear = document.getElementById('send-picker-clear');
+  const ok = document.getElementById('send-picker-ok');
+  if (cancel) cancel.addEventListener('click', closeSendPicker);
+  if (clear) clear.addEventListener('click', () => {
+    applySendPickerChoice('');
+    closeSendPicker();
+  });
+  if (ok) ok.addEventListener('click', () => {
+    const sel = document.getElementById('send-picker-select');
+    applySendPickerChoice(sel.value || '');
+    closeSendPicker();
+  });
+});
+
+function onMixerArmClick(busId) {
+  const bus = (song.mixer.busses || []).find(b => b.id === busId);
+  if (!bus) return;
+  bus.recArmed = !bus.recArmed;
+  renderMixer();
+  persist();
+}
+
+function anyBusRecArmed() {
+  return (song.mixer.busses || []).some(b => b.audioInputEnabled && b.recArmed);
+}
+
+function armedBusId() {
+  const bus = (song.mixer.busses || []).find(b => b.audioInputEnabled && b.recArmed);
+  return bus ? bus.id : null;
+}
+
+// Set at start_recording so the clip lands at the exact transport position
+// where capture began. Undefined outside a recording session.
+let pendingRecordingContext = null;
+
+function findOrCreateAudioTrack(bus) {
+  const label = bus
+    ? (bus.name && bus.name.startsWith('Insert') ? 'Mic ' + (bus.num || '') : bus.name)
+    : 'Mic';
+  const trackName = 'Audio · ' + label.trim();
+  let track = song.tracks.find(t => t.name === trackName);
+  if (track) return track;
+  track = {
+    id: 'atk_' + Math.random().toString(36).slice(2, 8),
+    name: trackName,
+    muted: false, solo: false, clips: [],
+  };
+  song.tracks.push(track);
+  return track;
+}
+
+function samplesPerBar() {
+  const sr = engineTransport.sampleRate || 48000;
+  const bpm = song.bpm || 120;
+  return 4 * (60 / bpm) * sr;
+}
+
+function addAudioClipFromRecording(ctx, path, lengthSamples) {
+  if (!path || !lengthSamples) return;
+  const bus = (song.mixer.busses || []).find(b => b.id === ctx.busId);
+  const track = findOrCreateAudioTrack(bus);
+  const spb = samplesPerBar();
+  const startBar = ctx.startSample > 0 ? (ctx.startSample / spb) : 0;
+  const lengthBars = Math.max(1 / 16, lengthSamples / spb);
+  const clip = {
+    id: 'aclip_' + Math.random().toString(36).slice(2, 8),
+    type: 'audio',
+    path,
+    busId: ctx.busId,
+    startSample: ctx.startSample || 0,
+    lengthSamples,
+    startBar, lengthBars,
+    color: bus && bus.color || '#ff5c93',
+  };
+  track.clips.push(clip);
+  if (window.nasty && window.nasty.engine) {
+    window.nasty.engine.send({
+      cmd: 'add_audio_clip',
+      clipId: clip.id, path: clip.path, busId: clip.busId,
+      songStartSample: clip.startSample,
+      lengthSamples: clip.lengthSamples,
+    });
+  }
+  render();
+  persist();
+}
+
+function onMixerInputClick(busId) {
+  const bus = (song.mixer.busses || []).find(b => b.id === busId);
+  if (!bus) return;
+  // Toggle off if already routing a mic into this insert.
+  if (bus.audioInputEnabled) {
+    bus.audioInputEnabled = false;
+    if (window.nasty && window.nasty.engine) {
+      window.nasty.engine.send({
+        cmd: 'set_channel_audio_input', channelId: bus.id, enabled: false,
+      });
+    }
+    renderMixer();
+    persist();
+    return;
+  }
+  pendingMicBusId = busId;
+  openMicPicker();
+}
+
+function openMicPicker() {
+  if (!(window.nasty && window.nasty.engine)) return;
+  const modal = document.getElementById('mic-picker-modal');
+  const sel = document.getElementById('mic-picker-select');
+  sel.innerHTML = '<option value="">Loading…</option>';
+  modal.classList.remove('hidden');
+  window.nasty.engine.send({ cmd: 'list_audio_inputs' });
+}
+
+function closeMicPicker() {
+  document.getElementById('mic-picker-modal').classList.add('hidden');
+}
+
+function populateMicPicker(inputs, currentInput) {
+  const sel = document.getElementById('mic-picker-select');
+  sel.innerHTML = '';
+  if (!Array.isArray(inputs) || !inputs.length) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = 'No input devices found — plug in your mic and try again.';
+    sel.appendChild(opt);
+    return;
+  }
+  for (const name of inputs) {
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name;
+    if (name === currentInput || name === song.audioInputDevice) opt.selected = true;
+    sel.appendChild(opt);
+  }
+  if (!sel.value) {
+    const usb = inputs.find(n => /usb|mic|shure|blue|yeti|scarlett|apollo|at2020/i.test(n));
+    if (usb) sel.value = usb;
+  }
+}
+
+function wireMicIntoBus(busId) {
+  const bus = (song.mixer.busses || []).find(b => b.id === busId);
+  if (!bus) return;
+  bus.audioInputEnabled = true;
+  if (window.nasty && window.nasty.engine) {
+    window.nasty.engine.send({
+      cmd: 'set_channel_audio_input', channelId: bus.id, enabled: true,
+    });
+  }
+  renderMixer();
+  persist();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const cancel = document.getElementById('mic-picker-cancel');
+  const ok = document.getElementById('mic-picker-ok');
+  if (cancel) cancel.addEventListener('click', () => {
+    pendingMicBusId = null;
+    closeMicPicker();
+  });
+  if (ok) ok.addEventListener('click', () => {
+    const sel = document.getElementById('mic-picker-select');
+    const dev = sel.value;
+    if (!dev || !pendingMicBusId) return;
+    song.audioInputDevice = dev;
+    // Engine will emit input_device_set — event handler wires the mic in.
+    window.nasty.engine.send({ cmd: 'set_input_device', name: dev });
+    closeMicPicker();
+  });
+});
 
 // Close on outside click / Escape.
 document.addEventListener('mousedown', (e) => {
@@ -5235,6 +5733,12 @@ function killClipByElement(clipEl) {
   const trackId = clipEl.dataset.trackId;
   const track = song.tracks.find(t => t.id === trackId);
   if (!track || !clipId) return;
+  const doomed = track.clips.find(c => c.id === clipId);
+  // Audio clips have a live engine node — unhook it here or the deleted take
+  // keeps playing until Stop. Matches the Delete-key path.
+  if (doomed && doomed.type === 'audio' && window.nasty && window.nasty.engine) {
+    window.nasty.engine.send({ cmd: 'remove_audio_clip', clipId });
+  }
   track.clips = track.clips.filter(c => c.id !== clipId);
   if (selectedClipId === clipId) selectedClipId = null;
   selectedClipIds.delete(clipId);
@@ -5348,6 +5852,15 @@ document.addEventListener('keydown', (e) => {
     ? selectedClipIds
     : (selectedClipId ? new Set([selectedClipId]) : new Set());
   if ((e.key === 'Delete' || e.key === 'Backspace') && activeIds.size > 0 && !isPrOpen) {
+    // Audio clips need to tell the engine to unhook their playback node too —
+    // otherwise the deleted take keeps playing on the next transport start.
+    for (const t of song.tracks) {
+      for (const c of t.clips) {
+        if (activeIds.has(c.id) && c.type === 'audio' && window.nasty && window.nasty.engine) {
+          window.nasty.engine.send({ cmd: 'remove_audio_clip', clipId: c.id });
+        }
+      }
+    }
     for (const t of song.tracks) t.clips = t.clips.filter(c => !activeIds.has(c.id));
     selectedClipId = null;
     selectedClipIds = new Set();
@@ -6186,11 +6699,38 @@ document.addEventListener('keyup', (e) => {
 document.getElementById('play-btn').addEventListener('click', () => {
   const hasSongContent = song.tracks.some(t => t.clips.length);
   const hasPattern = song.transportMode === 'pat' && currentPatternId;
+  const audioArmed = anyBusRecArmed();
+  // Recording an audio take requires all three: transport Record button on
+  // (primes the deck), a mixer strip armed with IN routed, and SONG mode
+  // (the take goes onto the playlist, not the pattern loop). Any missing
+  // condition = normal playback.
+  const canRecordAudio = recArmed && audioArmed && song.transportMode === 'song';
   if (!recArmed && !hasSongContent && !hasPattern) return;
-  if (recArmed) startMidiRecording();
-  else playSong();
+  if (recArmed && audioArmed && song.transportMode !== 'song') {
+    alert('Switch to SONG mode to record audio takes onto the arrangement.');
+    return;
+  }
+  if (canRecordAudio && window.nasty && window.nasty.engine) {
+    pendingRecordingContext = {
+      busId: armedBusId(),
+      startSample: Math.max(0, engineTransport.currentSample || 0),
+    };
+    window.nasty.engine.send({ cmd: 'start_recording' });
+  }
+  if (recArmed && getActiveInputChannel && getActiveInputChannel()) {
+    // MIDI-record path (needs an active pattern channel — starts transport).
+    startMidiRecording();
+  } else {
+    playSong();
+  }
 });
 document.getElementById('stop-btn').addEventListener('click', () => {
+  // Always send stop_recording — engine no-ops if nothing's active. This
+  // means an audio-record session started from any code path gets closed
+  // cleanly whenever the user hits Stop.
+  if (window.nasty && window.nasty.engine) {
+    window.nasty.engine.send({ cmd: 'stop_recording' });
+  }
   stopSong();
 });
 document.getElementById('loop-btn').addEventListener('click', () => {
@@ -7060,6 +7600,12 @@ async function hydratePluginChannels() {
   const sf2 = window.nasty.sf2Path ? await window.nasty.sf2Path() : '';
   // Path to bundled drum samples (mirrors sf2Path for GM).
   const drumsBase = sf2 ? sf2.replace(/[^/]+$/, 'drums/') : '';
+  // Restore the input device first (if the song used one) so bus mic feeds
+  // come up with signal instead of silence.
+  if (song.audioInputDevice
+      && (song.mixer.busses || []).some(b => b.audioInputEnabled)) {
+    window.nasty.engine.send({ cmd: 'set_input_device', name: song.audioInputDevice });
+  }
   for (const c of song.channels) {
     if (c.instrument !== 'plugin' || !c.pluginId) continue;
     if (typeof c.pluginId === 'string' && c.pluginId.startsWith('gm-')) {
@@ -7101,6 +7647,24 @@ async function hydratePluginChannels() {
   window.nasty.engine.send({ cmd: 'create_bus', channelId: 'master_bus' });
   for (const b of (song.mixer.busses || [])) {
     window.nasty.engine.send({ cmd: 'create_bus', channelId: b.id });
+    // Restore the FL-style "IN" mic feed if this insert was tagged for input.
+    if (b.audioInputEnabled) {
+      window.nasty.engine.send({
+        cmd: 'set_channel_audio_input', channelId: b.id, enabled: true,
+      });
+    }
+    // Restore any sends (sidechain / routing) attached to this bus. Sent
+    // AFTER create_bus so both source + target exist; sent BEFORE the effect
+    // chain hydration below so the send resolves the moment the target's
+    // sidechain-capable plugin arrives.
+    for (const s of (b.sends || [])) {
+      window.nasty.engine.send({
+        cmd: 'set_channel_send',
+        channelId: b.id, sendId: s.sendId,
+        targetChannelId: s.targetChannelId,
+        targetInput: s.targetInput || 'main',
+      });
+    }
   }
   for (const c of song.channels) {
     const target = c.targetInsertNum ? ('bus_' + c.targetInsertNum) : '';
@@ -7148,6 +7712,20 @@ async function hydratePluginChannels() {
   // engine's dedicated master_bus node.
   const master = (song.mixer.inserts || []).find(i => i.id === 'master');
   if (master) hydrateEffects('master_bus', master.effects, master.effectStates);
+
+  // Audio clips — recorded WAVs that play back during SONG transport. Each
+  // clip becomes an AudioClipPlayer node in the engine, wired to its bus.
+  for (const t of (song.tracks || [])) {
+    for (const clip of (t.clips || [])) {
+      if (clip.type !== 'audio' || !clip.path) continue;
+      window.nasty.engine.send({
+        cmd: 'add_audio_clip',
+        clipId: clip.id, path: clip.path, busId: clip.busId || 'master_bus',
+        songStartSample: clip.startSample || 0,
+        lengthSamples: clip.lengthSamples || 0,
+      });
+    }
+  }
 }
 
 // Boot state — tracks the audio engine's warm-up progression. The overlay
@@ -8202,6 +8780,60 @@ if (window.nasty && window.nasty.engine) {
     } else if (msg.event === 'output_device_set') {
       // Re-query so the dropdown reflects what the engine actually settled on.
       window.nasty.engine.send({ cmd: 'list_audio_devices' });
+    } else if (msg.event === 'audio_inputs') {
+      populateMicPicker(msg.inputs || [], msg.currentInput || '');
+    } else if (msg.event === 'input_device_set') {
+      // Engine now has the mic open. If a bus was waiting for this (user
+      // clicked "IN" on a mixer strip), wire it up now.
+      if (pendingMicBusId) {
+        wireMicIntoBus(pendingMicBusId);
+        pendingMicBusId = null;
+      } else {
+        // Deviceless / global change — re-push any buses that had a mic feed
+        // so they reconnect to the freshly-open input node.
+        for (const b of (song.mixer.busses || [])) {
+          if (b.audioInputEnabled) {
+            window.nasty.engine.send({
+              cmd: 'set_channel_audio_input', channelId: b.id, enabled: true,
+            });
+          }
+        }
+      }
+      if (msg.inputChannels === 0) {
+        console.warn('[nasty] input device opened with 0 channels active — likely mic permission or channel-count issue');
+      }
+    } else if (msg.event === 'channel_audio_input_set') {
+      console.log('[nasty] mic wired:', msg.channelId, 'enabled=', msg.enabled);
+    } else if (msg.event === 'audio_input_channel_created') {
+      console.log('[nasty] audio-input channel live:', msg.channelId);
+    } else if (msg.event === 'recording_started') {
+      const status = document.getElementById('rec-status');
+      if (status) {
+        status.classList.remove('hidden');
+        const short = (msg.path || '').split('/').pop();
+        status.textContent = 'REC MIC → ' + short;
+      }
+      console.log('[nasty] recording →', msg.path);
+    } else if (msg.event === 'recording_stopped') {
+      const status = document.getElementById('rec-status');
+      const secs = (msg.samples && engineTransport.sampleRate)
+        ? (msg.samples / engineTransport.sampleRate).toFixed(1)
+        : '?';
+      const short = (msg.path || '').split('/').pop();
+      if (status && msg.path) {
+        status.classList.remove('hidden');
+        status.textContent = `Saved ${short} (${secs}s) — dropped on arrangement`;
+        setTimeout(() => status.classList.add('hidden'), 8000);
+      }
+      // Drop the fresh take onto the arrangement as an audio clip on the bus
+      // it was recorded from, at the transport position where capture started.
+      if (msg.path && pendingRecordingContext) {
+        addAudioClipFromRecording(pendingRecordingContext, msg.path, msg.samples || 0);
+        pendingRecordingContext = null;
+      }
+      console.log('[nasty] saved recording →', msg.path, 'samples=', msg.samples);
+    } else if (msg.event === 'audio_clip_added') {
+      console.log('[nasty] audio clip playing:', msg.clipId);
     } else if (msg.event === 'plugin_loaded') {
       // Stash the plugin's params on the channel so Claude reads them in
       // the next chat turn — that's how set_plugin_param becomes possible.

@@ -33,6 +33,7 @@ target_sources(nasty-audio-engine PRIVATE
     src/StdioBridge.cpp
     src/GmSynth.cpp
     src/SampleDrum.cpp
+    src/AudioClipPlayer.cpp
     $<$<PLATFORM_ID:Darwin>:src/MacHelpers.mm>
 )
 

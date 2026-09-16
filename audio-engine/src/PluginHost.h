@@ -129,6 +129,58 @@ public:
     juce::var listAudioDevices();
     juce::String setOutputDevice(const juce::String& deviceName);
 
+    // Available INPUT devices (USB mics, interfaces). Kept separate from
+    // listAudioDevices so the mixer's per-channel input picker never surfaces
+    // an output-only device (built-in speakers, DisplayPort audio, etc.).
+    juce::var listAudioInputs();
+
+    // Bind the audio-input side of the device manager to this device. Empty
+    // string closes the input side (mixer strips lose their signal but audio
+    // playback continues). Reopens the device internally — brief interruption.
+    // Bluetooth caveat: opening the input of a BT headset flips it to HFP
+    // (24kHz mono) which wrecks music playback, so callers should pass a
+    // wired USB mic / audio interface here, not the same device as output.
+    juce::String setInputDevice(const juce::String& deviceName);
+
+    juce::var currentInputSnapshot() const;
+
+    // Create an audio-input channel: a passthrough that pulls signal from the
+    // graph's audio input node into a mixer chain (effects + gain → target).
+    // The channel exists even before an input device is bound — it just
+    // carries silence until setInputDevice() connects a mic. Idempotent by id.
+    juce::String createAudioInputChannel(const juce::String& channelId);
+
+    // Flag any existing channel or bus to receive the graph audio input node's
+    // signal. FL-style "IN" on a mixer insert: the bus already exists (created
+    // by createBusChannel); this just wires the mic into it so the mic mixes
+    // with anything else routed there. enabled=false removes the wiring.
+    void setChannelAudioInput(const juce::String& channelId, bool enabled);
+
+    // Start writing the current audio input to a WAV file under
+    // ~/Music/Nasty Recordings/. Returns error string on failure (empty on
+    // success). outPath is set to the file path on success. Idempotent — a
+    // second call while recording is a no-op returning "already recording".
+    juce::String startRecording(juce::String& outPath);
+
+    // Stop the active recording, flush + close the file. outPath and
+    // outSamples are set to the file path and total captured sample count.
+    // Empty error on success; "not recording" if nothing was active.
+    juce::String stopRecording(juce::String& outPath, juce::int64& outSamples);
+
+    // Add a WAV clip that plays back during SONG-mode transport. clipId is
+    // UI-owned (used later by removeAudioClip / setAudioClipPosition).
+    // path must exist. busId names the mixer bus to route into. All times in
+    // session samples. Returns error string on failure, empty on success.
+    juce::String addAudioClip(const juce::String& clipId,
+                              const juce::String& path,
+                              const juce::String& busId,
+                              juce::int64 songStartSample,
+                              juce::int64 lengthSamples);
+    void removeAudioClip(const juce::String& clipId);
+    void setAudioClipPosition(const juce::String& clipId,
+                              juce::int64 songStartSample,
+                              juce::int64 lengthSamples);
+
     // Snapshot of the currently-open output device — name, sample rate, output
     // channel count. Empty name / rate 0 means no device came up. Used by the
     // UI's boot loading overlay to gate playback until output is live.
@@ -143,6 +195,18 @@ public:
     // runs its own effect chain and feeds either master or another target).
     // Empty targetChannelId = route to master.
     void setChannelTarget(const juce::String& channelId, const juce::String& targetChannelId);
+
+    // Add / replace a signal send on this channel. Sends tap the channel's
+    // gain output and deliver it to a specific input port on the target — for
+    // now "main" (mix into target audio) or "sidechain" (feed the target
+    // bus's first sidechain-capable plugin's detector input). Empty
+    // targetChannelId removes any existing send with this sendId.
+    juce::String setChannelSend(const juce::String& channelId,
+                                const juce::String& sendId,
+                                const juce::String& targetChannelId,
+                                const juce::String& targetInput);
+    void removeChannelSend(const juce::String& channelId,
+                           const juce::String& sendId);
 
     // MIDI note events routed to a channel's plugin.
     void noteOn (const juce::String& channelId, int pitch, float velocity);
@@ -243,6 +307,16 @@ private:
         bool bypassed = false;
     };
 
+    // One outgoing signal send. Stored on the source ChannelSlot. General
+    // enough to cover sidechain today AND aux sends / wet-dry routing later
+    // — the data shape is the 100-year commitment; only the wiring logic
+    // varies per targetInput type.
+    struct SendSlot {
+        juce::String sendId;          // stable id owned by the UI
+        juce::String targetChannelId; // destination bus id
+        juce::String targetInput;     // "main" (channels 0,1) or "sidechain" (2,3)
+    };
+
     struct ChannelSlot {
         juce::AudioProcessorGraph::NodeID pluginNodeId;
         juce::AudioProcessorGraph::NodeID injectorNodeId;
@@ -259,6 +333,17 @@ private:
         // True if this is a bus channel (no instrument, no MIDI). pluginNodeId
         // is a passthrough gain node that source channels connect audio into.
         bool isBus = false;
+        // True if this channel sources audio from the graph's audio input node
+        // (i.e. a microphone / line-in channel). pluginNodeId is a passthrough
+        // fed by audioInputNode → passthrough connections that live outside
+        // the normal rewire tear-down. Combined with isBus=false, isAudioInput=true
+        // signals rewire to leave its input-side connections alone.
+        bool isAudioInput = false;
+        // Additional sends beyond the primary targetChannelId route. Each one
+        // taps this channel's gain output and delivers it to a specific input
+        // port on the target — main (mix in) or sidechain (feed a compressor's
+        // detector). Empty = no extra sends, only the primary route runs.
+        std::vector<SendSlot> sends;
     };
 
     mutable std::mutex mutex;
@@ -275,11 +360,22 @@ private:
     // Called after any effect chain mutation. Must be called under `mutex`.
     void rewireChannelUnlocked(ChannelSlot& slot);
 
+    // Re-rewire every channel that has a send targeting `targetChannelId`.
+    // Called whenever the target bus's effect chain changes so a deferred
+    // sidechain send picks up a freshly-loaded compressor. Must be under mutex.
+    void rewireSendSourcesToUnlocked(const juce::String& targetChannelId);
+
     // Factory: add a MidiInjector to the graph with its transport wired up.
     // Every code path that creates a channel (loadPlugin, addGmChannel,
     // addDrumChannel) goes through here so pattern playback works uniformly.
     juce::AudioProcessorGraph::Node::Ptr addInjectorNode();
     juce::AudioProcessorGraph::Node::Ptr addGainNode();
+
+    // (Re)establish connections from the graph's audio input node into every
+    // audio-input channel's passthrough. Called after setInputDevice() so the
+    // input-side wiring picks up the new device's channel count. Safe to call
+    // when no input device is bound — will just do nothing.
+    void reconnectAudioInputsUnlocked();
 
     // Plugin editor windows are message-thread only — no lock needed.
     class PluginWindow;
@@ -303,6 +399,24 @@ private:
     // Engine-hosted metronome. Added to the graph as a node routed straight
     // to the master output. Enabled/disabled via setMetronomeEnabled().
     juce::AudioProcessorGraph::Node::Ptr metronomeNode;
+
+    // Audio-input recording. writer holds a WAV writer created when the user
+    // hits Record; the audio callback writes each buffer of input samples to
+    // it directly (writeFromFloatArrays blocks briefly on disk — fine for one
+    // mic at 48kHz/24-bit; refactor to ThreadedWriter if we start dropping).
+    std::atomic<bool> recordingActive{false};
+    std::unique_ptr<juce::AudioFormatWriter> recordingWriter;
+    juce::File recordingFile;
+    std::atomic<juce::int64> recordingSamples{0};
+
+    // Loaded audio clips playing back during SONG-mode transport. Each one
+    // is an AudioClipPlayer node in the graph, wired to its bus's input.
+    struct AudioClipSlot {
+        juce::AudioProcessorGraph::NodeID nodeId;
+        juce::String busId;
+    };
+    std::map<juce::String, AudioClipSlot> audioClips;
+    juce::AudioFormatManager clipFormatManager;
 
     // AudioIODeviceCallback overrides — wrap the AudioProcessorPlayer base so
     // we can advance the Transport around each buffer, and publish the real

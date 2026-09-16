@@ -1797,6 +1797,31 @@ _NASTY_TOOLS = [
         },
     },
     {
+        "name": "sidechain_channel",
+        "description": (
+            "Route one channel/bus's signal into another bus's sidechain input. "
+            "Classic use: 'sidechain the kick to the bass' → every kick hit "
+            "ducks the bass ('pump'). Requires a sidechain-capable compressor "
+            "already loaded on the TARGET bus (e.g. Fruity Limiter, OTT, most "
+            "Airwindows / Klanghelm compressors). If no compressor is loaded, "
+            "add one first via add_plugin_effect on the target's mixer bus, "
+            "then call this. "
+            "`source_id` = the channel that TRIGGERS ducking (usually a kick — "
+            "can be a channel id like 'ch_kick' OR a bus id like 'bus_1'; if a "
+            "channel is given we route from the bus it's on). "
+            "`target_id` = the bus id whose compressor SHOULD DUCK (like 'bus_2'). "
+            "Pass empty target_id to remove an existing sidechain from source."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "source_id": {"type": "string"},
+                "target_id": {"type": "string"},
+            },
+            "required": ["source_id", "target_id"],
+        },
+    },
+    {
         "name": "apply_effect",
         "description": (
             "Add or update an effect on a channel. "

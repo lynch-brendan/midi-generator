@@ -1,6 +1,7 @@
 #include "PluginHost.h"
 #include "GmSynth.h"
 #include "SampleDrum.h"
+#include "AudioClipPlayer.h"
 #include <iostream>
 #include <cstdio>
 
@@ -500,6 +501,9 @@ private:
 
 PluginHost::PluginHost() {
     juce::addDefaultFormatsToManager(formatManager);
+    // Separate format manager for audio-clip WAV reading — doesn't need the
+    // VST3/AU host formats, just the audio-file readers.
+    clipFormatManager.registerBasicFormats();
 
     // Publish a Transport-backed play head so tempo-syncing plugins have live
     // host transport info. AudioProcessorGraph forwards it to child nodes.
@@ -539,6 +543,19 @@ void PluginHost::audioDeviceIOCallbackWithContext(const float* const* inputChann
         inputChannelData, numInputChannels,
         outputChannelData, numOutputChannels,
         numSamples, context);
+    // Tap the input side to disk if recording is armed. writeFromFloatArrays
+    // blocks briefly on the audio thread — that's acceptable for a single
+    // mic at 48kHz; if it starts costing us buffer under-runs, wrap in a
+    // ThreadedWriter with lock-free FIFO.
+    if (recordingActive.load(std::memory_order_acquire)
+        && recordingWriter != nullptr
+        && numInputChannels > 0
+        && inputChannelData != nullptr) {
+        recordingWriter->writeFromFloatArrays(inputChannelData,
+                                              numInputChannels,
+                                              numSamples);
+        recordingSamples.fetch_add(numSamples, std::memory_order_relaxed);
+    }
     transport.endBuffer();
     patternPlayer.endBuffer();
 }
@@ -719,16 +736,20 @@ void PluginHost::savePresetCache(const juce::File& cacheFile) const {
 void PluginHost::startAudio() {
     if (audioRunning) return;
 
-    // OUTPUT-ONLY. If we open the input side of a Bluetooth headset, macOS
-    // switches it into hands-free (HFP) mode — 24kHz mono — which wrecks
-    // music playback. Explicitly disable input to keep AirPods in A2DP.
+    // Initialise with room for stereo input even though we don't bind an
+    // input device yet — numInputChansNeeded is stored internally and gates
+    // how many input channels come through once someone picks a mic. If we
+    // start at 0, later setAudioDeviceSetup calls with an input device open
+    // it with 0 active channels (silent). Bluetooth headsets stay in A2DP
+    // because inputDeviceName is empty — CoreAudio only flips to HFP when
+    // the BT device is actually opened for input.
     juce::AudioDeviceManager::AudioDeviceSetup setup;
     setup.inputDeviceName = "";
     setup.useDefaultInputChannels = false;
     setup.inputChannels.clear();
     setup.useDefaultOutputChannels = true;
     juce::String err = deviceManager.initialise(
-        /*numInputs*/  0,
+        /*numInputs*/  2,
         /*numOutputs*/ 2,
         /*savedState*/ nullptr,
         /*selectDefaultDevice*/ true,
@@ -784,14 +805,29 @@ void PluginHost::startAudio() {
 
 void PluginHost::changeListenerCallback(juce::ChangeBroadcaster* source) {
     if (source != &deviceManager) return;
-    // If the current device went away (sleep, unplug), rebind to defaults so
-    // audio comes back automatically instead of staying silent.
+    // If the current device went away (sleep, unplug), rebind — but preserve
+    // whatever input device the user already picked. Previous behaviour called
+    // initialiseWithDefaultDevices(0, 2), which silently killed the mic every
+    // time the user switched output.
     auto* currentDevice = deviceManager.getCurrentAudioDevice();
     if (currentDevice && currentDevice->isOpen()) return;
     std::cerr << "[PluginHost] audio device changed / lost — reconnecting" << std::endl;
+
+    juce::AudioDeviceManager::AudioDeviceSetup preserved;
+    deviceManager.getAudioDeviceSetup(preserved);
+
     deviceManager.removeAudioCallback(this);
-    deviceManager.initialiseWithDefaultDevices(0, 2);
+    deviceManager.initialise(/*numInputs*/ 2, /*numOutputs*/ 2,
+                             /*savedState*/ nullptr,
+                             /*selectDefaultDevice*/ true,
+                             /*preferredDefault*/ juce::String(),
+                             &preserved);
     deviceManager.addAudioCallback(this);
+
+    // Re-run the audio-input wiring — the graph audio input node's channel
+    // count may have shifted with the new device.
+    std::lock_guard<std::mutex> lock(mutex);
+    reconnectAudioInputsUnlocked();
 }
 
 void PluginHost::stopAudio() {
@@ -1050,6 +1086,13 @@ void PluginHost::resetGraph() {
         for (const auto& kv : channels) channelIds.push_back(kv.first);
     }
     for (const auto& id : channelIds) unloadPlugin(id);
+    // Also tear down any audio clips — a fresh song hydrate re-adds them
+    // via add_audio_clip commands.
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        for (auto& kv : audioClips) graph.removeNode(kv.second.nodeId);
+        audioClips.clear();
+    }
     std::cerr << "[resetGraph] DONE — cleared " << channelIds.size()
               << " channels" << std::endl;
 }
@@ -1135,6 +1178,46 @@ void PluginHost::rewireChannelUnlocked(ChannelSlot& slot) {
     for (int ch = 0; ch < 2; ++ch) {
         graph.addConnection({{prev, ch}, {targetNodeId, ch}});
     }
+    // Post-fader sends. Every send taps `prev` (which points at the gain node
+    // if the channel has one, otherwise the last effect / instrument). For
+    // sidechain sends we walk the target bus's effect chain, find the first
+    // plugin that reports 4+ input channels, and hit its channels 2/3 —
+    // JUCE routes those to input bus 1 (the sidechain bus). Silent no-op if
+    // no such plugin exists; the send re-wires on the next rewire pass, so
+    // dropping a compressor onto the target strip later picks it up.
+    for (const auto& s : slot.sends) {
+        if (s.targetChannelId.isEmpty()) continue;
+        auto tgtIt = channels.find(s.targetChannelId);
+        if (tgtIt == channels.end()) continue;
+        if (s.targetInput == "sidechain") {
+            Graph::NodeID scNode;
+            for (const auto& eff : tgtIt->second.effects) {
+                if (eff.bypassed) continue;
+                auto effNode = graph.getNodeForId(eff.nodeId);
+                if (!effNode) continue;
+                auto* proc = effNode->getProcessor();
+                if (!proc) continue;
+                if (proc->getTotalNumInputChannels() >= 4) {
+                    scNode = eff.nodeId;
+                    break;
+                }
+            }
+            if (scNode != Graph::NodeID{}) {
+                graph.addConnection({{prev, 0}, {scNode, 2}});
+                graph.addConnection({{prev, 1}, {scNode, 3}});
+                std::cerr << "[rewire] send SC → " << s.targetChannelId
+                          << " node=" << scNode.uid << std::endl;
+            } else {
+                std::cerr << "[rewire] SC send to " << s.targetChannelId
+                          << " deferred — no 4-in plugin on target yet" << std::endl;
+            }
+        } else {
+            // "main" send — mix into the target's regular input.
+            for (int ch = 0; ch < 2; ++ch) {
+                graph.addConnection({{prev, ch}, {tgtIt->second.pluginNodeId, ch}});
+            }
+        }
+    }
     std::cerr << "[rewire] DONE target=" << targetNodeId.uid << std::endl;
 
     graph.suspendProcessing(false);
@@ -1177,6 +1260,48 @@ void PluginHost::setChannelTarget(const juce::String& channelId, const juce::Str
     rewireChannelUnlocked(it->second);
 }
 
+juce::String PluginHost::setChannelSend(const juce::String& channelId,
+                                        const juce::String& sendId,
+                                        const juce::String& targetChannelId,
+                                        const juce::String& targetInput) {
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = channels.find(channelId);
+    if (it == channels.end()) return "no such channel: " + channelId;
+
+    auto& sends = it->second.sends;
+    auto existing = std::find_if(sends.begin(), sends.end(),
+        [&](const SendSlot& s) { return s.sendId == sendId; });
+    if (existing != sends.end()) sends.erase(existing);
+    if (targetChannelId.isNotEmpty()) {
+        sends.push_back({ sendId, targetChannelId,
+                          targetInput.isEmpty() ? juce::String("main") : targetInput });
+    }
+    rewireChannelUnlocked(it->second);
+    return {};
+}
+
+void PluginHost::removeChannelSend(const juce::String& channelId,
+                                   const juce::String& sendId) {
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = channels.find(channelId);
+    if (it == channels.end()) return;
+    auto& sends = it->second.sends;
+    auto existing = std::find_if(sends.begin(), sends.end(),
+        [&](const SendSlot& s) { return s.sendId == sendId; });
+    if (existing == sends.end()) return;
+    sends.erase(existing);
+    rewireChannelUnlocked(it->second);
+}
+
+void PluginHost::rewireSendSourcesToUnlocked(const juce::String& targetChannelId) {
+    for (auto& kv : channels) {
+        auto& src = kv.second;
+        bool touches = std::any_of(src.sends.begin(), src.sends.end(),
+            [&](const SendSlot& s) { return s.targetChannelId == targetChannelId; });
+        if (touches) rewireChannelUnlocked(src);
+    }
+}
+
 juce::String PluginHost::addEffect(const juce::String& channelId,
                                    const juce::String& slotId,
                                    const juce::String& pluginId,
@@ -1205,6 +1330,18 @@ juce::String PluginHost::addEffect(const juce::String& channelId,
     }
     std::cerr << "[addEffect] step2 created instance ok" << std::endl;
     instance->setPlayHead(playHead.get());
+
+    // Attempt to enable any input buses beyond the primary one (typically the
+    // sidechain input on compressors / limiters). Plugins that don't have
+    // extra buses no-op silently. This lets a later set_channel_send with
+    // targetInput="sidechain" find channels 2/3 to hit on this node.
+    for (int i = 1; i < instance->getBusCount(true); ++i) {
+        auto* bus = instance->getBus(true, i);
+        if (bus == nullptr) continue;
+        auto layout = bus->getDefaultLayout();
+        if (layout.isDisabled()) layout = juce::AudioChannelSet::stereo();
+        bus->setCurrentLayout(layout);
+    }
 
     if (base64State.isNotEmpty()) {
         juce::MemoryOutputStream decoded;
@@ -1253,6 +1390,10 @@ juce::String PluginHost::addEffect(const juce::String& channelId,
     }
     it->second.effects.push_back({ slotId, effectNode->nodeID, false });
     rewireChannelUnlocked(it->second);
+    // Loading a new effect on this bus may have introduced a 4-in plugin
+    // (compressor with sidechain). Any deferred sidechain sends into this
+    // bus need to re-attach; find them and re-rewire their sources.
+    rewireSendSourcesToUnlocked(channelId);
     std::cerr << "[addEffect] DONE ch=" << channelId << std::endl;
     return {};
 }
@@ -1269,6 +1410,9 @@ void PluginHost::removeEffect(const juce::String& channelId, const juce::String&
     graph.removeNode(found->nodeId);
     fx.erase(found);
     rewireChannelUnlocked(it->second);
+    // Removing the target's sidechain-capable plugin means any incoming SC
+    // sends need to find the next candidate (or park until one shows up).
+    rewireSendSourcesToUnlocked(channelId);
 }
 
 void PluginHost::reorderEffects(const juce::String& channelId, const juce::StringArray& newOrder) {
@@ -1293,6 +1437,7 @@ void PluginHost::reorderEffects(const juce::String& channelId, const juce::Strin
     }
     it->second.effects = std::move(reordered);
     rewireChannelUnlocked(it->second);
+    rewireSendSourcesToUnlocked(channelId);
 }
 
 void PluginHost::bypassEffect(const juce::String& channelId, const juce::String& slotId, bool bypassed) {
@@ -1304,6 +1449,7 @@ void PluginHost::bypassEffect(const juce::String& channelId, const juce::String&
             if (e.bypassed == bypassed) return;
             e.bypassed = bypassed;
             rewireChannelUnlocked(it->second);
+            rewireSendSourcesToUnlocked(channelId);
             return;
         }
     }
@@ -1665,21 +1811,31 @@ juce::var PluginHost::listAudioDevices() {
     if (!audioRunning) startAudio();
     auto* obj = new juce::DynamicObject();
     auto* type = deviceManager.getCurrentDeviceTypeObject();
-    juce::Array<juce::var> outs;
+    juce::StringArray outs;
     if (type) {
         type->scanForDevices();
-        for (const auto& n : type->getDeviceNames(false)) outs.add(juce::var(n));
+        outs.addArray(type->getDeviceNames(false));
     }
-    // If we still don't have any (e.g. no CoreAudio type object yet), walk
-    // every registered device type as a fallback.
     if (outs.isEmpty()) {
         for (auto* t : deviceManager.getAvailableDeviceTypes()) {
             if (!t) continue;
             t->scanForDevices();
-            for (const auto& n : t->getDeviceNames(false)) outs.add(juce::var(n));
+            outs.addArray(t->getDeviceNames(false));
         }
     }
-    obj->setProperty("outputs", juce::var(outs));
+    // Collapse "DEVICE (N)" variants that JUCE emits for multi-stream devices.
+    // We keep the first occurrence for each base name so the dropdown stays
+    // clean — the setOutputDevice fallback strips " (N)" as needed when the
+    // user picks one.
+    juce::StringArray outsClean;
+    for (const auto& n : outs) {
+        auto base = n.upToLastOccurrenceOf(" (", false, false).trim();
+        if (base.isEmpty()) base = n;
+        if (!outsClean.contains(base)) outsClean.add(base);
+    }
+    juce::Array<juce::var> outsVar;
+    for (const auto& n : outsClean) outsVar.add(juce::var(n));
+    obj->setProperty("outputs", juce::var(outsVar));
     juce::AudioDeviceManager::AudioDeviceSetup setup;
     deviceManager.getAudioDeviceSetup(setup);
     obj->setProperty("currentOutput", juce::var(setup.outputDeviceName));
@@ -1706,6 +1862,314 @@ juce::var PluginHost::currentOutputSnapshot() const {
     return juce::var(obj);
 }
 
+juce::var PluginHost::listAudioInputs() {
+    if (!audioRunning) startAudio();
+    auto* obj = new juce::DynamicObject();
+    juce::StringArray ins;
+    for (auto* t : deviceManager.getAvailableDeviceTypes()) {
+        if (!t) continue;
+        t->scanForDevices();
+        ins.addArray(t->getDeviceNames(true /*isInput*/));
+    }
+    juce::StringArray insClean;
+    for (const auto& n : ins) {
+        auto base = n.upToLastOccurrenceOf(" (", false, false).trim();
+        if (base.isEmpty()) base = n;
+        if (!insClean.contains(base)) insClean.add(base);
+    }
+    juce::Array<juce::var> insVar;
+    for (const auto& n : insClean) insVar.add(juce::var(n));
+    obj->setProperty("inputs", juce::var(insVar));
+    juce::AudioDeviceManager::AudioDeviceSetup setup;
+    deviceManager.getAudioDeviceSetup(setup);
+    obj->setProperty("currentInput", juce::var(setup.inputDeviceName));
+    return juce::var(obj);
+}
+
+juce::var PluginHost::currentInputSnapshot() const {
+    auto* obj = new juce::DynamicObject();
+    juce::AudioDeviceManager::AudioDeviceSetup setup;
+    const_cast<juce::AudioDeviceManager&>(deviceManager).getAudioDeviceSetup(setup);
+    obj->setProperty("deviceName", juce::var(setup.inputDeviceName));
+    auto* dev = const_cast<juce::AudioDeviceManager&>(deviceManager).getCurrentAudioDevice();
+    obj->setProperty("inputChannels",
+        juce::var(dev ? dev->getActiveInputChannels().countNumberOfSetBits() : 0));
+    return juce::var(obj);
+}
+
+juce::String PluginHost::setInputDevice(const juce::String& deviceName) {
+    if (!audioRunning) startAudio();
+
+    juce::AudioDeviceManager::AudioDeviceSetup setup;
+    deviceManager.getAudioDeviceSetup(setup);
+    setup.inputDeviceName = deviceName;
+    setup.useDefaultInputChannels = deviceName.isNotEmpty();
+    if (deviceName.isEmpty()) setup.inputChannels.clear();
+
+    // setAudioDeviceSetup alone doesn't re-negotiate the input side once the
+    // device is already running — the device manager's numInputChansNeeded
+    // stays 2 but no input channels come through until we go through
+    // initialise() again. Re-init keeps output stable because we pass the
+    // captured `setup` verbatim, including outputDeviceName.
+    deviceManager.removeAudioCallback(this);
+    juce::String err = deviceManager.initialise(
+        /*numInputs*/ deviceName.isNotEmpty() ? 2 : 0,
+        /*numOutputs*/ 2,
+        /*savedState*/ nullptr,
+        /*selectDefaultDevice*/ true,
+        /*preferredDefault*/ juce::String(),
+        &setup);
+    deviceManager.addAudioCallback(this);
+    if (err.isNotEmpty()) {
+        std::cerr << "[PluginHost] setInputDevice failed: " << err << std::endl;
+        return err;
+    }
+    if (auto* dev = deviceManager.getCurrentAudioDevice()) {
+        std::cerr << "[PluginHost] input device: " << setup.inputDeviceName
+                  << " (" << dev->getActiveInputChannels().countNumberOfSetBits()
+                  << " input channels active)" << std::endl;
+    }
+    // Wire any existing audio-input passthroughs (buses with the mic flag) to
+    // the freshly-live input node. Bridge already holds MessageManagerLock —
+    // don't re-take it here or lockWasGained returns false.
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        reconnectAudioInputsUnlocked();
+    }
+    return {};
+}
+
+void PluginHost::reconnectAudioInputsUnlocked() {
+    auto inNode = graph.getNodeForId(Graph::NodeID(1)); // audioInputNode
+    if (!inNode) return;
+    auto* inProc = inNode->getProcessor();
+    const int numInputCh = inProc ? inProc->getTotalNumOutputChannels() : 0;
+    for (auto& kv : channels) {
+        auto& slot = kv.second;
+        if (!slot.isAudioInput) continue;
+        // Remove any stale input-side connections into this passthrough — the
+        // input channel count might have changed (mono mic → stereo interface).
+        auto conns = graph.getConnections();
+        for (const auto& c : conns) {
+            if (c.destination.nodeID == slot.pluginNodeId
+                && c.source.nodeID == inNode->nodeID) {
+                graph.removeConnection(c);
+            }
+        }
+        if (numInputCh <= 0) continue;
+        // Left → left, right → right. Mono input: duplicate ch0 to both
+        // sides so the mixer feels stereo even with a mono mic.
+        graph.addConnection({{inNode->nodeID, 0}, {slot.pluginNodeId, 0}});
+        if (numInputCh >= 2) {
+            graph.addConnection({{inNode->nodeID, 1}, {slot.pluginNodeId, 1}});
+        } else {
+            graph.addConnection({{inNode->nodeID, 0}, {slot.pluginNodeId, 1}});
+        }
+    }
+}
+
+juce::String PluginHost::addAudioClip(const juce::String& clipId,
+                                      const juce::String& path,
+                                      const juce::String& busId,
+                                      juce::int64 songStartSample,
+                                      juce::int64 lengthSamples) {
+    startAudio();
+
+    auto player = std::make_unique<AudioClipPlayer>();
+    if (!player->loadFile(path, clipFormatManager)) {
+        return "couldn't read WAV: " + path;
+    }
+    player->setTransport(&transport);
+    player->setClipTiming(songStartSample, lengthSamples);
+
+    // Add to graph BEFORE taking the lock — no map mutation yet.
+    auto node = graph.addNode(std::move(player));
+    if (node == nullptr) return "graph rejected audio-clip node";
+
+    std::lock_guard<std::mutex> lock(mutex);
+    // Idempotent: replace any existing clip with the same id.
+    auto existing = audioClips.find(clipId);
+    if (existing != audioClips.end()) {
+        graph.removeNode(existing->second.nodeId);
+        audioClips.erase(existing);
+    }
+    // Wire into the target bus (or master output if the bus doesn't exist).
+    auto outNode = graph.getNodeForId(Graph::NodeID(2));
+    Graph::NodeID targetNodeId = outNode ? outNode->nodeID : Graph::NodeID{};
+    auto busIt = channels.find(busId);
+    if (busIt != channels.end()) {
+        targetNodeId = busIt->second.pluginNodeId;
+    } else {
+        // Fall back to master_bus if the named bus isn't the target of a
+        // create_bus command yet — matches the rewire behaviour above.
+        auto masterIt = channels.find("master_bus");
+        if (masterIt != channels.end()) targetNodeId = masterIt->second.pluginNodeId;
+    }
+    for (int ch = 0; ch < 2; ++ch) {
+        graph.addConnection({{node->nodeID, ch}, {targetNodeId, ch}});
+    }
+    audioClips[clipId] = { node->nodeID, busId };
+    std::cerr << "[PluginHost] audio clip added id=" << clipId
+              << " bus=" << busId
+              << " start=" << songStartSample
+              << " len=" << lengthSamples << std::endl;
+    return {};
+}
+
+void PluginHost::removeAudioClip(const juce::String& clipId) {
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = audioClips.find(clipId);
+    if (it == audioClips.end()) return;
+    // Zero the clip window first — processBlock bails on length=0, so the
+    // very next audio buffer stops emitting even before JUCE's render-
+    // sequence rebuild removes the node. Belt-and-braces: suspend the graph
+    // around the removal so an in-flight buffer can't dereference a Node
+    // whose processor is about to be deleted.
+    auto node = graph.getNodeForId(it->second.nodeId);
+    if (node) {
+        if (auto* p = dynamic_cast<AudioClipPlayer*>(node->getProcessor())) {
+            p->setClipTiming(0, 0);
+        }
+    }
+    graph.suspendProcessing(true);
+    graph.removeNode(it->second.nodeId);
+    graph.suspendProcessing(false);
+    audioClips.erase(it);
+}
+
+void PluginHost::setAudioClipPosition(const juce::String& clipId,
+                                      juce::int64 songStartSample,
+                                      juce::int64 lengthSamples) {
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = audioClips.find(clipId);
+    if (it == audioClips.end()) return;
+    auto node = graph.getNodeForId(it->second.nodeId);
+    if (!node) return;
+    if (auto* player = dynamic_cast<AudioClipPlayer*>(node->getProcessor())) {
+        player->setClipTiming(songStartSample, lengthSamples);
+    }
+}
+
+juce::String PluginHost::startRecording(juce::String& outPath) {
+    outPath = juce::String();
+    if (recordingActive.load(std::memory_order_acquire)) return "already recording";
+    auto* dev = deviceManager.getCurrentAudioDevice();
+    if (!dev) return "no audio device open";
+    const int numInputCh = dev->getActiveInputChannels().countNumberOfSetBits();
+    if (numInputCh <= 0) return "no input channels — turn IN on a mixer strip first";
+    const double sr = dev->getCurrentSampleRate();
+
+    auto dir = juce::File::getSpecialLocation(juce::File::userMusicDirectory)
+                   .getChildFile("Nasty Recordings");
+    if (!dir.createDirectory()) {
+        // createDirectory returns Result — some builds return bool. If it fails
+        // we'll surface the writer-open error below anyway.
+    }
+    auto ts = juce::Time::getCurrentTime().formatted("%Y%m%d-%H%M%S");
+    auto file = dir.getChildFile("mic-" + ts + ".wav");
+
+    juce::WavAudioFormat wav;
+    std::unique_ptr<juce::FileOutputStream> stream(file.createOutputStream());
+    if (!stream || !stream->openedOk()) {
+        return "couldn't open " + file.getFullPathName() + " for writing";
+    }
+    auto* writer = wav.createWriterFor(stream.get(), sr, (unsigned) numInputCh, 24, {}, 0);
+    if (!writer) return "couldn't create WAV writer";
+    stream.release(); // writer owns the stream now
+
+    recordingWriter.reset(writer);
+    recordingFile = file;
+    recordingSamples.store(0, std::memory_order_relaxed);
+    recordingActive.store(true, std::memory_order_release);
+    outPath = file.getFullPathName();
+    std::cerr << "[PluginHost] recording started → " << outPath
+              << " sr=" << sr << " ch=" << numInputCh << std::endl;
+    return {};
+}
+
+juce::String PluginHost::stopRecording(juce::String& outPath, juce::int64& outSamples) {
+    if (!recordingActive.load(std::memory_order_acquire)) {
+        outPath = juce::String();
+        outSamples = 0;
+        return "not recording";
+    }
+    recordingActive.store(false, std::memory_order_release);
+    // Give the audio thread one buffer to notice the flag drop before we
+    // delete the writer out from under it. In practice writeFromFloatArrays
+    // is called synchronously inside the audio callback so the flag check
+    // gates it; but a tiny sleep here is cheap belt-and-braces.
+    juce::Thread::sleep(20);
+    outPath = recordingFile.getFullPathName();
+    outSamples = recordingSamples.load(std::memory_order_relaxed);
+    recordingWriter.reset(); // flushes + closes the underlying WAV
+    std::cerr << "[PluginHost] recording stopped → " << outPath
+              << " (" << outSamples << " samples)" << std::endl;
+    return {};
+}
+
+void PluginHost::setChannelAudioInput(const juce::String& channelId, bool enabled) {
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = channels.find(channelId);
+    if (it == channels.end()) return;
+    if (it->second.isAudioInput == enabled) return;
+    it->second.isAudioInput = enabled;
+    if (!enabled) {
+        // Remove any existing audioInputNode → this bus/channel connections.
+        auto inNode = graph.getNodeForId(Graph::NodeID(1));
+        if (inNode) {
+            auto conns = graph.getConnections();
+            for (const auto& c : conns) {
+                if (c.destination.nodeID == it->second.pluginNodeId
+                    && c.source.nodeID == inNode->nodeID) {
+                    graph.removeConnection(c);
+                }
+            }
+        }
+    } else {
+        reconnectAudioInputsUnlocked();
+    }
+}
+
+juce::String PluginHost::createAudioInputChannel(const juce::String& channelId) {
+    startAudio();
+    auto node     = graph.addNode(std::make_unique<BusPassthrough>());
+    auto gainNode = addGainNode();
+    if (node == nullptr || gainNode == nullptr) {
+        if (node)     graph.removeNode(node->nodeID);
+        if (gainNode) graph.removeNode(gainNode->nodeID);
+        return juce::String("graph rejected audio-input passthrough");
+    }
+
+    std::lock_guard<std::mutex> lock(mutex);
+    // Replace existing channel with same id (idempotent create).
+    auto existing = channels.find(channelId);
+    if (existing != channels.end()) {
+        for (const auto& e : existing->second.effects) graph.removeNode(e.nodeId);
+        graph.removeNode(existing->second.pluginNodeId);
+        if (existing->second.injectorNodeId != juce::AudioProcessorGraph::NodeID{})
+            graph.removeNode(existing->second.injectorNodeId);
+        if (existing->second.gainNodeId != juce::AudioProcessorGraph::NodeID{})
+            graph.removeNode(existing->second.gainNodeId);
+        channels.erase(existing);
+    }
+    ChannelSlot slot{
+        node->nodeID,                          // pluginNodeId = passthrough
+        juce::AudioProcessorGraph::NodeID{},   // no MIDI injector
+        gainNode->nodeID,                      // gain at tail
+        1,                                     // midiChannel unused
+        {},                                    // no effects yet
+        {},                                    // routes to master by default
+        false,                                 // isBus
+        true                                   // isAudioInput
+    };
+    channels[channelId] = slot;
+    rewireChannelUnlocked(channels[channelId]);
+    // Wire the graph audio input node into this passthrough so signal actually
+    // flows. Safe to call every time — reconnect prunes stale wires first.
+    reconnectAudioInputsUnlocked();
+    return {};
+}
+
 juce::String PluginHost::setOutputDevice(const juce::String& deviceName) {
     if (!audioRunning) startAudio();
     juce::AudioDeviceManager::AudioDeviceSetup setup;
@@ -1713,10 +2177,28 @@ juce::String PluginHost::setOutputDevice(const juce::String& deviceName) {
     setup.outputDeviceName = deviceName;
     setup.useDefaultOutputChannels = true;
     auto err = deviceManager.setAudioDeviceSetup(setup, true);
+    // JUCE sometimes appends " (N)" to distinguish devices with the same
+    // base name across HAL / IOAudio types. If the user picks the numbered
+    // one but CoreAudio only knows the plain name (or vice-versa), fall back
+    // to the stripped form once before giving up.
+    if (err.isNotEmpty()) {
+        juce::String stripped = deviceName.upToLastOccurrenceOf(" (", false, false).trim();
+        if (stripped.isNotEmpty() && stripped != deviceName) {
+            std::cerr << "[PluginHost] setOutputDevice retry with stripped name: '"
+                      << stripped << "'" << std::endl;
+            setup.outputDeviceName = stripped;
+            err = deviceManager.setAudioDeviceSetup(setup, true);
+        }
+    }
     if (err.isEmpty()) {
         if (auto* dev = deviceManager.getCurrentAudioDevice()) {
             std::cerr << "[PluginHost] switched output to: " << dev->getName() << std::endl;
         }
+        // Input side may have been renegotiated (same device now for both) —
+        // re-establish audio-input passthrough wiring so bus mic feeds
+        // survive an output switch.
+        std::lock_guard<std::mutex> lock(mutex);
+        reconnectAudioInputsUnlocked();
     } else {
         std::cerr << "[PluginHost] setOutputDevice failed: " << err << std::endl;
     }

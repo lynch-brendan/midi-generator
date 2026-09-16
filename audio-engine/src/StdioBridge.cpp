@@ -85,7 +85,14 @@ static bool commandMutatesGraph(const juce::String& cmd) {
         || cmd == "reset_graph"
         || cmd == "show_plugin_ui"
         || cmd == "hide_plugin_ui"
-        || cmd == "set_output_device";
+        || cmd == "set_output_device"
+        || cmd == "set_input_device"
+        || cmd == "create_audio_input_channel"
+        || cmd == "set_channel_audio_input"
+        || cmd == "add_audio_clip"
+        || cmd == "remove_audio_clip"
+        || cmd == "set_channel_send"
+        || cmd == "remove_channel_send";
 }
 
 void StdioBridge::handleLine(const std::string& line) {
@@ -526,6 +533,117 @@ juce::var StdioBridge::handleCommand(const juce::var& msg) {
         o->setProperty("name",  msg["name"]);
         if (err.isNotEmpty()) o->setProperty("error", err);
         return juce::var(o);
+    }
+
+    if (cmd == "list_audio_inputs") {
+        auto* o = new juce::DynamicObject();
+        o->setProperty("event",  juce::var("audio_inputs"));
+        auto payload = host.listAudioInputs();
+        if (auto* p = payload.getDynamicObject()) {
+            for (const auto& kv : p->getProperties()) o->setProperty(kv.name, kv.value);
+        }
+        return juce::var(o);
+    }
+
+    if (cmd == "set_input_device") {
+        auto err = host.setInputDevice(msg["name"].toString());
+        auto* o = new juce::DynamicObject();
+        o->setProperty("event", err.isEmpty() ? juce::var("input_device_set") : juce::var("error"));
+        o->setProperty("name",  msg["name"]);
+        if (err.isNotEmpty()) o->setProperty("error", err);
+        // Include the current snapshot so the UI knows how many channels it got.
+        auto snap = host.currentInputSnapshot();
+        if (auto* s = snap.getDynamicObject()) {
+            o->setProperty("inputChannels", s->getProperty("inputChannels"));
+        }
+        return juce::var(o);
+    }
+
+    if (cmd == "create_audio_input_channel") {
+        auto err = host.createAudioInputChannel(msg["channelId"].toString());
+        auto* o = new juce::DynamicObject();
+        o->setProperty("event",     err.isEmpty() ? juce::var("audio_input_channel_created") : juce::var("error"));
+        o->setProperty("channelId", msg["channelId"]);
+        if (err.isNotEmpty()) o->setProperty("error", err);
+        return juce::var(o);
+    }
+
+    if (cmd == "set_channel_audio_input") {
+        host.setChannelAudioInput(msg["channelId"].toString(), (bool) msg["enabled"]);
+        auto* o = new juce::DynamicObject();
+        o->setProperty("event",     juce::var("channel_audio_input_set"));
+        o->setProperty("channelId", msg["channelId"]);
+        o->setProperty("enabled",   msg["enabled"]);
+        return juce::var(o);
+    }
+
+    if (cmd == "start_recording") {
+        juce::String path;
+        auto err = host.startRecording(path);
+        auto* o = new juce::DynamicObject();
+        o->setProperty("event", err.isEmpty() ? juce::var("recording_started") : juce::var("error"));
+        o->setProperty("path",  juce::var(path));
+        if (err.isNotEmpty()) o->setProperty("error", err);
+        return juce::var(o);
+    }
+
+    if (cmd == "stop_recording") {
+        juce::String path;
+        juce::int64 samples = 0;
+        auto err = host.stopRecording(path, samples);
+        auto* o = new juce::DynamicObject();
+        o->setProperty("event",   err.isEmpty() ? juce::var("recording_stopped") : juce::var("error"));
+        o->setProperty("path",    juce::var(path));
+        o->setProperty("samples", juce::var((double) samples));
+        if (err.isNotEmpty()) o->setProperty("error", err);
+        return juce::var(o);
+    }
+
+    if (cmd == "add_audio_clip") {
+        auto err = host.addAudioClip(
+            msg["clipId"].toString(),
+            msg["path"].toString(),
+            msg["busId"].toString(),
+            (juce::int64) (double) msg["songStartSample"],
+            (juce::int64) (double) msg["lengthSamples"]);
+        auto* o = new juce::DynamicObject();
+        o->setProperty("event",  err.isEmpty() ? juce::var("audio_clip_added") : juce::var("error"));
+        o->setProperty("clipId", msg["clipId"]);
+        if (err.isNotEmpty()) o->setProperty("error", err);
+        return juce::var(o);
+    }
+
+    if (cmd == "remove_audio_clip") {
+        host.removeAudioClip(msg["clipId"].toString());
+        return {};
+    }
+
+    if (cmd == "set_audio_clip_position") {
+        host.setAudioClipPosition(
+            msg["clipId"].toString(),
+            (juce::int64) (double) msg["songStartSample"],
+            (juce::int64) (double) msg["lengthSamples"]);
+        return {};
+    }
+
+    if (cmd == "set_channel_send") {
+        auto err = host.setChannelSend(
+            msg["channelId"].toString(),
+            msg["sendId"].toString(),
+            msg["targetChannelId"].toString(),
+            msg["targetInput"].toString());
+        auto* o = new juce::DynamicObject();
+        o->setProperty("event",  err.isEmpty() ? juce::var("channel_send_set") : juce::var("error"));
+        o->setProperty("channelId", msg["channelId"]);
+        o->setProperty("sendId",    msg["sendId"]);
+        if (err.isNotEmpty()) o->setProperty("error", err);
+        return juce::var(o);
+    }
+
+    if (cmd == "remove_channel_send") {
+        host.removeChannelSend(msg["channelId"].toString(),
+                               msg["sendId"].toString());
+        return {};
     }
 
     auto* o = new juce::DynamicObject();

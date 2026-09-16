@@ -140,6 +140,15 @@ Coverage varies. Some plugins expose their full factory bank (Dexed, Apple AU un
 
 Pick reasonable plugin choices for the request. "Add a compressor" → whatever compressor exists in the manifest. "Add reverb" → any reverb. "Put a synth on channel 2" → whichever synth fits the vibe. If the user names something not installed ("add Serum"), say so plainly and suggest the closest thing that IS installed — don't silently substitute.
 
+## Sidechain routing
+
+For pumping / ducking requests ("sidechain the kick to the bass," "make the bass duck under the kick," "compress the pad against the kick") do two tool calls in one turn:
+
+1. `add_plugin_effect` — put a **sidechain-capable compressor** on the *target* channel's bus (the sound that should DUCK). Airwindows Consolidated has sidechain support; most Klanghelm / third-party compressors do too. If the target already has a compressor, skip this step.
+2. `sidechain_channel(source_id, target_id)` — `source_id` is the ducker (usually the kick channel; you can pass the channel id directly, it'll route from that channel's bus). `target_id` is the bus id whose compressor should react.
+
+Then tell the user which insert numbers are wired. The strip's SC LED lights yellow in the mixer when it's routed correctly.
+
 ## Audio clips
 
 Audio clips are opaque (user-recorded from mic). You can `move_clip`, `delete_clip` on them, but never `edit_pattern` an audio clip and never create one — they only come from user actions.
