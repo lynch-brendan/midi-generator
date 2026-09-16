@@ -379,6 +379,62 @@ public:
     void setStateInformation(const void*, int) override    {}
 };
 
+// Real audio-level gain node. One instance per channel sits at the tail of
+// the channel's audio chain (after instrument + effects, before the target
+// bus / master), so setChannelGain applies to actual audio samples rather
+// than only to MIDI velocity. That fixes soundfont-based instruments whose
+// per-note dynamics don't map cleanly to loudness — velocity-scaling made
+// their volume slider feel dead, applyGain on the buffer doesn't.
+class AudioGain : public juce::AudioProcessor {
+public:
+    std::atomic<float> gain{1.0f};
+
+    AudioGain() : juce::AudioProcessor(BusesProperties()
+        .withInput("In",  juce::AudioChannelSet::stereo(), true)
+        .withOutput("Out", juce::AudioChannelSet::stereo(), true)) {}
+    const juce::String getName() const override    { return "NastyGain"; }
+    void prepareToPlay(double, int) override        {}
+    void releaseResources() override                {}
+    bool acceptsMidi() const override               { return false; }
+    bool producesMidi() const override              { return false; }
+    double getTailLengthSeconds() const override    { return 0.0; }
+    void processBlock(juce::AudioBuffer<float>& buf, juce::MidiBuffer&) override {
+        auto inBus  = getBusBuffer(buf, true,  0);
+        auto outBus = getBusBuffer(buf, false, 0);
+        const int n = buf.getNumSamples();
+        const int chs = juce::jmin(inBus.getNumChannels(), outBus.getNumChannels());
+        const float g = gain.load(std::memory_order_relaxed);
+        for (int c = 0; c < chs; ++c) {
+            if (outBus.getReadPointer(c) != inBus.getReadPointer(c))
+                outBus.copyFrom(c, 0, inBus, c, 0, n);
+            outBus.applyGain(c, 0, n, g);
+        }
+    }
+    void processBlock(juce::AudioBuffer<double>& buf, juce::MidiBuffer&) override {
+        auto inBus  = getBusBuffer(buf, true,  0);
+        auto outBus = getBusBuffer(buf, false, 0);
+        const int n = buf.getNumSamples();
+        const int chs = juce::jmin(inBus.getNumChannels(), outBus.getNumChannels());
+        const double g = (double) gain.load(std::memory_order_relaxed);
+        for (int c = 0; c < chs; ++c) {
+            if (outBus.getReadPointer(c) != inBus.getReadPointer(c))
+                outBus.copyFrom(c, 0, inBus, c, 0, n);
+            outBus.applyGain(c, 0, n, g);
+        }
+    }
+    using AudioProcessor::processBlock;
+    juce::AudioProcessorEditor* createEditor() override    { return nullptr; }
+    bool hasEditor() const override                        { return false; }
+    int getNumPrograms() override                          { return 1; }
+    int getCurrentProgram() override                       { return 0; }
+    void setCurrentProgram(int) override                   {}
+    const juce::String getProgramName(int) override        { return {}; }
+    void changeProgramName(int, const juce::String&) override {}
+    void getStateInformation(juce::MemoryBlock&) override  {}
+    void setStateInformation(const void*, int) override    {}
+};
+
+
 // Play head backed by the Transport. Plugins call getPosition() from the
 // audio thread every buffer to sync arps, delays, LFOs. We read atomic values
 // straight off the Transport — no lock, no allocation, safe from the audio
@@ -514,6 +570,10 @@ juce::AudioProcessorGraph::Node::Ptr PluginHost::addInjectorNode() {
     injector->patternPlayer = &patternPlayer;
     injector->patternMidiChannel = 1;
     return graph.addNode(std::move(injector));
+}
+
+juce::AudioProcessorGraph::Node::Ptr PluginHost::addGainNode() {
+    return graph.addNode(std::make_unique<AudioGain>());
 }
 
 void PluginHost::scanDefaultPaths(const ScanProgress& onProgress) {
@@ -829,18 +889,21 @@ juce::String PluginHost::loadPlugin(const juce::String& channelId,
     std::cerr << "[loadPlugin] step6 unloading existing on channel (if any)" << std::endl;
     unloadPlugin(channelId); // replace if exists
 
-    std::cerr << "[loadPlugin] step7 adding injector + plugin to graph" << std::endl;
+    std::cerr << "[loadPlugin] step7 adding injector + plugin + gain to graph" << std::endl;
     auto injectorNode = addInjectorNode();
     auto pluginNode   = graph.addNode(std::move(instance));
+    auto gainNode     = addGainNode();
     // JUCE returns null if the graph rejects the node — happens with a few
     // pathological plugins. If we skipped this check the null Node reference
     // would sit in the graph until the next async render-sequence rebuild
     // walked it and crashed (EXC_BAD_ACCESS in getNodeMap).
-    if (pluginNode == nullptr || injectorNode == nullptr) {
+    if (pluginNode == nullptr || injectorNode == nullptr || gainNode == nullptr) {
         std::cerr << "[loadPlugin] FAIL: graph rejected node (plugin=" << (pluginNode!=nullptr)
-                  << " injector=" << (injectorNode!=nullptr) << ")" << std::endl;
+                  << " injector=" << (injectorNode!=nullptr)
+                  << " gain=" << (gainNode!=nullptr) << ")" << std::endl;
         if (injectorNode) graph.removeNode(injectorNode->nodeID);
         if (pluginNode)   graph.removeNode(pluginNode->nodeID);
+        if (gainNode)     graph.removeNode(gainNode->nodeID);
         return "graph rejected plugin: " + pluginId;
     }
 
@@ -851,7 +914,7 @@ juce::String PluginHost::loadPlugin(const juce::String& channelId,
 
     {
         std::lock_guard<std::mutex> lock(mutex);
-        ChannelSlot slot{ pluginNode->nodeID, injectorNode->nodeID, 1, {}, {}, false };
+        ChannelSlot slot{ pluginNode->nodeID, injectorNode->nodeID, gainNode->nodeID, 1, {}, {}, false };
         channels[channelId] = slot;
         std::cerr << "[loadPlugin] step9 calling rewireChannelUnlocked" << std::endl;
         rewireChannelUnlocked(channels[channelId]); // instrument → output
@@ -876,9 +939,11 @@ juce::String PluginHost::addGmChannel(const juce::String& channelId,
 
     auto injectorNode = addInjectorNode();
     auto gmNode       = graph.addNode(std::move(gm));
-    if (gmNode == nullptr || injectorNode == nullptr) {
+    auto gainNode     = addGainNode();
+    if (gmNode == nullptr || injectorNode == nullptr || gainNode == nullptr) {
         if (injectorNode) graph.removeNode(injectorNode->nodeID);
         if (gmNode)       graph.removeNode(gmNode->nodeID);
+        if (gainNode)     graph.removeNode(gainNode->nodeID);
         return juce::String("graph rejected GM synth");
     }
 
@@ -888,7 +953,7 @@ juce::String PluginHost::addGmChannel(const juce::String& channelId,
 
     {
         std::lock_guard<std::mutex> lock(mutex);
-        ChannelSlot slot{ gmNode->nodeID, injectorNode->nodeID, 1, {}, {}, false };
+        ChannelSlot slot{ gmNode->nodeID, injectorNode->nodeID, gainNode->nodeID, 1, {}, {}, false };
         channels[channelId] = slot;
         rewireChannelUnlocked(channels[channelId]); // gm → output
     }
@@ -912,9 +977,11 @@ juce::String PluginHost::addDrumChannel(const juce::String& channelId,
 
     auto injectorNode = addInjectorNode();
     auto drumNode     = graph.addNode(std::move(drum));
-    if (drumNode == nullptr || injectorNode == nullptr) {
+    auto gainNode     = addGainNode();
+    if (drumNode == nullptr || injectorNode == nullptr || gainNode == nullptr) {
         if (injectorNode) graph.removeNode(injectorNode->nodeID);
         if (drumNode)     graph.removeNode(drumNode->nodeID);
+        if (gainNode)     graph.removeNode(gainNode->nodeID);
         return juce::String("graph rejected drum sampler");
     }
 
@@ -924,7 +991,7 @@ juce::String PluginHost::addDrumChannel(const juce::String& channelId,
 
     {
         std::lock_guard<std::mutex> lock(mutex);
-        ChannelSlot slot{ drumNode->nodeID, injectorNode->nodeID, 1, {}, {}, false };
+        ChannelSlot slot{ drumNode->nodeID, injectorNode->nodeID, gainNode->nodeID, 1, {}, {}, false };
         channels[channelId] = slot;
         rewireChannelUnlocked(channels[channelId]);
     }
@@ -965,6 +1032,8 @@ void PluginHost::unloadPlugin(const juce::String& channelId) {
     for (const auto& e : it->second.effects) graph.removeNode(e.nodeId);
     graph.removeNode(it->second.pluginNodeId);
     graph.removeNode(it->second.injectorNodeId);
+    if (it->second.gainNodeId != juce::AudioProcessorGraph::NodeID{})
+        graph.removeNode(it->second.gainNodeId);
     channels.erase(it);
 }
 
@@ -1015,6 +1084,7 @@ void PluginHost::rewireChannelUnlocked(ChannelSlot& slot) {
 
     auto isChannelNode = [&](Graph::NodeID nid) {
         if (nid == slot.pluginNodeId) return true;
+        if (nid == slot.gainNodeId)   return true;
         for (const auto& e : slot.effects) if (nid == e.nodeId) return true;
         return false;
     };
@@ -1044,7 +1114,7 @@ void PluginHost::rewireChannelUnlocked(ChannelSlot& slot) {
         graph.removeConnection(c);
     }
 
-    // Reconnect: source (instrument or bus input) → each active effect → target.
+    // Reconnect: source (instrument or bus input) → each active effect → gain → target.
     Graph::NodeID prev = slot.pluginNodeId;
     for (auto& e : slot.effects) {
         if (e.bypassed) continue;
@@ -1052,6 +1122,15 @@ void PluginHost::rewireChannelUnlocked(ChannelSlot& slot) {
             graph.addConnection({{prev, ch}, {e.nodeId, ch}});
         }
         prev = e.nodeId;
+    }
+    // Route through the channel's own audio gain stage before the target so
+    // setChannelGain applies to actual audio samples. Legacy slots without a
+    // gain node fall back to direct-to-target wiring.
+    if (slot.gainNodeId != Graph::NodeID{}) {
+        for (int ch = 0; ch < 2; ++ch) {
+            graph.addConnection({{prev, ch}, {slot.gainNodeId, ch}});
+        }
+        prev = slot.gainNodeId;
     }
     for (int ch = 0; ch < 2; ++ch) {
         graph.addConnection({{prev, ch}, {targetNodeId, ch}});
@@ -1063,8 +1142,13 @@ void PluginHost::rewireChannelUnlocked(ChannelSlot& slot) {
 
 juce::String PluginHost::createBusChannel(const juce::String& channelId) {
     startAudio();
-    auto node = graph.addNode(std::make_unique<BusPassthrough>());
-    if (node == nullptr) return juce::String("graph rejected bus passthrough");
+    auto node     = graph.addNode(std::make_unique<BusPassthrough>());
+    auto gainNode = addGainNode();
+    if (node == nullptr || gainNode == nullptr) {
+        if (node)     graph.removeNode(node->nodeID);
+        if (gainNode) graph.removeNode(gainNode->nodeID);
+        return juce::String("graph rejected bus passthrough");
+    }
 
     std::lock_guard<std::mutex> lock(mutex);
     // Replace existing bus with same id (idempotent create).
@@ -1074,9 +1158,11 @@ juce::String PluginHost::createBusChannel(const juce::String& channelId) {
         graph.removeNode(existing->second.pluginNodeId);
         if (existing->second.injectorNodeId != juce::AudioProcessorGraph::NodeID{})
             graph.removeNode(existing->second.injectorNodeId);
+        if (existing->second.gainNodeId != juce::AudioProcessorGraph::NodeID{})
+            graph.removeNode(existing->second.gainNodeId);
         channels.erase(existing);
     }
-    ChannelSlot slot{ node->nodeID, juce::AudioProcessorGraph::NodeID{}, 1, {}, {}, true };
+    ChannelSlot slot{ node->nodeID, juce::AudioProcessorGraph::NodeID{}, gainNode->nodeID, 1, {}, {}, true };
     channels[channelId] = slot;
     rewireChannelUnlocked(channels[channelId]);
     return {};
@@ -1319,17 +1405,27 @@ void PluginHost::setChannelGain(const juce::String& channelId, float gain01) {
         std::cerr << "[PluginHost] set_channel_gain NO CH: " << channelId << std::endl;
         return;
     }
-    auto node = graph.getNodeForId(it->second.injectorNodeId);
-    if (!node) {
-        std::cerr << "[PluginHost] set_channel_gain " << channelId << " has no injector" << std::endl;
-        return;
+    const float clamped = gain01 < 0.0f ? 0.0f : (gain01 > 4.0f ? 4.0f : gain01);
+    // Preferred path: write to the channel's audio gain stage so the change
+    // applies to actual audio samples. Falls back to the injector's velocity
+    // scalar for any legacy slot that predates the gain node — that path is
+    // audibly wrong for soundfont instruments, but at least keeps channels
+    // that never got upgraded from going fully silent.
+    if (it->second.gainNodeId != juce::AudioProcessorGraph::NodeID{}) {
+        auto node = graph.getNodeForId(it->second.gainNodeId);
+        if (node) {
+            if (auto* g = dynamic_cast<AudioGain*>(node->getProcessor())) {
+                g->gain.store(clamped, std::memory_order_relaxed);
+                std::cerr << "[PluginHost] gain " << channelId << " -> " << clamped << std::endl;
+                return;
+            }
+        }
     }
+    auto node = graph.getNodeForId(it->second.injectorNodeId);
+    if (!node) return;
     if (auto* inj = dynamic_cast<MidiInjector*>(node->getProcessor())) {
-        const float clamped = gain01 < 0.0f ? 0.0f : (gain01 > 4.0f ? 4.0f : gain01);
         inj->gain.store(clamped, std::memory_order_relaxed);
-        std::cerr << "[PluginHost] gain " << channelId << " -> " << clamped << std::endl;
-    } else {
-        std::cerr << "[PluginHost] set_channel_gain " << channelId << " injector wrong type" << std::endl;
+        std::cerr << "[PluginHost] gain (fallback velocity) " << channelId << " -> " << clamped << std::endl;
     }
 }
 

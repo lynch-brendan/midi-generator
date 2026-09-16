@@ -246,6 +246,11 @@ private:
     struct ChannelSlot {
         juce::AudioProcessorGraph::NodeID pluginNodeId;
         juce::AudioProcessorGraph::NodeID injectorNodeId;
+        // Per-channel audio gain node — sits at the tail of the chain, right
+        // before the signal enters the target bus / master. Written to by
+        // setChannelGain. Empty node ID means "no gain stage" (legacy shape,
+        // shouldn't happen for channels created after this field was added).
+        juce::AudioProcessorGraph::NodeID gainNodeId;
         int midiChannel = 1;
         std::vector<EffectSlot> effects; // FX chain in order: instrument → eff[0] → ... → out
         // Empty = route to master. Otherwise = route this channel's chain
@@ -274,6 +279,7 @@ private:
     // Every code path that creates a channel (loadPlugin, addGmChannel,
     // addDrumChannel) goes through here so pattern playback works uniformly.
     juce::AudioProcessorGraph::Node::Ptr addInjectorNode();
+    juce::AudioProcessorGraph::Node::Ptr addGainNode();
 
     // Plugin editor windows are message-thread only — no lock needed.
     class PluginWindow;

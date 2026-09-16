@@ -422,7 +422,30 @@
   }
   .channel-row .cname, .pattern-row .pname { flex: 1; font-weight: 600; }
   .channel-row .cinst { color: var(--dim); font-size: 10px; }
-  .channel-row .cvol { width: 55px; margin: 0; }
+  /* Channel-rack horizontal volume slider — same reasoning as the mixer
+     fader above: killing the native appearance and centring a custom thumb
+     on a custom track lets the thumb reach both edges of the fader. */
+  .channel-row .cvol {
+    -webkit-appearance: none; appearance: none;
+    width: 130px; height: 14px;
+    background: transparent; padding: 0; margin: 0;
+    cursor: ew-resize;
+  }
+  .channel-row .cvol::-webkit-slider-runnable-track {
+    width: 100%; height: 4px;
+    background: linear-gradient(to right, #22262c, #3a414a);
+    border: 1px solid #14171c; border-radius: 2px;
+  }
+  .channel-row .cvol::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 12px; height: 14px;
+    background: linear-gradient(#96afff, #4c74f0);
+    border: 1px solid #263a80; border-radius: 3px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.25);
+    margin-top: -6px;
+    cursor: ew-resize;
+  }
+  .channel-row .cvol::-webkit-slider-thumb:hover { filter: brightness(1.1); }
   .channel-row .cbtns, .pattern-row .pbtns { display: flex; gap: 2px; }
   .channel-row .cbtns button, .pattern-row .pbtns button {
     padding: 1px 4px; font-size: 8px; min-width: 18px;
@@ -466,7 +489,7 @@
     flex: 1; font-weight: 600; font-size: 11px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .channel-row .ch-left .cvol { width: 48px; }
+  .channel-row .ch-left .cvol { width: 130px; }
   .channel-row .ch-left .chnum {
     display: inline-block; min-width: 22px; padding: 2px 5px;
     background: #1a1d22; border: 1px solid #333; border-radius: 2px;
@@ -675,12 +698,38 @@
   }
   .mixer-strip .faderwrap {
     flex: 1; display: flex; align-items: center; justify-content: center;
-    padding: 4px 0; min-height: 0;
+    padding: 0; min-height: 0;
   }
+  /* Custom vertical fader. Native `slider-vertical` on webkit reserves a
+     chunk of space above and below for the thumb centre offset, so the
+     thumb never visually reaches the physical top/bottom of the track.
+     `writing-mode: vertical-lr; direction: rtl` is Chrome's modern
+     replacement (slider-vertical is deprecated); combined with
+     `-webkit-appearance: none` and explicit thumb styling, the thumb goes
+     edge-to-edge. */
   .mixer-strip .fader {
-    -webkit-appearance: slider-vertical; appearance: slider-vertical;
-    width: 20px; height: 100%;
+    -webkit-appearance: none; appearance: none;
+    writing-mode: vertical-lr; direction: rtl;
+    width: 26px; height: 100%;
+    background: transparent; padding: 0; margin: 0;
+    cursor: ns-resize;
   }
+  .mixer-strip .fader::-webkit-slider-runnable-track {
+    width: 4px; height: 100%;
+    background: linear-gradient(to top, #22262c, #3a414a);
+    border: 1px solid #14171c; border-radius: 2px;
+  }
+  .mixer-strip .fader::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 22px; height: 12px;
+    background: linear-gradient(#96afff, #4c74f0);
+    border: 1px solid #263a80; border-radius: 3px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.25);
+    /* Centre the thumb on the 4px track (thumb width - track width) / 2 = 9px */
+    margin-left: -9px;
+    cursor: ns-resize;
+  }
+  .mixer-strip .fader::-webkit-slider-thumb:hover { filter: brightness(1.1); }
   .mixer-strip .db {
     font-size: 9px; color: var(--dim); text-align: center;
   }
@@ -2069,9 +2118,50 @@ const PALETTE = ['#ff5c93','#6b7cff','#33c58a','#ffb020','#a95cff','#ff7c47','#4
 let song = { version: SONG_SCHEMA_VERSION, bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] }, transportMode: 'pat' };
 let recArmed = false;
 let chatHistory = [];
+// Undo / redo. Each entry is a full JSON snapshot of `song`. persist() is the
+// natural commit point — its 200ms debounce already coalesces bursts of rapid
+// edits (fader drags, note paints) into single saves, so an undo entry
+// corresponds to one save-point rather than 60 mid-drag frames. Applies to
+// AI-driven mutations too, because AI tools also mutate `song` and call
+// persist. Plugin add/remove undo re-hydrates the engine graph — heavier but
+// correct.
+let undoStack = [];
+let redoStack = [];
+let lastCommittedSnapshot = null;
+let applyingUndo = false; // suppresses undo-recording during an undo/redo
+const UNDO_LIMIT = 100;
 let selectedClipId = null;
+// Multi-select from marquee-drag on the arrangement. Kept in sync with
+// selectedClipId (single-click populates this Set with one entry); rendering
+// applies the .selected class if either matches. Delete / Cmd+B iterate this.
+let selectedClipIds = new Set();
 let currentPatternId = null;
 let pianoRollActiveChannelId = null;
+
+// Measure the PAT-mode playhead sweep range from the actual DOM cells. Reads
+// step 0's left and the last-loop-cell's right (in #channel-rack content
+// coords) so bar/beat margin gaps line up perfectly. Called fresh on every
+// animation tick — cheap (~two getBoundingClientRect reads) and immune to any
+// staleness after pattern-length changes, rack rescales, etc. Returns null
+// when the rack isn't rendered or has no cells.
+function measureRackStepBounds(loopBars) {
+  const rack = document.getElementById('channel-rack');
+  if (!rack) return null;
+  const anySteps = rack.querySelector('.ch-steps');
+  if (!anySteps) return null;
+  const cells = anySteps.querySelectorAll('.step-cell');
+  const lastLoopIdx = Math.max(0, loopBars * 16 - 1);
+  const firstCell = cells[0];
+  const lastLoopCell = cells[lastLoopIdx];
+  if (!firstCell || !lastLoopCell) return null;
+  const rackRect = rack.getBoundingClientRect();
+  const firstRect = firstCell.getBoundingClientRect();
+  const lastRect = lastLoopCell.getBoundingClientRect();
+  return {
+    startX: firstRect.left - rackRect.left + rack.scrollLeft,
+    endX:   lastRect.right - rackRect.left + rack.scrollLeft,
+  };
+}
 let saveTimer = null;
 let loopEnabled = false;
 // Ruler-click seek: sample offset applied on the next SONG-mode play so a
@@ -2181,9 +2271,78 @@ function anyPluginEffectExists() {
   return !!(master && (master.effects || []).some(e => e && e.type === 'plugin'));
 }
 
+function serializeSongForUndo() {
+  return JSON.stringify(song);
+}
+
+// Capture a snapshot of `song` at the persist commit point. Skips no-op
+// commits (state hasn't changed since last snapshot) and skips entirely
+// while an undo/redo apply is running so we don't record the apply itself.
+function recordUndoSnapshot() {
+  if (applyingUndo) return;
+  const current = serializeSongForUndo();
+  if (lastCommittedSnapshot === null) {
+    lastCommittedSnapshot = current;
+    return;
+  }
+  if (current === lastCommittedSnapshot) return;
+  undoStack.push(lastCommittedSnapshot);
+  if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+  redoStack.length = 0; // a fresh edit invalidates the redo timeline
+  lastCommittedSnapshot = current;
+}
+
+// Restore a snapshot into `song` and rebuild everything the engine/UI cares
+// about. Same order of operations as loadFromFile — reset_graph first, then
+// rehydrate plugins, then render — so channels that were added/removed by
+// the undo end up correctly reflected in the audio graph.
+function applySnapshot(json) {
+  applyingUndo = true;
+  try {
+    song = ensureShape(JSON.parse(json));
+    if (!song.patterns.some(p => p.id === currentPatternId)) {
+      currentPatternId = song.patterns[0]?.id || null;
+    }
+    if (window.nasty && window.nasty.engine) {
+      window.nasty.engine.send({ cmd: 'reset_graph' });
+    }
+    hydratePluginChannels();
+    render();
+    // The piano roll lives outside render()'s scope — refresh it explicitly
+    // so a Cmd+Z performed while the piano roll is open actually updates the
+    // note grid (otherwise the DOM would still show the now-undone notes).
+    const prEl = document.getElementById('piano-roll');
+    if (prEl && !prEl.classList.contains('hidden') && typeof renderPianoRoll === 'function') {
+      renderPianoRoll();
+    }
+    syncSongArrangement();
+    lastCommittedSnapshot = serializeSongForUndo();
+    writeSongToStorage();
+  } finally {
+    applyingUndo = false;
+  }
+}
+
+function undo() {
+  if (undoStack.length === 0) return;
+  const current = serializeSongForUndo();
+  const prev = undoStack.pop();
+  redoStack.push(current);
+  applySnapshot(prev);
+}
+
+function redo() {
+  if (redoStack.length === 0) return;
+  const current = serializeSongForUndo();
+  const next = redoStack.pop();
+  undoStack.push(current);
+  applySnapshot(next);
+}
+
 function persist() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
+    recordUndoSnapshot();
     if (!(window.nasty && window.nasty.engine)) {
       writeSongToStorage();
       return;
@@ -2259,7 +2418,7 @@ function ensureShape(s) {
   s.mixer = s.mixer || { inserts: [], busses: [] };
   s.mixer.inserts = s.mixer.inserts || [];
   if (!s.mixer.inserts.find(i => i.id === 'master')) {
-    s.mixer.inserts.unshift({ id: 'master', name: 'Master', volume: 0.8, effects: [], sendToId: null });
+    s.mixer.inserts.unshift({ id: 'master', name: 'Master', volume: 1.0, effects: [], sendToId: null });
   }
   s.mixer.inserts.forEach(ins => {
     ins.volume = ins.volume ?? 0.8;
@@ -2338,7 +2497,7 @@ function ensureShape(s) {
 }
 function ensureDefaults() {
   if (!song.mixer.inserts.length) {
-    song.mixer.inserts.push({ id: 'master', name: 'Master', volume: 0.8, effects: [], sendToId: null });
+    song.mixer.inserts.push({ id: 'master', name: 'Master', volume: 1.0, effects: [], sendToId: null });
   }
   if (song.mixer.inserts.length === 1) {
     // add 4 empty inserts on empty song
@@ -2371,7 +2530,7 @@ function ensureDefaults() {
         id: d.id, name: d.name,
         instrument: 'plugin', pluginId: 'drum:' + d.sample,
         drumSample: d.sample, drumRootNote: 60,
-        volume: 0.8, effects: [], muted: false, solo: false, armed: false,
+        volume: 1.0, effects: [], muted: false, solo: false, armed: false,
         color: PALETTE[i % PALETTE.length], insertId: 'master',
         targetInsertNum: i + 1,
       });
@@ -2703,13 +2862,33 @@ const engineTransport = {
 function beatsToSec(beats, bpm = song.bpm) { return beats * 60 / bpm; }
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
-function channelsToPlay() {
+// Channel mute/solo is enforced at the engine gain stage — a silenced channel
+// still receives MIDI and its plugin keeps running (matches FL), it just puts
+// out zero. This makes mid-play toggles instant and preserves reverb tails.
+function channelMuteFactor(ch) {
+  if (ch.muted) return 0;
   const anySolo = song.channels.some(c => c.solo);
-  return song.channels.filter(c => {
-    if (c.muted) return false;
-    if (anySolo && !c.solo) return false;
-    return true;
+  if (anySolo && !ch.solo) return 0;
+  return 1;
+}
+
+function pushChannelGain(ch) {
+  if (!ch) return;
+  const bus = (song.mixer.busses || []).find(b => b.num === (ch.targetInsertNum || 0));
+  const busVol = bus ? (bus.volume ?? 1.0) : 1.0;
+  const master = song.mixer.inserts.find(i => i.id === 'master');
+  const masterVol = master ? (master.volume ?? 0.8) : 1.0;
+  const chVol = ch.volume ?? 0.8;
+  engineTransport.send({
+    cmd: 'set_channel_gain', channelId: ch.id,
+    gain: chVol * busVol * masterVol * channelMuteFactor(ch),
   });
+}
+
+function pushAllChannelGains() {
+  for (const c of song.channels) {
+    if (c.instrument === 'plugin') pushChannelGain(c);
+  }
 }
 
 function tracksToPlay() {
@@ -2759,7 +2938,20 @@ function syncSongArrangement() {
   engineTransport.pushSongArrangement();
   // Loop length may have changed (clip resize / new clip past current end).
   // Publish so the PatternPlayer wraps at the new song boundary.
-  engineTransport.setLoopBeats(engineTransport.songLengthBeats());
+  //
+  // Engine defers a shrink-below-current-position until the next wrap to
+  // avoid teleporting the playhead backward mid-iteration — that's the right
+  // call for PAT-mode note edits, but for a SONG-mode arrangement change it
+  // means playback keeps sweeping through the now-deleted tail before
+  // restarting. Reset the playhead first so pos < newLen and the engine
+  // applies the shrink immediately (skips the defer branch).
+  const newLenBeats = engineTransport.songLengthBeats();
+  const newLenSamples = engineTransport.beatsToSamples(newLenBeats);
+  if (engineTransport.isPlaying && engineTransport.patternPosition >= newLenSamples) {
+    stopAllEngineNotes();
+    engineTransport.seekPattern(0);
+  }
+  engineTransport.setLoopBeats(newLenBeats);
 }
 
 // Mirror a single piano-roll (or step-sequencer) note edit into whichever
@@ -2900,8 +3092,6 @@ function animatePlayhead() {
     // (8px) = 348px, then travels across step_width * total_steps.
     if (rackPh) {
       if (isPat) {
-        const STEP_PX = 24;              // 22px cell + 2px margin
-        const LEFT_START = 348;
         const pat = song.patterns.find(p => p.id === currentPatternId);
         // While recording use the frozen "at start of take" length so the
         // playhead sweep is deterministic. During playback use current
@@ -2909,18 +3099,21 @@ function animatePlayhead() {
         const bars = isRecording && midiRecording?.initialLengthBars
           ? midiRecording.initialLengthBars
           : ((pat && pat.lengthBars) ? pat.lengthBars : 1);
-        const totalPx = bars * 16 * STEP_PX;
+        const bounds = measureRackStepBounds(bars);
         const totalBeats = bars * 4;
         const frac = totalBeats > 0 ? (displayElapsed * song.bpm / 60) / totalBeats : 0;
         // FL behavior: once past the last recorded bar, hide the line.
         // During linear record this also stops the visual from marching
         // past the boundary; it stays hidden even as notes extend the
         // pattern (denominator is frozen at record start).
-        if (frac >= 1) {
+        if (frac >= 1 || !bounds) {
           rackPh.style.display = 'none';
         } else {
           rackPh.style.display = 'block';
-          const x = LEFT_START + frac * totalPx;
+          // Linear-interp between the DOM-measured start and end of the loop
+          // window — matches the visible step grid exactly, including the
+          // extra margin at bar and beat boundaries.
+          const x = bounds.startX + frac * (bounds.endX - bounds.startX);
           rackPh.style.transform = `translate3d(${x}px, 0, 0)`;
         }
       } else {
@@ -3041,7 +3234,7 @@ async function applyToolCalls(calls) {
           const busVol = bus ? (bus.volume ?? 1.0) : 1.0;
           const master = song.mixer.inserts.find(i => i.id === 'master');
           const masterVol = master ? (master.volume ?? 0.8) : 1.0;
-          engineTransport.send({ cmd: 'set_channel_gain', channelId: c.id, gain: input.volume * busVol * masterVol });
+          engineTransport.send({ cmd: 'set_channel_gain', channelId: c.id, gain: input.volume * busVol * masterVol * channelMuteFactor(c) });
           summaries.push(`vol ${c.name} → ${input.volume}`);
         }
       // (removed) legacy apply_effect / remove_effect tools referenced the
@@ -3378,7 +3571,7 @@ function renderPlaylist() {
     for (const clip of track.clips) {
       const el = document.createElement('div');
       el.className = 'clip' + (clip.type === 'audio' ? ' audio' : '');
-      if (clip.id === selectedClipId) el.classList.add('selected');
+      if (clip.id === selectedClipId || selectedClipIds.has(clip.id)) el.classList.add('selected');
       el.style.left = (clip.startBar * BAR_WIDTH) + 'px';
       el.style.width = (clip.lengthBars * BAR_WIDTH - 2) + 'px';
       if (clip.type === 'pattern') {
@@ -3564,11 +3757,19 @@ function renderChannelRack() {
       }
       // Position rack playhead using transform to match animatePlayhead —
       // mixing style.left with a leftover transform would show it wrong.
+      // Uses the same measured bounds animatePlayhead uses so click-seek and
+      // playback-sweep land in the same place.
       const rp = document.getElementById('rack-playhead');
       if (rp) {
         rp.style.display = 'block';
         rp.style.left = '0';
-        rp.style.transform = `translate3d(${348 + x}px, 0, 0)`;
+        const bounds = measureRackStepBounds(rulerBars);
+        let seekX = 348 + x; // fallback matches legacy math
+        if (bounds) {
+          const frac = beats / (rulerBars * 4);
+          seekX = bounds.startX + frac * (bounds.endX - bounds.startX);
+        }
+        rp.style.transform = `translate3d(${seekX}px, 0, 0)`;
       }
     }
     // Always stash + engine-seek so the seek lands (live during playback)
@@ -3595,7 +3796,7 @@ function renderChannelRack() {
       <span class="chnum" title="Route: ${targetNum === 0 ? 'Master' : 'Insert ' + targetNum} — drag to change, click to open in mixer">${targetLabel}</span>
       <span class="swatch" style="background:${ch.color}"></span>
       <span class="cname" title="${escapeHtml(ch.instrument)}${ch.drumPitch != null ? ' · pitch ' + ch.drumPitch : ''}">${escapeHtml(ch.name)}</span>
-      <input class="cvol" type="range" min="0" max="1" step="0.01" value="${ch.volume}" data-ch="${ch.id}" title="volume" />
+      <input class="cvol" type="range" min="0" max="1" step="0.001" value="${faderGainToPosition(ch.volume)}" data-ch="${ch.id}" title="volume · ${volToDb(ch.volume)} dB" />
       <span class="cbtns">
         ${ch.instrument === 'plugin' ? `<button data-a="gui" data-ch="${ch.id}" title="Open plugin window">GUI</button>` : ''}
         <button class="${ch.muted?'on-mute':''}" data-a="mute" data-ch="${ch.id}">M</button>
@@ -3752,6 +3953,34 @@ function volToDb(v) {
   return (20 * Math.log10(v)).toFixed(1);
 }
 
+// Fader taper. Slider position lives in [0..1]; stored gain is linear (what
+// the engine consumes) and spans [0..FADER_MAX_GAIN]. Piecewise curve chosen
+// to match FL Studio's fader feel:
+//   * 0 → mute
+//   * FADER_UNITY_POS (~0.78 of throw) → 1.0 (0 dB)
+//   * 1.0 → FADER_MAX_GAIN (+12 dB)
+// The below-unity half uses a quadratic taper so the audible cut range spreads
+// across most of the throw instead of cramming into the top few percent; the
+// above-unity quarter is linear for a predictable boost knee.
+// Storage stays linear gain — no on-disk migration.
+const FADER_MAX_GAIN = 4.0;   // +12 dB above unity
+const FADER_UNITY_POS = 0.78; // matches FL — unity sits ~3/4 up the throw
+function faderPositionToGain(pos) {
+  const p = Math.max(0, Math.min(1, pos));
+  if (p <= FADER_UNITY_POS) {
+    const norm = p / FADER_UNITY_POS;
+    return norm * norm;
+  }
+  const boost = (p - FADER_UNITY_POS) / (1 - FADER_UNITY_POS);
+  return 1 + boost * (FADER_MAX_GAIN - 1);
+}
+function faderGainToPosition(gain) {
+  const g = Math.max(0, Math.min(gain, FADER_MAX_GAIN));
+  if (g <= 1) return FADER_UNITY_POS * Math.sqrt(g);
+  const boost = (g - 1) / (FADER_MAX_GAIN - 1);
+  return FADER_UNITY_POS + boost * (1 - FADER_UNITY_POS);
+}
+
 // FL-style mixer. One strip per channel plus a Master strip.  Click a strip
 // to select — its 10 effect slots show in the right panel. Drag a plugin
 // from Browser → Effects into a slot to insert it in the channel's audio
@@ -3769,7 +3998,7 @@ function renderMixer() {
 
   // Master strip first — hosts nothing yet, but keeps FL's visual anchor.
   const master = song.mixer.inserts.find(i => i.id === 'master') || {
-    id: 'master', name: 'Master', volume: 0.8, effects: [],
+    id: 'master', name: 'Master', volume: 1.0, effects: [],
   };
   strips.appendChild(buildStrip({
     id: 'master', name: 'Master', volume: master.volume,
@@ -3823,14 +4052,16 @@ function buildStrip({ id, name, volume, color, kind, fxCount, muted, solo, num }
   const isMaster = kind === 'master';
   strip.innerHTML = `
     ${color ? `<div class="colordot" style="background:${color}"></div>` : '<div class="colordot"></div>'}
-    ${num != null ? `<div class="stripnum">${num}</div>` : ''}
+    ${num != null
+      ? `<div class="stripnum">${num}</div>`
+      : `<div class="stripnum" aria-hidden="true">&nbsp;</div>`}
     <div class="mname" ${isMaster ? '' : `contenteditable="true"`} data-id="${id}">${escapeHtml(name)}</div>
     <div class="mstate">
       <div class="led ${muted ? '' : 'on'}" title="active"></div>
     </div>
     <div class="fxcount">${fxCount ? fxCount + ' FX' : '·'}</div>
     <div class="faderwrap">
-      <input class="fader" type="range" min="0" max="1.5" step="0.01" value="${volume}" data-id="${id}" />
+      <input class="fader" type="range" min="0" max="1" step="0.001" value="${faderGainToPosition(volume)}" data-id="${id}" />
     </div>
     <div class="db" data-db="${id}">${volToDb(volume)}</div>
   `;
@@ -3842,7 +4073,7 @@ function buildStrip({ id, name, volume, color, kind, fxCount, muted, solo, num }
     renderMixer();
   });
   const fader = strip.querySelector('.fader');
-  fader.addEventListener('input', () => onStripFader(id, kind, parseFloat(fader.value)));
+  fader.addEventListener('input', () => onStripFader(id, kind, faderPositionToGain(parseFloat(fader.value))));
   const nameEl = strip.querySelector('.mname');
   if (!isMaster) nameEl.addEventListener('blur', () => onStripRename(id, nameEl.textContent.trim()));
   return strip;
@@ -3856,7 +4087,7 @@ function pushBusGains(busNum) {
   for (const c of song.channels) {
     if ((c.targetInsertNum || 0) !== busNum) continue;
     const chVol = c.volume ?? 0.8;
-    engineTransport.send({ cmd: 'set_channel_gain', channelId: c.id, gain: chVol * busVol });
+    engineTransport.send({ cmd: 'set_channel_gain', channelId: c.id, gain: chVol * busVol * channelMuteFactor(c) });
   }
 }
 
@@ -3870,7 +4101,7 @@ function onStripFader(id, kind, value) {
       const chVol = c.volume ?? 0.8;
       const bus = (song.mixer.busses || []).find(b => b.num === (c.targetInsertNum || 0));
       const busVol = bus ? (bus.volume ?? 1.0) : 1.0;
-      engineTransport.send({ cmd: 'set_channel_gain', channelId: c.id, gain: chVol * busVol * value });
+      engineTransport.send({ cmd: 'set_channel_gain', channelId: c.id, gain: chVol * busVol * value * channelMuteFactor(c) });
     }
   } else if (kind === 'bus') {
     // Bus strip: id is the bus id (like `bus_1`). Store on the bus and push
@@ -3891,7 +4122,7 @@ function onStripFader(id, kind, value) {
       const busVol = bus ? (bus.volume ?? 1.0) : 1.0;
       const master = song.mixer.inserts.find(i => i.id === 'master');
       const masterVol = master ? (master.volume ?? 0.8) : 1.0;
-      engineTransport.send({ cmd: 'set_channel_gain', channelId: ch.id, gain: value * busVol * masterVol });
+      engineTransport.send({ cmd: 'set_channel_gain', channelId: ch.id, gain: value * busVol * masterVol * channelMuteFactor(ch) });
     }
   }
   const dbEl = document.querySelector(`[data-db="${id}"]`);
@@ -4412,7 +4643,7 @@ async function addChannelFromInstrument({ id, name, pluginId, gmProgram, drumPit
     id, name, instrument: 'plugin', pluginId,
     gmProgram: gmProgram ?? null,
     drumPitch: drumPitch ?? null,
-    volume: 0.8, effects: [],
+    volume: 1.0, effects: [],
     muted: false, solo: false, armed: true,
     color: PALETTE[song.channels.length % PALETTE.length],
     insertId: 'master',
@@ -4669,6 +4900,15 @@ function onTrackHeaderBtn(e) {
   if (!track) return;
   if (a === 'mute') track.muted = !track.muted;
   else if (a === 'solo') track.solo = !track.solo;
+  // Track mute/solo lives in the SONG arrangement filter (see pushSongArrangement).
+  // If transport is running in SONG mode, re-push so the filter takes effect now
+  // rather than at the next play. Also flush held notes so muted-track clips
+  // don't leave hanging voices ringing.
+  if ((a === 'mute' || a === 'solo') &&
+      song.transportMode === 'song' && engineTransport.isPlaying) {
+    stopAllEngineNotes();
+    engineTransport.pushSongArrangement();
+  }
   render();
 }
 
@@ -4676,14 +4916,15 @@ function onChannelVol(e) {
   const cid = e.currentTarget.dataset.ch;
   const ch = song.channels.find(c => c.id === cid);
   if (ch) {
-    ch.volume = parseFloat(e.currentTarget.value);
+    ch.volume = faderPositionToGain(parseFloat(e.currentTarget.value));
+    e.currentTarget.title = 'volume · ' + volToDb(ch.volume) + ' dB';
     // Compose channel × bus × master so the channel rack fader agrees with
     // whatever the mixer strip and master are set to.
     const bus = (song.mixer.busses || []).find(b => b.num === (ch.targetInsertNum || 0));
     const busVol = bus ? (bus.volume ?? 1.0) : 1.0;
     const master = song.mixer.inserts.find(i => i.id === 'master');
     const masterVol = master ? (master.volume ?? 0.8) : 1.0;
-    engineTransport.send({ cmd: 'set_channel_gain', channelId: ch.id, gain: ch.volume * busVol * masterVol });
+    engineTransport.send({ cmd: 'set_channel_gain', channelId: ch.id, gain: ch.volume * busVol * masterVol * channelMuteFactor(ch) });
     persist();
   }
 }
@@ -4692,8 +4933,14 @@ function onChannelBtn(e) {
   const cid = e.currentTarget.dataset.ch;
   const ch = song.channels.find(c => c.id === cid);
   if (!ch) return;
-  if (a === 'mute') ch.muted = !ch.muted;
-  else if (a === 'solo') ch.solo = !ch.solo;
+  if (a === 'mute') {
+    ch.muted = !ch.muted;
+    pushAllChannelGains();
+  }
+  else if (a === 'solo') {
+    ch.solo = !ch.solo;
+    pushAllChannelGains();
+  }
   else if (a === 'gui') {
     if (window.nasty && window.nasty.engine) {
       window.nasty.engine.send({ cmd: 'show_plugin_ui', channelId: ch.id });
@@ -4744,6 +4991,7 @@ function onClipResizeStart(e) {
   const clip = track && track.clips.find(c => c.id === clipId);
   if (!clip) return;
   selectedClipId = clipId;
+  selectedClipIds = new Set([clipId]);
   clipResizeDrag = { clipId, trackId, startX: e.clientX, origLen: clip.lengthBars };
   document.addEventListener('mousemove', onClipResizeMove);
   document.addEventListener('mouseup', onClipResizeUp);
@@ -4785,26 +5033,101 @@ function onLaneMouseDown(e) {
   }
   if (e.button !== 0) return;
   if (e.target !== e.currentTarget) return;
-  if (!currentPatternId) return;
   const row = e.currentTarget;
   const trackId = row.dataset.trackId;
   const track = song.tracks.find(t => t.id === trackId);
   if (!track) return;
-  const rect = row.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const startBar = Math.max(0, Math.floor(x / BAR_WIDTH));
-  const pat = song.patterns.find(p => p.id === currentPatternId);
-  if (!pat) return;
-  const clip = {
-    id: 'clip_' + Date.now().toString(36),
-    type: 'pattern', patternId: pat.id,
-    startBar, lengthBars: pat.lengthBars,
+  // Defer the "create clip" decision until mouseup — this same gesture
+  // doubles as a marquee-select once the pointer has moved past a threshold.
+  // If it turns out to be a plain click, we fall through and create.
+  startArrangementMarquee(e, { fallbackTrack: track, fallbackRow: row });
+}
+
+// Marquee (rubber-band) selection on the arrangement. Draws a semi-transparent
+// box inside #timeline, then on release adds every clip whose DOM rect
+// intersects the marquee to selectedClipIds. If the drag never crossed the
+// threshold, the gesture is treated as a plain click on empty lane space and
+// falls back to the "create clip at this bar" behavior.
+const MARQUEE_THRESHOLD_PX = 4;
+function startArrangementMarquee(e, { fallbackTrack, fallbackRow }) {
+  const timeline = document.getElementById('timeline');
+  if (!timeline) return;
+  const timelineRect = timeline.getBoundingClientRect();
+  const startClientX = e.clientX, startClientY = e.clientY;
+  const startContentX = e.clientX - timelineRect.left + timeline.scrollLeft;
+  const startContentY = e.clientY - timelineRect.top + timeline.scrollTop;
+  let marquee = null;
+  let dragged = false;
+
+  const onMove = (mv) => {
+    const dx = mv.clientX - startClientX;
+    const dy = mv.clientY - startClientY;
+    if (!dragged && Math.hypot(dx, dy) < MARQUEE_THRESHOLD_PX) return;
+    dragged = true;
+    if (!marquee) {
+      marquee = document.createElement('div');
+      marquee.id = 'arrangement-marquee';
+      marquee.style.cssText =
+        'position:absolute; z-index:5; pointer-events:none;' +
+        'background:rgba(120,160,255,0.18);' +
+        'border:1px solid rgba(140,180,255,0.9);';
+      timeline.appendChild(marquee);
+    }
+    const curContentX = mv.clientX - timelineRect.left + timeline.scrollLeft;
+    const curContentY = mv.clientY - timelineRect.top + timeline.scrollTop;
+    const x1 = Math.min(startContentX, curContentX);
+    const y1 = Math.min(startContentY, curContentY);
+    const x2 = Math.max(startContentX, curContentX);
+    const y2 = Math.max(startContentY, curContentY);
+    marquee.style.left   = x1 + 'px';
+    marquee.style.top    = y1 + 'px';
+    marquee.style.width  = (x2 - x1) + 'px';
+    marquee.style.height = (y2 - y1) + 'px';
   };
-  track.clips.push(clip);
-  selectedClipId = clip.id;
-  autoExpandBars();
-  render();
-  syncSongArrangement();
+
+  const onUp = (up) => {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    if (!dragged) {
+      // Plain click on empty lane → original create-clip behavior. Match the
+      // math from the pre-refactor handler so column-under-cursor still lines
+      // up regardless of horizontal scroll.
+      if (!currentPatternId) return;
+      const pat = song.patterns.find(p => p.id === currentPatternId);
+      if (!pat) return;
+      const rowRect = fallbackRow.getBoundingClientRect();
+      const x = up.clientX - rowRect.left;
+      const startBar = Math.max(0, Math.floor(x / BAR_WIDTH));
+      const clip = {
+        id: 'clip_' + Date.now().toString(36),
+        type: 'pattern', patternId: pat.id,
+        startBar, lengthBars: pat.lengthBars,
+      };
+      fallbackTrack.clips.push(clip);
+      selectedClipId = clip.id;
+      selectedClipIds = new Set([clip.id]);
+      autoExpandBars();
+      render();
+      syncSongArrangement();
+      return;
+    }
+    // Marquee committed — collect every clip whose rect intersects.
+    const box = marquee.getBoundingClientRect();
+    const newSel = new Set();
+    document.querySelectorAll('.clip[data-clip-id]').forEach(el => {
+      const r = el.getBoundingClientRect();
+      if (r.right < box.left || r.left > box.right) return;
+      if (r.bottom < box.top || r.top > box.bottom) return;
+      newSel.add(el.dataset.clipId);
+    });
+    selectedClipIds = newSel;
+    selectedClipId = newSel.size === 1 ? [...newSel][0] : null;
+    marquee.remove();
+    render();
+  };
+
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
 }
 
 function onLaneDragOver(e) {
@@ -4830,6 +5153,7 @@ function onLaneDrop(e) {
   };
   track.clips.push(clip);
   selectedClipId = clip.id;
+  selectedClipIds = new Set([clip.id]);
   autoExpandBars();
   render();
   syncSongArrangement();
@@ -4851,6 +5175,7 @@ function onClipMouseDown(e) {
   const clip = track && track.clips.find(c => c.id === clipId);
   if (!clip) return;
   selectedClipId = clipId;
+  selectedClipIds = new Set([clipId]);
   // Immediate selection visual — the .selected class shows up before any
   // render() so a click-with-no-drag still looks selected.
   document.querySelectorAll('.clip.selected').forEach(el => el.classList.remove('selected'));
@@ -4900,6 +5225,7 @@ function onRightEraseUp() {
   const anyKilled = rightEraseKilled && rightEraseKilled.size > 0;
   rightEraseKilled = null;
   if (anyKilled) {
+    if (engineTransport.isPlaying) stopAllEngineNotes();
     render();
     syncSongArrangement();
   }
@@ -4911,6 +5237,7 @@ function killClipByElement(clipEl) {
   if (!track || !clipId) return;
   track.clips = track.clips.filter(c => c.id !== clipId);
   if (selectedClipId === clipId) selectedClipId = null;
+  selectedClipIds.delete(clipId);
   if (rightEraseKilled) rightEraseKilled.add(clipId);
   clipEl.remove();
 }
@@ -4961,6 +5288,7 @@ function onClipMouseUp(e) {
     copy.startBar = Math.max(0, ended);
     track.clips.push(copy);
     selectedClipId = copy.id;
+    selectedClipIds = new Set([copy.id]);
     autoExpandBars();
     render();
   } else if (!clipDrag.moved && clip && clip.type === 'pattern') {
@@ -4996,29 +5324,58 @@ function onClipMouseUp(e) {
 // Keyboard
 // ============================================================
 document.addEventListener('keydown', (e) => {
+  // Cmd+Z / Cmd+Shift+Z / Cmd+Y are global — they must fire even when the
+  // piano roll's Editing-channel <select> or a text field holds focus. Do
+  // NOT gate them behind the form-focus check below (which is there to keep
+  // Backspace / Space / letter keys from stealing typing input).
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+    if (e.target.isContentEditable) return; // let contenteditable field do its own undo
+    e.preventDefault();
+    if (e.shiftKey) redo(); else undo();
+    return;
+  }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'y') {
+    if (e.target.isContentEditable) return;
+    e.preventDefault();
+    redo();
+    return;
+  }
   if (document.activeElement && ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)) return;
   const isPrOpen = !document.getElementById('piano-roll').classList.contains('hidden');
-  if ((e.key === 'Delete' || e.key === 'Backspace') && selectedClipId && !isPrOpen) {
-    for (const t of song.tracks) t.clips = t.clips.filter(c => c.id !== selectedClipId);
+  // Prefer the multi-select set so marquee-selected clips get affected too.
+  // Single-click paths keep the set in sync (size == 1), so this covers both.
+  const activeIds = selectedClipIds.size > 0
+    ? selectedClipIds
+    : (selectedClipId ? new Set([selectedClipId]) : new Set());
+  if ((e.key === 'Delete' || e.key === 'Backspace') && activeIds.size > 0 && !isPrOpen) {
+    for (const t of song.tracks) t.clips = t.clips.filter(c => !activeIds.has(c.id));
     selectedClipId = null;
+    selectedClipIds = new Set();
+    // If any of the deleted clips were currently sounding, their noteOffs
+    // live on a schedule that just got yanked. Flush held notes so they
+    // don't ring for the remainder of the pattern.
+    if (engineTransport.isPlaying) stopAllEngineNotes();
     render();
     syncSongArrangement();
   }
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b' && selectedClipId && !isPrOpen) {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b' && activeIds.size > 0 && !isPrOpen) {
     e.preventDefault();
+    const newSel = new Set();
+    let stamp = Date.now();
     for (const t of song.tracks) {
-      const c = t.clips.find(cl => cl.id === selectedClipId);
-      if (c) {
-        const copy = { ...c, id: 'clip_' + Date.now().toString(36),
+      const originals = t.clips.filter(c => activeIds.has(c.id));
+      for (const c of originals) {
+        const copy = { ...c, id: 'clip_' + (stamp++).toString(36),
           startBar: c.startBar + c.lengthBars };
         t.clips.push(copy);
-        selectedClipId = copy.id;
-        autoExpandBars();
-        render();
-        syncSongArrangement();
-        break;
+        newSel.add(copy.id);
       }
     }
+    selectedClipIds = newSel;
+    selectedClipId = newSel.size === 1 ? [...newSel][0] : null;
+    autoExpandBars();
+    render();
+    syncSongArrangement();
   }
   if (e.key === ' ' && !isPrOpen) {
     e.preventDefault();
@@ -5779,6 +6136,10 @@ const typingActive = {};
 
 document.addEventListener('keydown', (e) => {
   if (document.activeElement && ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)) return;
+  // Bail on any modifier — Cmd+B is duplicate, Cmd+S save, etc. Also macOS
+  // suppresses keyup for letter keys while Cmd is held, so a note fired here
+  // would ring until Stop.
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
   const key = e.key;
   if (key === '[') { typingOctave = Math.max(-3, typingOctave - 1); return; }
   if (key === ']') { typingOctave = Math.min(3, typingOctave + 1); return; }
@@ -5910,7 +6271,7 @@ document.getElementById('new-channel-ok').addEventListener('click', () => {
     id, name,
     instrument: 'plugin', pluginId: 'drum:' + sample,
     drumSample: sample, drumRootNote: 60,
-    volume: 0.8, effects: [],
+    volume: 1.0, effects: [],
     muted: false, solo: false, armed: true,
     color: PALETTE[song.channels.length % PALETTE.length],
     insertId: 'master',
@@ -6204,7 +6565,7 @@ function renderBrowser() {
             id, name: inst.name,
             instrument: 'plugin', pluginId: 'drum:' + inst.sample,
             drumSample: inst.sample, drumRootNote: 60,
-            volume: 0.8, effects: [],
+            volume: 1.0, effects: [],
             muted: false, solo: false, armed: true,
             color: PALETTE[song.channels.length % PALETTE.length],
             insertId: 'master',
@@ -6623,7 +6984,7 @@ function addSfizzPresetChannel(name, folder, file) {
   const ch = {
     id, name, instrument: 'plugin',
     pluginId: sfizz.id, pluginFormat: sfizz.format,
-    drumPitch: null, volume: 0.8, effects: [],
+    drumPitch: null, volume: 1.0, effects: [],
     muted: false, solo: false, armed: true,
     color: PALETTE[song.channels.length % PALETTE.length],
     insertId: 'master',
@@ -6651,7 +7012,7 @@ async function addGmChannel(program, displayName) {
   const ch = {
     id, name: displayName, instrument: 'plugin',
     pluginId: 'gm-' + program, pluginFormat: 'GM', gmProgram: program,
-    drumPitch: null, volume: 0.8, effects: [],
+    drumPitch: null, volume: 1.0, effects: [],
     muted: false, solo: false, armed: true,
     color: PALETTE[song.channels.length % PALETTE.length],
     insertId: 'master',
@@ -6673,7 +7034,7 @@ function addPluginChannel(pluginDesc) {
     pluginId: pluginDesc.id,
     pluginFormat: pluginDesc.format,
     drumPitch: null,
-    volume: 0.8, effects: [],
+    volume: 1.0, effects: [],
     muted: false, solo: false, armed: true,
     color: PALETTE[song.channels.length % PALETTE.length],
     insertId: 'master',
@@ -8157,6 +8518,10 @@ toggleWindow = function(name) {
 loadFromStorage();
 ensureDefaults();
 song.transportMode = 'pat';
+// Prime the undo baseline with the boot state so the FIRST edit is undoable.
+// Without this the first persist commit would only initialize the baseline
+// and no snapshot would land on the undo stack.
+lastCommittedSnapshot = serializeSongForUndo();
 render();
 initMIDI();
 initPianoRollDrop();
