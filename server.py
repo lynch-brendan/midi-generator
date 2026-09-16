@@ -2110,12 +2110,29 @@ def nasty_chat(req: NastyChatRequest):
             + "\n".join(knowledge_index)
             + "\n\n"
         )
+    # Strip raw plugin params / opaque plugin state from every channel before
+    # sending song state to Claude. A single VST with ~200 params serializes
+    # to ~120 kB of {index,name,value} triples — Claude can't reason about
+    # raw parameter values, and the base64 pluginState blob is only meaningful
+    # to the plugin itself. Once a plugin is loaded it lives in the song
+    # forever, so every turn was mailing that dead weight uncached at $3/M
+    # input tokens. Curated plugin knowledge already reaches Claude via the
+    # get_plugin_cheatsheet tool. See devlog for the diagnostic that found
+    # this (per-turn cost dropped ~10× after this trim).
+    slim_song = dict(req.song) if isinstance(req.song, dict) else req.song
+    if isinstance(slim_song, dict) and isinstance(slim_song.get("channels"), list):
+        slim_song["channels"] = [
+            {k: v for k, v in c.items() if k not in ("params", "pluginState")}
+            if isinstance(c, dict) else c
+            for c in slim_song["channels"]
+        ]
+
     # Song state + sound-goals change per message; plugin manifest and
     # cheatsheet index are stable per session. Put the DYNAMIC bits into
     # the user message so the cached system prefix stays cache-hit across
     # turns — that's the whole point of prompt caching.
     user_content = (
-        f"Current song state:\n```json\n{json.dumps(req.song, indent=2)}\n```\n\n"
+        f"Current song state:\n```json\n{json.dumps(slim_song, indent=2)}\n```\n\n"
         + sound_goals_block
         + f"User: {req.message}"
     )
