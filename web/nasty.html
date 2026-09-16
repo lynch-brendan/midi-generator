@@ -708,25 +708,54 @@
     text-align: center; font-size: 9px; color: var(--dim);
     padding: 2px; letter-spacing: 0.5px;
   }
-  /* Sidechain send button — one per bus strip. Sits above IN and shows
-     which insert this strip's signal is feeding into. Yellow / gold when
-     active, matching FL's send-arrow color. */
-  .mixer-strip .mixsend {
-    display: flex; align-items: center; justify-content: center; gap: 4px;
-    font-size: 9px; letter-spacing: 0.5px; color: var(--dim);
-    padding: 3px 0; cursor: pointer;
-    border-top: 1px solid #14171c;
-    user-select: none;
+  /* FL-style routing arrow at the bottom of every strip. When another
+     strip is selected, this shows what routing (if any) the SELECTED strip
+     has toward THIS strip: empty = no route, white = main audio route,
+     yellow = sidechain feed. Right-click opens a routing menu. */
+  .mixer-strip .routearrow {
+    display: flex; align-items: center; justify-content: center;
+    height: 14px; cursor: pointer; user-select: none;
+    padding: 0;
   }
-  .mixer-strip .mixsend:hover { color: var(--text); background: rgba(255,255,255,0.03); }
-  .mixer-strip .mixsend.on { color: #f5b800; font-weight: 600; }
-  .mixer-strip .mixsend .mixsend-led {
-    width: 6px; height: 6px; border-radius: 50%;
-    background: #1a1d22; border: 1px solid #333;
+  .mixer-strip .routearrow-tri {
+    width: 0; height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 7px solid #333;
+    transition: border-top-color 0.1s, filter 0.1s;
   }
-  .mixer-strip .mixsend.on .mixsend-led {
-    background: #f5b800; box-shadow: 0 0 4px #f5b800;
-    border-color: #f5b800;
+  .mixer-strip .routearrow:hover .routearrow-tri {
+    border-top-color: var(--text-dim);
+  }
+  .mixer-strip .routearrow.main .routearrow-tri {
+    border-top-color: #dcdcdc;
+    filter: drop-shadow(0 0 3px rgba(220, 220, 220, 0.6));
+  }
+  .mixer-strip .routearrow.sidechain .routearrow-tri {
+    border-top-color: #f5b800;
+    filter: drop-shadow(0 0 3px rgba(245, 184, 0, 0.7));
+  }
+  /* Popup context menu for right-click routing options. Anchored to the
+     click location. Simple black-on-dark popup, keyboard-friendly. */
+  #route-menu {
+    position: fixed; z-index: 1000;
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 4px; padding: 4px; min-width: 200px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-size: 12px;
+  }
+  #route-menu.hidden { display: none; }
+  #route-menu .rm-item {
+    padding: 6px 10px; cursor: pointer; border-radius: 3px;
+    color: var(--text);
+  }
+  #route-menu .rm-item:hover { background: var(--accent); color: white; }
+  #route-menu .rm-item.destructive:hover { background: var(--record); }
+  #route-menu .rm-header {
+    padding: 4px 10px; font-size: 10px; color: var(--dim);
+    letter-spacing: 0.5px; text-transform: uppercase;
+  }
+  #route-menu .rm-sep {
+    height: 1px; background: var(--line); margin: 4px 0;
   }
   /* Arm-for-recording disc button — appears when a bus has an audio input
      routed. Red-filled when armed; click to toggle. */
@@ -2196,6 +2225,11 @@
     </div>
   </div>
 </div>
+
+<!-- Right-click routing menu (FL-style). Shown when the user right-clicks
+     a strip's bottom arrow — the SELECTED strip is the source, the clicked
+     strip is the target. Options depend on current routing state. -->
+<div id="route-menu" class="hidden"></div>
 
 <!-- Picker modal for sidechain send destinations. -->
 <div id="send-picker-modal" class="modal hidden" style="z-index:400">
@@ -4250,6 +4284,19 @@ function renderMixer() {
     s.classList.toggle('selected', s.dataset.id === selectedStripId);
   });
 
+  // Update each strip's routing-arrow state to reflect what the CURRENTLY
+  // SELECTED source strip routes here. This is the FL model: pick a source,
+  // see its wires + destination arrows light up across the mixer.
+  const sourceBus = (song.mixer.busses || []).find(b => b.id === selectedStripId);
+  strips.querySelectorAll('.routearrow').forEach(arrow => {
+    const dstId = arrow.dataset.routeId;
+    arrow.classList.remove('main', 'sidechain');
+    if (!sourceBus || dstId === selectedStripId) return;
+    const sends = sourceBus.sends || [];
+    const hit = sends.find(s => s.targetChannelId === dstId);
+    if (hit) arrow.classList.add(hit.targetInput === 'sidechain' ? 'sidechain' : 'main');
+  });
+
   drawMixerWires();
   renderMixerSlots();
 }
@@ -4280,37 +4327,45 @@ function drawMixerWires() {
   strips.querySelectorAll('.mixer-strip').forEach(el => {
     stripEls.set(el.dataset.id, el);
   });
+  // FL model: wires only visible for the currently-selected source strip.
+  // Everything else stays clean until you select a specific insert.
   for (const bus of buses) {
+    if (bus.id !== selectedStripId) continue;
     if (!bus.sends || !bus.sends.length) continue;
     for (const send of bus.sends) {
       const srcEl = stripEls.get(bus.id);
       const dstEl = stripEls.get(send.targetChannelId);
       if (!srcEl || !dstEl) continue;
-      const sr = srcEl.getBoundingClientRect();
-      const dr = dstEl.getBoundingClientRect();
-      // Anchor near the top of each strip's SC row so the wire visually
-      // matches where sends originate/terminate.
+      const srcArrow = srcEl.querySelector('.routearrow-tri');
+      const dstArrow = dstEl.querySelector('.routearrow-tri');
+      const sr = (srcArrow || srcEl).getBoundingClientRect();
+      const dr = (dstArrow || dstEl).getBoundingClientRect();
       const scrollX = strips.scrollLeft;
       const sx = sr.left - container.left + sr.width / 2 + scrollX;
       const dx = dr.left - container.left + dr.width / 2 + scrollX;
-      const sy = 30;  // just below the strip number
-      const dy = 30;
+      // Anchor at the top of the routing triangle so wires visually terminate
+      // where the arrow is — FL Studio's cue.
+      const sy = sr.top - container.top;
+      const dy = dr.top - container.top;
       // Arc height scales with horizontal distance so nearby strips get a
       // gentle bump and far ones a taller arch that stays inside the mixer.
       const dist = Math.abs(dx - sx);
-      const arc = Math.min(60, 12 + dist * 0.15);
+      const arc = Math.min(80, 20 + dist * 0.2);
       const midX = (sx + dx) / 2;
-      const midY = sy - arc;
+      const midY = Math.min(sy, dy) - arc;
       const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       path.setAttribute('d', `M ${sx} ${sy} Q ${midX} ${midY} ${dx} ${dy}`);
+      if (send.targetInput !== 'sidechain') {
+        path.setAttribute('stroke', '#dcdcdc');
+        path.style.filter = 'drop-shadow(0 0 3px rgba(220,220,220,0.5))';
+      }
       svg.appendChild(path);
-      // Arrowhead near the destination — small triangle rotated toward dst.
+      // Arrowhead near the destination — small triangle pointing at target.
       const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-      const dir = dx > sx ? 1 : -1;
-      const ax = dx - dir * 6;
-      const ay = dy - 4;
-      arrow.setAttribute('points', `${ax},${ay - 3} ${ax},${ay + 3} ${dx},${dy}`);
+      arrow.setAttribute('points',
+        `${dx - 4},${dy - 6} ${dx + 4},${dy - 6} ${dx},${dy}`);
       arrow.setAttribute('class', 'arrow');
+      if (send.targetInput !== 'sidechain') arrow.setAttribute('fill', '#dcdcdc');
       svg.appendChild(arrow);
     }
   }
@@ -4340,7 +4395,6 @@ function buildStrip({ id, name, volume, color, kind, fxCount, muted, solo, num, 
     <div class="mstate">
       <div class="led ${muted ? '' : 'on'}" title="active"></div>
     </div>
-    ${isBus ? `<div class="mixsend ${sidechainActive ? 'on' : ''}" data-send-id="${id}" title="${sidechainActive ? 'Sidechaining to ' + sidechainLabel + ' — click to change' : 'Sidechain this strip to another insert'}"><span class="mixsend-led"></span>${sidechainLabel || 'SC'}</div>` : ''}
     ${isBus ? `<div class="mixin ${audioInputEnabled ? 'on' : ''}" data-mixin-id="${id}" title="${audioInputEnabled ? 'Mic feeding this insert — click to remove' : 'Route a mic / audio input into this insert'}"><span class="mixin-led"></span>IN</div>` : ''}
     ${isBus && audioInputEnabled ? `<div class="mixarm ${recArmed ? 'on' : ''}" data-arm-id="${id}" title="${recArmed ? 'Armed — recording will capture this input' : 'Arm for recording'}"><span class="mixarm-disc"></span></div>` : ''}
     <div class="fxcount">${fxCount ? fxCount + ' FX' : '·'}</div>
@@ -4348,6 +4402,7 @@ function buildStrip({ id, name, volume, color, kind, fxCount, muted, solo, num, 
       <input class="fader" type="range" min="0" max="1" step="0.001" value="${faderGainToPosition(volume)}" data-id="${id}" />
     </div>
     <div class="db" data-db="${id}">${volToDb(volume)}</div>
+    <div class="routearrow" data-route-id="${id}" title="Right-click for routing options"><div class="routearrow-tri"></div></div>
   `;
   strip.addEventListener('click', (e) => {
     // Don't hijack clicks inside the fader / editable name.
@@ -4356,7 +4411,7 @@ function buildStrip({ id, name, volume, color, kind, fxCount, muted, solo, num, 
     // IN button is its own click target — never let strip-select run for it.
     if (e.target.closest('.mixin')) return;
     if (e.target.closest('.mixarm')) return;
-    if (e.target.closest('.mixsend')) return;
+    if (e.target.closest('.routearrow')) return;
     selectedStripId = id;
     renderMixer();
   });
@@ -4374,12 +4429,19 @@ function buildStrip({ id, name, volume, color, kind, fxCount, muted, solo, num, 
       onMixerArmClick(id);
     });
   }
-  const sendBtn = strip.querySelector('.mixsend');
-  if (sendBtn) {
-    sendBtn.addEventListener('click', (e) => {
+  // FL-style routing arrow. Right-click opens the routing menu for the
+  // SELECTED strip → THIS strip. Left-click also opens the menu (feels more
+  // discoverable than making it right-click-only). No-op when the user
+  // right-clicks the currently-selected strip's own arrow.
+  const routeArrow = strip.querySelector('.routearrow');
+  if (routeArrow) {
+    const showMenu = (e) => {
+      e.preventDefault();
       e.stopPropagation();
-      openSendPicker(id);
-    });
+      openRouteMenu(id, e.clientX, e.clientY);
+    };
+    routeArrow.addEventListener('contextmenu', showMenu);
+    routeArrow.addEventListener('click', showMenu);
   }
   const fader = strip.querySelector('.fader');
   fader.addEventListener('input', () => onStripFader(id, kind, faderPositionToGain(parseFloat(fader.value))));
@@ -5014,6 +5076,107 @@ async function addChannelFromInstrument({ id, name, pluginId, gmProgram, drumPit
 // which strip requested the picker so we can wire the mic in once the engine
 // confirms the device is open.
 let pendingMicBusId = null;
+
+// ------------------------------------------------------------
+// FL-style routing menu — right-click a strip's bottom arrow to route the
+// SELECTED source strip to that target with a specific input port.
+// ------------------------------------------------------------
+function openRouteMenu(targetStripId, clientX, clientY) {
+  const source = (song.mixer.busses || []).find(b => b.id === selectedStripId);
+  const target = (song.mixer.busses || []).find(b => b.id === targetStripId);
+  if (!source) {
+    // Selected strip is master (or nothing) — no routing from there.
+    return;
+  }
+  if (source.id === targetStripId) {
+    // Routing a strip to itself makes no sense.
+    return;
+  }
+  if (!target) return;
+
+  const menu = document.getElementById('route-menu');
+  const label = (b) => 'Insert ' + b.num;
+  const existingSc = (source.sends || []).find(
+    s => s.targetInput === 'sidechain' && s.targetChannelId === targetStripId);
+
+  const rows = [];
+  rows.push(`<div class="rm-header">Route ${label(source)} → ${label(target)}</div>`);
+  if (existingSc) {
+    rows.push(`<div class="rm-item destructive" data-action="remove-sc">Remove sidechain to this insert</div>`);
+  } else {
+    rows.push(`<div class="rm-item" data-action="add-sc">Sidechain to this insert</div>`);
+  }
+  rows.push(`<div class="rm-sep"></div>`);
+  rows.push(`<div class="rm-item" data-action="cancel">Cancel</div>`);
+
+  menu.innerHTML = rows.join('');
+  menu.classList.remove('hidden');
+  // Position, clamping to viewport.
+  const w = 240, h = menu.offsetHeight;
+  let x = clientX, y = clientY;
+  if (x + w > window.innerWidth - 8) x = window.innerWidth - w - 8;
+  if (y + h > window.innerHeight - 8) y = window.innerHeight - h - 8;
+  menu.style.left = x + 'px';
+  menu.style.top  = y + 'px';
+
+  const close = () => {
+    menu.classList.add('hidden');
+    document.removeEventListener('mousedown', onOutside, true);
+  };
+  const onOutside = (e) => { if (!menu.contains(e.target)) close(); };
+  setTimeout(() => document.addEventListener('mousedown', onOutside, true), 0);
+
+  menu.querySelectorAll('.rm-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const action = el.dataset.action;
+      if (action === 'add-sc') {
+        applyRoutingChange(source, target, 'sidechain', 'add');
+      } else if (action === 'remove-sc') {
+        applyRoutingChange(source, target, 'sidechain', 'remove');
+      }
+      close();
+    });
+  });
+}
+
+function applyRoutingChange(source, target, inputType, op) {
+  source.sends = source.sends || [];
+  if (op === 'remove') {
+    const existing = source.sends.find(
+      s => s.targetInput === inputType && s.targetChannelId === target.id);
+    if (!existing) return;
+    source.sends = source.sends.filter(s => s !== existing);
+    if (window.nasty && window.nasty.engine) {
+      window.nasty.engine.send({
+        cmd: 'remove_channel_send',
+        channelId: source.id, sendId: existing.sendId,
+      });
+    }
+  } else if (op === 'add') {
+    // Sidechain: MVP is one sidechain send per source, so replace any prior.
+    if (inputType === 'sidechain') {
+      const old = source.sends.find(s => s.targetInput === 'sidechain');
+      if (old && window.nasty && window.nasty.engine) {
+        window.nasty.engine.send({
+          cmd: 'remove_channel_send',
+          channelId: source.id, sendId: old.sendId,
+        });
+      }
+      source.sends = source.sends.filter(s => s.targetInput !== 'sidechain');
+    }
+    const sendId = 'send_' + Math.random().toString(36).slice(2, 8);
+    source.sends.push({ sendId, targetChannelId: target.id, targetInput: inputType });
+    if (window.nasty && window.nasty.engine) {
+      window.nasty.engine.send({
+        cmd: 'set_channel_send',
+        channelId: source.id, sendId,
+        targetChannelId: target.id, targetInput: inputType,
+      });
+    }
+  }
+  renderMixer();
+  persist();
+}
 
 // ------------------------------------------------------------
 // Sidechain / signal routing
