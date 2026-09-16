@@ -1132,15 +1132,29 @@ void PluginHost::rewireChannelUnlocked(ChannelSlot& slot) {
         return false;
     };
 
-    // Resolve target. Empty targetChannelId means route to master output
-    // (which is either the master_bus insert if one exists, or the raw
-    // audio output node). Non-empty means route to that channel/bus.
+    // Resolve the MAIN audio route. Priority:
+    //   1. First entry in sends[] with targetInput == "main"
+    //   2. Legacy targetChannelId (kept for compat with setChannelTarget
+    //      callers that predate the sends model)
+    //   3. master_bus if it exists and this slot isn't master_bus itself
+    //   4. Raw audio output node
+    // Sidechain sends are handled after the main route wires up below —
+    // they're additional connections, never a substitute for main.
     Graph::NodeID targetNodeId = outNode->nodeID;
-    if (slot.targetChannelId.isNotEmpty()) {
-        auto it = channels.find(slot.targetChannelId);
+    juce::String resolvedTargetId;
+    for (const auto& s : slot.sends) {
+        if (s.targetInput == "main" && s.targetChannelId.isNotEmpty()) {
+            resolvedTargetId = s.targetChannelId;
+            break;
+        }
+    }
+    if (resolvedTargetId.isEmpty() && slot.targetChannelId.isNotEmpty()) {
+        resolvedTargetId = slot.targetChannelId;
+    }
+    if (resolvedTargetId.isNotEmpty()) {
+        auto it = channels.find(resolvedTargetId);
         if (it != channels.end()) targetNodeId = it->second.pluginNodeId;
     } else {
-        // Route through master_bus if it exists, otherwise straight to out.
         auto masterIt = channels.find("master_bus");
         if (masterIt != channels.end() && &slot != &masterIt->second) {
             targetNodeId = masterIt->second.pluginNodeId;
@@ -1185,6 +1199,11 @@ void PluginHost::rewireChannelUnlocked(ChannelSlot& slot) {
     // JUCE routes those to input bus 1 (the sidechain bus). Silent no-op if
     // no such plugin exists; the send re-wires on the next rewire pass, so
     // dropping a compressor onto the target strip later picks it up.
+    // Additional sends: sidechain, plus main sends beyond the primary main
+    // route already wired above. We skip the first "main" send (already
+    // consumed as the primary target) but any second/third main send counts
+    // as a real send.
+    bool firstMainConsumed = false;
     for (const auto& s : slot.sends) {
         if (s.targetChannelId.isEmpty()) continue;
         auto tgtIt = channels.find(s.targetChannelId);
@@ -1212,7 +1231,13 @@ void PluginHost::rewireChannelUnlocked(ChannelSlot& slot) {
                           << " deferred — no 4-in plugin on target yet" << std::endl;
             }
         } else {
-            // "main" send — mix into the target's regular input.
+            // "main" send. Skip the first — it's already wired as the
+            // primary route via the targetNodeId above. Additional main
+            // sends fan the signal out to more destinations.
+            if (!firstMainConsumed) {
+                firstMainConsumed = true;
+                continue;
+            }
             for (int ch = 0; ch < 2; ++ch) {
                 graph.addConnection({{prev, ch}, {tgtIt->second.pluginNodeId, ch}});
             }

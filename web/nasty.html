@@ -667,8 +667,8 @@
     flex: 1; display: flex; min-height: 0; background: var(--workspace);
   }
   #mixer-strips {
-    flex: 1; display: flex; padding: 10px; gap: 4px;
-    overflow-x: auto; overflow-y: hidden;
+    flex: 1; display: flex; padding: 10px 10px 60px 10px; gap: 4px;
+    overflow-x: auto; overflow-y: visible;
     position: relative;
   }
   /* Send-routing overlay — draws curved yellow wires from source strip to
@@ -2277,7 +2277,7 @@ const PR_BEAT_WIDTH = 60;
 const PR_PITCH_MIN = 24;
 const PR_PITCH_MAX = 108;
 const STORAGE_KEY = 'nasty.song.fl.v1';
-const SONG_SCHEMA_VERSION = 2;
+const SONG_SCHEMA_VERSION = 3;
 const PALETTE = ['#ff5c93','#6b7cff','#33c58a','#ffb020','#a95cff','#ff7c47','#42c8e0','#e05cff','#ffdd57','#5cff8f'];
 
 let song = { version: SONG_SCHEMA_VERSION, bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] }, transportMode: 'pat' };
@@ -2659,6 +2659,23 @@ function ensureShape(s) {
   if ((s.version || 1) < 2) {
     for (const b of (s.mixer.busses || [])) delete b.audioInputEnabled;
   }
+  // v2 → v3: routing goes through the general sends model. Every bus needs
+  // at least one 'main' send so wires can visualise it and the user can
+  // click to delete/redirect. Default is a main send to master_bus. Idempotent
+  // — if a bus already has a main send we don't clobber it.
+  if ((s.version || 1) < 3) {
+    for (const b of (s.mixer.busses || [])) {
+      b.sends = b.sends || [];
+      const hasMain = b.sends.some(x => x.targetInput === 'main');
+      if (!hasMain) {
+        b.sends.push({
+          sendId: 'send_main_' + Math.random().toString(36).slice(2, 8),
+          targetChannelId: 'master_bus',
+          targetInput: 'main',
+        });
+      }
+    }
+  }
   s.patterns.forEach((p, i) => {
     p.notes = p.notes || [];
     p.color = p.color || PALETTE[i % PALETTE.length];
@@ -2690,7 +2707,14 @@ function ensureDefaults() {
   song.mixer.busses = song.mixer.busses || [];
   if (song.mixer.busses.length === 0) {
     for (let i = 1; i <= 20; i++) {
-      song.mixer.busses.push({ id: 'bus_' + i, num: i, name: 'Insert ' + i, effects: [] });
+      song.mixer.busses.push({
+        id: 'bus_' + i, num: i, name: 'Insert ' + i, effects: [],
+        sends: [{
+          sendId: 'send_main_' + Math.random().toString(36).slice(2, 8),
+          targetChannelId: 'master_bus',
+          targetInput: 'main',
+        }],
+      });
     }
   }
   if (!song.channels.length) {
@@ -4294,7 +4318,14 @@ function renderMixer() {
     if (!sourceBus || dstId === selectedStripId) return;
     const sends = sourceBus.sends || [];
     const hit = sends.find(s => s.targetChannelId === dstId);
-    if (hit) arrow.classList.add(hit.targetInput === 'sidechain' ? 'sidechain' : 'main');
+    if (hit) {
+      arrow.classList.add(hit.targetInput === 'sidechain' ? 'sidechain' : 'main');
+    } else if (dstId === 'master') {
+      // No explicit main-route override → the implicit master route is live.
+      // Light the Master arrow so the FL cue is complete.
+      const hasCustomMain = sends.some(s => s.targetInput === 'main');
+      if (!hasCustomMain) arrow.classList.add('main');
+    }
   });
 
   drawMixerWires();
@@ -4319,7 +4350,10 @@ function drawMixerWires() {
   const buses = (song.mixer && song.mixer.busses) || [];
   const container = strips.getBoundingClientRect();
   const width = strips.scrollWidth;
-  const height = strips.clientHeight;
+  // scrollHeight covers the padding area below the strips so the downward
+  // wire sag doesn't get clipped when the SVG height matches only the
+  // visible viewport.
+  const height = Math.max(strips.clientHeight, strips.scrollHeight);
   svg.setAttribute('width', width);
   svg.setAttribute('height', height);
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
@@ -4328,47 +4362,100 @@ function drawMixerWires() {
     stripEls.set(el.dataset.id, el);
   });
   // FL model: wires only visible for the currently-selected source strip.
-  // Everything else stays clean until you select a specific insert.
+  // Now that routing lives entirely in sends[], every send draws — main
+  // routes in white, sidechain in yellow. No more "implicit master" fake
+  // wire; the v3 migration ensures every bus has a real main send.
   for (const bus of buses) {
     if (bus.id !== selectedStripId) continue;
     if (!bus.sends || !bus.sends.length) continue;
     for (const send of bus.sends) {
-      const srcEl = stripEls.get(bus.id);
-      const dstEl = stripEls.get(send.targetChannelId);
-      if (!srcEl || !dstEl) continue;
-      const srcArrow = srcEl.querySelector('.routearrow-tri');
-      const dstArrow = dstEl.querySelector('.routearrow-tri');
-      const sr = (srcArrow || srcEl).getBoundingClientRect();
-      const dr = (dstArrow || dstEl).getBoundingClientRect();
-      const scrollX = strips.scrollLeft;
-      const sx = sr.left - container.left + sr.width / 2 + scrollX;
-      const dx = dr.left - container.left + dr.width / 2 + scrollX;
-      // Anchor at the top of the routing triangle so wires visually terminate
-      // where the arrow is — FL Studio's cue.
-      const sy = sr.top - container.top;
-      const dy = dr.top - container.top;
-      // Arc height scales with horizontal distance so nearby strips get a
-      // gentle bump and far ones a taller arch that stays inside the mixer.
-      const dist = Math.abs(dx - sx);
-      const arc = Math.min(80, 20 + dist * 0.2);
-      const midX = (sx + dx) / 2;
-      const midY = Math.min(sy, dy) - arc;
-      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      path.setAttribute('d', `M ${sx} ${sy} Q ${midX} ${midY} ${dx} ${dy}`);
-      if (send.targetInput !== 'sidechain') {
-        path.setAttribute('stroke', '#dcdcdc');
-        path.style.filter = 'drop-shadow(0 0 3px rgba(220,220,220,0.5))';
-      }
-      svg.appendChild(path);
-      // Arrowhead near the destination — small triangle pointing at target.
-      const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-      arrow.setAttribute('points',
-        `${dx - 4},${dy - 6} ${dx + 4},${dy - 6} ${dx},${dy}`);
-      arrow.setAttribute('class', 'arrow');
-      if (send.targetInput !== 'sidechain') arrow.setAttribute('fill', '#dcdcdc');
-      svg.appendChild(arrow);
+      const dstId = send.targetChannelId === 'master_bus' ? 'master' : send.targetChannelId;
+      drawWire(svg, strips, container, bus.id, dstId, send.targetInput, send.sendId);
     }
   }
+}
+
+function drawWire(svg, strips, container, srcId, dstId, inputType, sendId) {
+  const stripEls = new Map();
+  strips.querySelectorAll('.mixer-strip').forEach(el => {
+    stripEls.set(el.dataset.id, el);
+  });
+  const srcEl = stripEls.get(srcId);
+  const dstEl = stripEls.get(dstId);
+  if (!srcEl || !dstEl) return;
+  const srcArrow = srcEl.querySelector('.routearrow-tri');
+  const dstArrow = dstEl.querySelector('.routearrow-tri');
+  const sr = (srcArrow || srcEl).getBoundingClientRect();
+  const dr = (dstArrow || dstEl).getBoundingClientRect();
+  const scrollX = strips.scrollLeft;
+  const sx = sr.left - container.left + sr.width / 2 + scrollX;
+  const dx = dr.left - container.left + dr.width / 2 + scrollX;
+  const sy = sr.top - container.top;
+  const dy = dr.top - container.top;
+  const dist = Math.abs(dx - sx);
+  // Sag height scales with horizontal distance. Wire arcs DOWNWARD from
+  // strip bottom, hanging like a patch cable in the space below the fader
+  // row — the mixer-strips container has 60px of bottom padding to give it
+  // room. Feels closer to how FL Studio draws them than an upward arc.
+  const sag = Math.min(50, 12 + dist * 0.12);
+  const midX = (sx + dx) / 2;
+  const midY = Math.max(sy, dy) + sag;
+  const isSc = inputType === 'sidechain';
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', `M ${sx} ${sy} Q ${midX} ${midY} ${dx} ${dy}`);
+  if (!isSc) {
+    path.setAttribute('stroke', '#dcdcdc');
+    path.style.filter = 'drop-shadow(0 0 3px rgba(220,220,220,0.5))';
+  }
+  // Make the whole wire clickable — click anywhere on it to delete this
+  // send. Sidechain wires can always be deleted; main-route wires refuse
+  // if it's the strip's last main route (otherwise you'd end up with a
+  // routing dead-end that plays back silent).
+  if (sendId) {
+    path.style.pointerEvents = 'stroke';
+    path.style.cursor = 'pointer';
+    path.dataset.sendId = sendId;
+    path.dataset.srcId = srcId;
+    path.addEventListener('click', () => deleteSendById(srcId, sendId));
+  }
+  svg.appendChild(path);
+  // Arrow points UP into the destination triangle since the wire is arriving
+  // from below.
+  const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+  arrow.setAttribute('points', `${dx - 4},${dy + 6} ${dx + 4},${dy + 6} ${dx},${dy}`);
+  arrow.setAttribute('class', 'arrow');
+  if (!isSc) arrow.setAttribute('fill', '#dcdcdc');
+  if (sendId) {
+    arrow.style.pointerEvents = 'fill';
+    arrow.style.cursor = 'pointer';
+    arrow.addEventListener('click', () => deleteSendById(srcId, sendId));
+  }
+  svg.appendChild(arrow);
+}
+
+function deleteSendById(srcId, sendId) {
+  const source = (song.mixer.busses || []).find(b => b.id === srcId);
+  if (!source) return;
+  const send = (source.sends || []).find(s => s.sendId === sendId);
+  if (!send) return;
+  // Refuse to delete the last main route — a bus with no main send plays
+  // back silent, which is a footgun. Prompt the user to redirect it first.
+  if (send.targetInput === 'main') {
+    const mainCount = (source.sends || []).filter(s => s.targetInput === 'main').length;
+    if (mainCount <= 1) {
+      alert("Can't remove the last main route — the strip needs a destination. Right-click another strip's arrow to redirect first.");
+      return;
+    }
+  }
+  source.sends = source.sends.filter(s => s.sendId !== sendId);
+  if (window.nasty && window.nasty.engine) {
+    window.nasty.engine.send({
+      cmd: 'remove_channel_send',
+      channelId: source.id, sendId,
+    });
+  }
+  renderMixer();
+  persist();
 }
 
 // Redraw wires when the strips scroll (they extend past the viewport for
@@ -5099,8 +5186,28 @@ function openRouteMenu(targetStripId, clientX, clientY) {
   const existingSc = (source.sends || []).find(
     s => s.targetInput === 'sidechain' && s.targetChannelId === targetStripId);
 
+  const existingMain = (source.sends || []).find(
+    s => s.targetInput === 'main' && s.targetChannelId === targetStripId);
+  const mainSendCount = (source.sends || []).filter(s => s.targetInput === 'main').length;
+
   const rows = [];
   rows.push(`<div class="rm-header">Route ${label(source)} → ${label(target)}</div>`);
+  if (existingMain) {
+    // Refuse if this is the only main route — same footgun-guard as the
+    // wire-click delete path.
+    if (mainSendCount > 1) {
+      rows.push(`<div class="rm-item destructive" data-action="remove-main">Remove main audio route to here</div>`);
+    }
+  } else {
+    // If a main route already exists elsewhere, offer to REPLACE it. If not,
+    // offer to add an additional main route (fan-out).
+    if (mainSendCount === 0) {
+      rows.push(`<div class="rm-item" data-action="add-main">Route main audio here</div>`);
+    } else {
+      rows.push(`<div class="rm-item" data-action="replace-main">Route main audio here (replace current)</div>`);
+      rows.push(`<div class="rm-item" data-action="add-main">Also send main audio here (fan out)</div>`);
+    }
+  }
   if (existingSc) {
     rows.push(`<div class="rm-item destructive" data-action="remove-sc">Remove sidechain to this insert</div>`);
   } else {
@@ -5133,6 +5240,12 @@ function openRouteMenu(targetStripId, clientX, clientY) {
         applyRoutingChange(source, target, 'sidechain', 'add');
       } else if (action === 'remove-sc') {
         applyRoutingChange(source, target, 'sidechain', 'remove');
+      } else if (action === 'add-main') {
+        applyRoutingChange(source, target, 'main', 'add');
+      } else if (action === 'replace-main') {
+        applyRoutingChange(source, target, 'main', 'replace');
+      } else if (action === 'remove-main') {
+        applyRoutingChange(source, target, 'main', 'remove');
       }
       close();
     });
@@ -5141,10 +5254,19 @@ function openRouteMenu(targetStripId, clientX, clientY) {
 
 function applyRoutingChange(source, target, inputType, op) {
   source.sends = source.sends || [];
+  const targetEngineId = target.id === 'master' ? 'master_bus' : target.id;
   if (op === 'remove') {
     const existing = source.sends.find(
-      s => s.targetInput === inputType && s.targetChannelId === target.id);
+      s => s.targetInput === inputType && (s.targetChannelId === target.id || s.targetChannelId === targetEngineId));
     if (!existing) return;
+    // Guard against removing the last main route.
+    if (inputType === 'main') {
+      const mainCount = source.sends.filter(s => s.targetInput === 'main').length;
+      if (mainCount <= 1) {
+        alert("Can't remove the last main route — the strip needs a destination.");
+        return;
+      }
+    }
     source.sends = source.sends.filter(s => s !== existing);
     if (window.nasty && window.nasty.engine) {
       window.nasty.engine.send({
@@ -5152,25 +5274,28 @@ function applyRoutingChange(source, target, inputType, op) {
         channelId: source.id, sendId: existing.sendId,
       });
     }
-  } else if (op === 'add') {
-    // Sidechain: MVP is one sidechain send per source, so replace any prior.
-    if (inputType === 'sidechain') {
-      const old = source.sends.find(s => s.targetInput === 'sidechain');
-      if (old && window.nasty && window.nasty.engine) {
-        window.nasty.engine.send({
-          cmd: 'remove_channel_send',
-          channelId: source.id, sendId: old.sendId,
-        });
+  } else if (op === 'replace' || op === 'add') {
+    // Sidechain: MVP is one SC send per source, always replaces.
+    // Main + replace: nuke all existing main sends, add fresh one.
+    // Main + add: fan-out — keep existing mains, append.
+    if (inputType === 'sidechain' || (inputType === 'main' && op === 'replace')) {
+      for (const old of source.sends.filter(s => s.targetInput === inputType)) {
+        if (window.nasty && window.nasty.engine) {
+          window.nasty.engine.send({
+            cmd: 'remove_channel_send',
+            channelId: source.id, sendId: old.sendId,
+          });
+        }
       }
-      source.sends = source.sends.filter(s => s.targetInput !== 'sidechain');
+      source.sends = source.sends.filter(s => s.targetInput !== inputType);
     }
     const sendId = 'send_' + Math.random().toString(36).slice(2, 8);
-    source.sends.push({ sendId, targetChannelId: target.id, targetInput: inputType });
+    source.sends.push({ sendId, targetChannelId: targetEngineId, targetInput: inputType });
     if (window.nasty && window.nasty.engine) {
       window.nasty.engine.send({
         cmd: 'set_channel_send',
         channelId: source.id, sendId,
-        targetChannelId: target.id, targetInput: inputType,
+        targetChannelId: targetEngineId, targetInput: inputType,
       });
     }
   }
