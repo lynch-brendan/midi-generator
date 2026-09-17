@@ -633,7 +633,7 @@
   .thinking { color: var(--dim); font-style: italic; font-size: 11px; }
 
   /* Ideas panel — floats to the left of the chat dock. Populated when
-     Claude fires suggest_chord_ideas or try_effects. Autoplay-on-hover
+     Claude fires suggest_midi_ideas or try_effects. Autoplay-on-hover
      audition (midi mode), click to lock, Keep to promote / leave loaded. */
   #ideas-panel {
     position: fixed;
@@ -2170,7 +2170,7 @@
   </div>
 </div>
 
-<!-- IDEAS PANEL — populated when Claude fires suggest_chord_ideas or try_effects. -->
+<!-- IDEAS PANEL — populated when Claude fires suggest_midi_ideas or try_effects. -->
 <div id="ideas-panel" class="hidden">
   <div class="ip-header">
     Ideas
@@ -3500,9 +3500,9 @@ function waitForEngineDrained() {
 // ============================================================
 // Ideas Panel — Muse-generated chord/progression audition dock
 // ============================================================
-// Populated when Claude fires the `suggest_chord_ideas` tool. The tool call
+// Populated when Claude fires the `suggest_midi_ideas` tool. The tool call
 // itself just signals intent; the actual 5-idea payload is fetched directly
-// from /nasty/chord-ideas so it doesn't ride along on every subsequent chat
+// from /nasty/midi-ideas so it doesn't ride along on every subsequent chat
 // turn (would burn ~5-8 kB of context per idea batch).
 //
 // Audition is DAW-native, not WAV-based: each idea is auditioned by loading
@@ -3517,6 +3517,7 @@ const ideasState = {
   // 'effects' — 5 effect plugins to A/B on an existing channel/bus. Ideas
   //             swap the loaded plugin on the target in place.
   mode: 'midi',
+  kind: 'chords',       // 'chords' | 'bass' | 'melody' | 'lead' | 'pad' — MIDI mode only
   prompt: '',
   ideas: [],            // MIDI mode: [{id, name, character, key, tempo, bars, notes, gm_patch}, ...]
   selectedIdx: -1,
@@ -3545,14 +3546,16 @@ const ideasState = {
   priorTransportMode: null,
 };
 
-function openIdeasPanel(prompt) {
+function openIdeasPanel(prompt, kind) {
   ideasState.mode = 'midi';
+  ideasState.kind = (kind || 'chords').toLowerCase();
   ideasState.prompt = prompt || '';
   ideasState.ideas = [];
   ideasState.selectedIdx = -1;
   ideasState.loading = true;
   document.getElementById('ideas-panel').classList.remove('hidden');
-  document.getElementById('ip-prompt-echo').textContent = prompt || '';
+  document.getElementById('ip-prompt-echo').textContent =
+    `${ideasState.kind} — ${prompt || ''}`;
   renderIdeasPanel();
 }
 
@@ -4019,14 +4022,15 @@ function renderIdeasPanel() {
 // playable idea lands in ~2-3 s instead of waiting for the whole batch.
 // Autoplay fires on the first idea, so the user hears music the moment
 // the first variation completes.
-async function fetchChordIdeas(args) {
+async function fetchMidiIdeas(args) {
   const apiBase = (window.nasty && window.nasty.apiBase) || '';
   try {
-    const resp = await fetch(apiBase + '/nasty/chord-ideas', {
+    const resp = await fetch(apiBase + '/nasty/midi-ideas', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         prompt: args.prompt || '',
+        kind:   (args.kind || 'chords').toLowerCase(),
         key:    args.key || null,
         tempo:  args.tempo || null,
         bars:   args.bars || null,
@@ -4102,14 +4106,14 @@ async function applyToolCalls(calls) {
   for (const call of calls) {
     const { name, input } = call;
     try {
-      if (name === 'suggest_chord_ideas') {
-        // Ideas Panel — chord/melody/bass MIDI ideas from Muse. The tool
-        // just signals intent; the client fetches the 5-idea payload
-        // directly from /nasty/chord-ideas so it doesn't ride along on
-        // every subsequent chat turn's context.
-        openIdeasPanel(input.prompt || '');
-        fetchChordIdeas(input);
-        summaries.push(`5 chord ideas → panel`);
+      if (name === 'suggest_midi_ideas') {
+        // Ideas Panel — chords / bass / melody / lead / pad MIDI ideas
+        // from Muse. Tool signals intent; client fetches the streaming
+        // payload directly from /nasty/midi-ideas.
+        const kind = (input.kind || 'chords').toLowerCase();
+        openIdeasPanel(input.prompt || '', kind);
+        fetchMidiIdeas(input);
+        summaries.push(`5 ${kind} ideas → panel`);
       } else if (name === 'try_effects') {
         // Effects mode of the ideas panel — Claude picked N plugin_ids
         // from the manifest; the client A/Bs them on the target owner in

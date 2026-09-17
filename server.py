@@ -2031,6 +2031,53 @@ _NASTY_TOOLS = [
         },
     },
     {
+        "name": "suggest_midi_ideas",
+        "description": (
+            "Open the Ideas Panel with 5 MIDI ideas (chord progression, "
+            "bass line, melody, lead, or pad) for the user to audition + "
+            "pick. Use this ANY time the user asks for options / ideas / "
+            "a few / suggestions on a musical part — 'give me some chord "
+            "ideas,' 'make me a couple basslines,' 'suggest a lead,' "
+            "'ideas for a pad,' 'what melodies would fit.' Ideas stream in "
+            "one at a time (~2-3 s to first idea) and audition alongside "
+            "the current song on a preview channel; Keep drops the picked "
+            "one onto a new channel + pattern + clip; Close tears it down. "
+            "You DO NOT need to also call `load_gm_instrument` / "
+            "`create_pattern` / `add_pattern_clip` — the Keep flow handles "
+            "channel + pattern + clip creation for you."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "prompt": {
+                    "type": "string",
+                    "description": (
+                        "Musically vivid direction — 'warm nostalgic pop "
+                        "progression in the vein of early Coldplay,' 'gritty "
+                        "808 sub with sidechain feel,' 'melancholy lead in "
+                        "the vein of Aphex Twin.' Quality of the 5 ideas "
+                        "tracks the vividness of this prompt."
+                    ),
+                },
+                "kind": {
+                    "type": "string",
+                    "enum": ["chords", "bass", "melody", "lead", "pad"],
+                    "description": (
+                        "Which musical part the user wants ideas for. "
+                        "Defaults to 'chords' if omitted. Pick 'bass' for "
+                        "basslines, 'melody' for top-line melodies, 'lead' "
+                        "for synth-lead lines, 'pad' for sustained "
+                        "textures."
+                    ),
+                },
+                "key":    {"type": "string"},
+                "tempo":  {"type": "integer"},
+                "bars":   {"type": "integer", "enum": [1, 2, 4, 8]},
+            },
+            "required": ["prompt"],
+        },
+    },
+    {
         "name": "try_effects",
         "description": (
             "Open the Ideas Panel with 5 effect-plugin options for the user "
@@ -2072,11 +2119,17 @@ class NastyChatRequest(BaseModel):
     plugins: list = []  # engine-scanned VST3/AU manifest
 
 
-class NastyChordIdeasRequest(BaseModel):
-    # Free-text musical direction ("dark cinematic minor chords", "jazzy 7ths",
-    # "warm nostalgic pop progression"). Bias toward chord/harmony generation
-    # is added server-side — the caller doesn't have to say the word "chords."
+class NastyMidiIdeasRequest(BaseModel):
+    # Free-text musical direction ("dark cinematic minor 7ths," "808 sub
+    # bass with sidechain feel," "warm nostalgic pad progression"). The
+    # `kind` field biases Muse toward the right voicing/register:
+    #   - 'chords' : chord progression / harmony
+    #   - 'bass'   : bass line
+    #   - 'melody' : lead melodic line
+    #   - 'lead'   : lead synth line
+    #   - 'pad'    : sustained pad / texture
     prompt: str
+    kind: Optional[str] = "chords"
     key: Optional[str] = None
     tempo: Optional[int] = None
     bars: Optional[int] = None
@@ -2113,18 +2166,27 @@ def _format_chord_idea(var: dict, top_gm_patch: int) -> Optional[dict]:
     }
 
 
-def _chord_ideas_prompt(prompt: str) -> str:
-    # Bias Muse toward chord voicings / progressions rather than a single
-    # melody line. Muse's system prompt already understands chords; the
-    # user-message hint just steers ambiguous requests.
+# Kind → hint we prepend to the user's prompt so Muse voices the right
+# thing. Ambiguity between kinds (e.g. "bassline" said in the user prompt
+# but kind='chords') is resolved in favor of the caller's `kind` — that's
+# the authoritative signal from the client dispatch.
+_MIDI_KIND_HINTS = {
+    "chords": "chord progression",
+    "bass":   "bass line",
+    "melody": "melody line",
+    "lead":   "lead line",
+    "pad":    "sustained pad / texture",
+}
+
+
+def _midi_ideas_prompt(prompt: str, kind: str) -> str:
+    hint = _MIDI_KIND_HINTS.get((kind or "chords").lower(), "musical part")
     p = prompt.strip()
-    if "chord" not in p.lower() and "progression" not in p.lower():
-        p = f"chord progression: {p}"
-    return p
+    return f"{hint}: {p}"
 
 
-@app.post("/nasty/chord-ideas")
-def nasty_chord_ideas(req: NastyChordIdeasRequest):
+@app.post("/nasty/midi-ideas")
+def nasty_midi_ideas(req: NastyMidiIdeasRequest):
     # Streaming SSE endpoint. Each Muse variation yields as it's parsed
     # from the model's streaming output → the Ideas Panel populates ideas
     # incrementally so the first playable idea lands in ~2-3 s instead
@@ -2132,7 +2194,7 @@ def nasty_chord_ideas(req: NastyChordIdeasRequest):
     # gateway timeout, which killed the old non-streaming call at ~30 s.
     if not req.prompt.strip():
         raise HTTPException(status_code=400, detail="prompt is required")
-    chord_prompt = _chord_ideas_prompt(req.prompt)
+    chord_prompt = _midi_ideas_prompt(req.prompt, req.kind or "chords")
 
     def event_stream():
         top_gm_patch = 0
@@ -2398,13 +2460,14 @@ def nasty_chat(req: NastyChatRequest):
                     )
             elif block.name in ("add_track", "add_clip") and "id" in inp:
                 result_text = f"applied; id={inp['id']}"
-            elif block.name == "suggest_chord_ideas":
-                # Ideas Panel is populated by a direct client → /nasty/chord-ideas
-                # fetch — the tool call just signals intent. Kept small so
-                # Muse's 5-variation JSON doesn't ride along on every
-                # subsequent turn's context.
+            elif block.name == "suggest_midi_ideas":
+                # Ideas Panel is populated by a direct client → /nasty/midi-ideas
+                # SSE stream — the tool call itself just signals intent.
+                # Kept small so Muse's 5-variation JSON doesn't ride along on
+                # every subsequent turn's context.
+                kind = (inp.get("kind") or "chords").lower()
                 result_text = (
-                    "Ideas Panel opened with 5 chord variations for the user "
+                    f"Ideas Panel opened with 5 {kind} ideas for the user "
                     "to audition and pick — no further tool calls needed on "
                     "your side."
                 )

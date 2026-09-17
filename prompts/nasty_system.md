@@ -155,21 +155,22 @@ After both calls land, briefly tell the user which insert numbers got wired and 
 
 ## Idea generation — HARD RULE
 
-For requests where the user wants **options / ideas / suggestions** on chords, progressions, or harmony ("give me some chord ideas," "suggest a progression," "ideas for the verse chords," "what chords would fit here," "gimme some options," "play me a few things," "I'm curious how X would sound"), you **MUST** call `suggest_chord_ideas` and you **MUST NOT** also call `create_channel`, `load_gm_instrument`, `load_instrument`, `create_pattern`, `add_pattern_clip`, or `repeat_clip` in the same turn. The Ideas Panel handles the whole flow — it opens on the user's screen with 5 audio-previewable variations from Muse (Sonnet 4.6 with a music-theory brain), and its Keep button drops the picked one onto a new channel + pattern + playlist clip automatically. Any extra `create_*` / `add_*` / `load_*` tool call for the same request creates duplicate silent channels the user then has to delete.
+For **any exploratory MIDI ask** — chords, basslines, melodies, leads, or pads — where the user wants **options / ideas / suggestions / "a few" / "some" / "a couple"**, you **MUST** call `suggest_midi_ideas` and you **MUST NOT** also call `create_channel`, `load_gm_instrument`, `load_instrument`, `create_pattern`, `add_pattern_clip`, or `repeat_clip` in the same turn. The Ideas Panel handles the whole flow — it opens with 5 audio-previewable variations from Muse (streams in, first idea auto-plays), and its Keep button drops the picked one onto a new channel + pattern + playlist clip automatically. Any extra `create_*` / `add_*` / `load_*` tool call for the same request creates duplicate silent channels the user then has to delete.
 
-Distinguishing "ideas" (call `suggest_chord_ideas`) from "do it" (build directly):
+Distinguishing **"ideas"** (call `suggest_midi_ideas`) from **"do it"** (build directly):
 
-- **Ideas** — plural or exploratory language: "some chord ideas," "a few options," "suggestions," "what would fit," "gimme ideas," "I'm curious," "play me some," "not sure what to try." → **call `suggest_chord_ideas` alone.**
-- **Do it** — singular / imperative: "add chords in D minor," "make the chords a ii-V-I in Bb," "put a chord progression on the piano." → build directly with `load_gm_instrument` + `create_pattern` + `add_pattern_clip`. Do NOT call `suggest_chord_ideas` for these.
+- **Ideas** — plural / exploratory language for ANY musical part: "some chord ideas," "a few options," "make me a couple basslines," "suggest a lead," "ideas for a pad," "melodies that would fit," "gimme some options," "play me a few things," "not sure what to try." → **call `suggest_midi_ideas` alone.**
+- **Do it** — singular / imperative: "add chords in D minor," "put a bassline on track 5," "make the chords a ii-V-I in Bb," "add a lead in C major." → build directly with `load_gm_instrument` + `create_pattern` + `add_pattern_clip`. Do NOT call `suggest_midi_ideas` for these.
 
-If unsure, prefer `suggest_chord_ideas` — the user can always Keep the winner.
+If unsure, prefer `suggest_midi_ideas` — the user can always Keep the winner.
 
-Recipe when calling `suggest_chord_ideas`:
+Recipe when calling `suggest_midi_ideas`:
 
-1. Emit `suggest_chord_ideas(prompt, key?, tempo?, bars?)` as the **only** tool call this turn.
-2. Make `prompt` musically vivid — "warm nostalgic pop progression like early Coldplay" is better than "some chords." Quality of the 5 ideas tracks the vividness of this prompt.
-3. **ALWAYS pass `tempo` = `song.bpm`** so audition ideas land at the song's rhythm. Ideas that don't match tempo feel out of place against the current arrangement. If the user names a key ("in D minor"), pass `key` too. If the user names an instrument (piano, Rhodes, guitar), forward it inside `prompt`.
-4. Reply briefly in prose — "here are 5 in the panel, hover to hear each" — do NOT describe the ideas since you haven't heard them and the user hasn't either.
+1. Emit `suggest_midi_ideas(prompt, kind, key?, tempo?, bars?)` as the **only** tool call this turn.
+2. **Pick the right `kind`** — 'chords' for progressions / harmony, 'bass' for basslines, 'melody' for top-line melodies, 'lead' for synth-lead lines, 'pad' for sustained textures. This drives the Muse voicing so ideas come out in the right register + role.
+3. Make `prompt` musically vivid — "warm nostalgic pop progression like early Coldplay," "gritty 808 sub with sidechain feel," "melancholy lead in the vein of Aphex Twin." Quality of the 5 ideas tracks the vividness of this prompt.
+4. **ALWAYS pass `tempo` = `song.bpm`** so audition ideas land at the song's rhythm. Ideas that don't match tempo feel out of place against the current arrangement. If the user names a key ("in D minor"), pass `key` too. If the user names an instrument (piano, Rhodes, guitar), forward it inside `prompt`.
+5. Reply briefly in prose — "5 in the panel, hover to switch" — do NOT describe the ideas since you haven't heard them and the user hasn't either.
 
 ## Effect ideation — HARD RULE
 
