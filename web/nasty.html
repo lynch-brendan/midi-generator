@@ -3414,6 +3414,382 @@ function waitForEngineDrained() {
   });
 }
 
+<<<<<<< Updated upstream
+=======
+// ============================================================
+// Ideas Panel — Muse-generated chord/progression audition dock
+// ============================================================
+// Populated when Claude fires the `suggest_chord_ideas` tool. The tool call
+// itself just signals intent; the actual 5-idea payload is fetched directly
+// from /nasty/chord-ideas so it doesn't ride along on every subsequent chat
+// turn (would burn ~5-8 kB of context per idea batch).
+//
+// Audition is DAW-native, not WAV-based: each idea is auditioned by loading
+// its notes onto a *preview* channel + pattern + clip in the song, then
+// playing SONG mode so the idea plays alongside your existing drums / bass /
+// whatever the arrangement already has. Cycling ideas = swap the notes on
+// the preview pattern, re-push the song arrangement. Keep = promote the
+// preview to permanent. Close = tear down the preview.
+const ideasState = {
+  prompt: '',
+  ideas: [],            // [{id, name, character, key, tempo, bars, notes, gm_patch}, ...]
+  selectedIdx: -1,
+  loading: false,
+  // Preview state — populated on first audition.
+  preview: {
+    channelId: null,    // GM channel id we invented for the audition
+    patternId: null,    // scratch pattern hosting the idea's notes
+    clipId: null,       // playlist clip pointing at the preview pattern
+    trackId: null,      // which playlist track the clip lives on
+    gmProgram: null,    // current GM program loaded on the preview channel
+    kept: false,        // set true when the user Keeps — skip teardown on close
+  },
+  // Whether *we* started playback for the audition. Used on close to
+  // decide whether to stop the transport or leave it running (if the user
+  // was already playing before opening the panel).
+  weStartedPlayback: false,
+  priorTransportMode: null,
+};
+
+function openIdeasPanel(prompt) {
+  ideasState.prompt = prompt || '';
+  ideasState.ideas = [];
+  ideasState.selectedIdx = -1;
+  ideasState.loading = true;
+  document.getElementById('ideas-panel').classList.remove('hidden');
+  document.getElementById('ip-prompt-echo').textContent = prompt || '';
+  renderIdeasPanel();
+}
+
+function closeIdeasPanel() {
+  document.getElementById('ideas-panel').classList.add('hidden');
+  teardownPreviewIfNotKept();
+  ideasState.selectedIdx = -1;
+  ideasState.preview = { channelId: null, patternId: null, clipId: null, trackId: null, gmProgram: null, kept: false };
+  ideasState.weStartedPlayback = false;
+  ideasState.priorTransportMode = null;
+}
+
+// Convert Muse's dict-form notes {pitch, duration, velocity(1-127), time}
+// to Nasty pattern notes {channelId, pitch, startBeat, durationBeats,
+// velocity(0-1)}. Velocity is normalised from MIDI's 1-127 to Nasty's 0-1.
+function museIdeaToNastyNotes(idea, channelId) {
+  const out = [];
+  for (const n of idea.notes || []) {
+    const p = Math.max(0, Math.min(127, Math.round(Number(n.pitch))));
+    const dur = Math.max(0.05, Number(n.duration) || 0.5);
+    const t = Math.max(0, Number(n.time) || 0);
+    const vRaw = Number(n.velocity);
+    const vel = Number.isFinite(vRaw) ? Math.max(0.05, Math.min(1, vRaw / 127)) : 0.8;
+    out.push({ channelId, pitch: p, startBeat: t, durationBeats: dur, velocity: vel });
+  }
+  return out;
+}
+
+// Pick a channel_id slug for the kept idea. Tries chord-<name-slug>; on
+// collision, appends a random suffix so the Keep action never silently
+// fails against an existing id.
+function ideaChannelId(idea) {
+  const base = (idea.name || 'chords').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 20).replace(/^-+|-+$/g, '') || 'chords';
+  let id = 'chords-' + base;
+  const existing = new Set(song.channels.map(c => c.id));
+  if (!existing.has(id)) return id;
+  return id + '-' + Math.random().toString(36).slice(2, 6);
+}
+
+// Pick a playlist track with no clip at bar 0 for the preview clip. We want
+// the preview to be visible on the timeline (so you SEE what's playing)
+// without stomping on existing content. Falls back to the last track if
+// everything has a clip at bar 0.
+function firstFreeTrackAtBar(bar) {
+  for (const t of (song.tracks || [])) {
+    if (!(t.clips || []).some(c => c.startBar === bar)) return t.id;
+  }
+  const tracks = song.tracks || [];
+  return (tracks[tracks.length - 1]?.id) || 'track_1';
+}
+
+// Lazy — creates preview channel + pattern + clip if they don't exist yet.
+// GM program is taken from `idea` on first call. On subsequent auditions
+// we swap the GM program by tearing down and rebuilding the GM channel
+// binding (the engine's `add_gm_channel` is idempotent per channelId).
+async function ensurePreviewLoaded(idea) {
+  const wantProg = Math.max(0, Math.min(127, parseInt(idea.gm_patch, 10) || 0));
+
+  // First audition of this batch — create everything.
+  if (!ideasState.preview.channelId) {
+    const chId = 'preview-idea-' + Math.random().toString(36).slice(2, 6);
+    const patId = 'preview-pat-' + chId;
+    const clipId = 'preview-clip-' + chId;
+    const trackId = firstFreeTrackAtBar(0);
+
+    await addChannelFromInstrument({
+      id: chId, name: 'Preview',
+      pluginId: 'gm-' + wantProg, gmProgram: wantProg,
+    });
+
+    // Stash the pattern (with placeholder notes — we'll overwrite in a sec).
+    song.patterns.push({
+      id: patId, name: 'Preview',
+      lengthBars: idea.bars || 4,
+      notes: [],
+      color: PALETTE[song.patterns.length % PALETTE.length],
+      _preview: true,           // marker so we don't render this in the pattern list
+    });
+    // Playlist clip so SONG mode walks the preview pattern.
+    const track = song.tracks.find(t => t.id === trackId);
+    if (track) {
+      track.clips.push({
+        id: clipId, type: 'pattern',
+        patternId: patId, startBar: 0, lengthBars: idea.bars || 4,
+        _preview: true,
+      });
+    }
+    ideasState.preview = {
+      channelId: chId, patternId: patId, clipId, trackId,
+      gmProgram: wantProg, kept: false,
+    };
+    return;
+  }
+
+  // Subsequent auditions — swap GM program on the existing preview channel
+  // if the new idea wants a different instrument. Cheap: the engine keeps
+  // the same channel, just reloads the GM program via add_gm_channel (which
+  // is idempotent — same channelId = replace).
+  if (wantProg !== ideasState.preview.gmProgram && window.nasty && window.nasty.engine) {
+    const sf2 = window.nasty.sf2Path ? await window.nasty.sf2Path() : '';
+    window.nasty.engine.send({
+      cmd: 'add_gm_channel',
+      channelId: ideasState.preview.channelId,
+      program: wantProg, sf2Path: sf2,
+    });
+    // Reflect the swap in song.channels so future persist()s stay coherent.
+    const ch = song.channels.find(c => c.id === ideasState.preview.channelId);
+    if (ch) { ch.pluginId = 'gm-' + wantProg; ch.gmProgram = wantProg; }
+    ideasState.preview.gmProgram = wantProg;
+  }
+}
+
+async function auditionIdea(idx) {
+  const idea = ideasState.ideas[idx];
+  if (!idea) return;
+
+  // Remember whether the user was mid-playback before we touched anything.
+  const wasPlaying = engineTransport.isPlaying;
+  if (ideasState.priorTransportMode === null) {
+    ideasState.priorTransportMode = song.transportMode || 'pat';
+  }
+
+  await ensurePreviewLoaded(idea);
+
+  // Rewrite the preview pattern's notes to the picked idea's notes.
+  const pat = song.patterns.find(p => p.id === ideasState.preview.patternId);
+  if (pat) {
+    pat.notes = museIdeaToNastyNotes(idea, ideasState.preview.channelId);
+    pat.lengthBars = idea.bars || 4;
+    pat.name = idea.name || 'Preview';
+  }
+  const clip = (song.tracks.find(t => t.id === ideasState.preview.trackId) || {}).clips || [];
+  const previewClip = clip.find(c => c.id === ideasState.preview.clipId);
+  if (previewClip) previewClip.lengthBars = idea.bars || 4;
+
+  // SONG mode so the idea plays alongside the existing arrangement (drums,
+  // bass, whatever else is on the playlist).
+  song.transportMode = 'song';
+  autoExpandBars();
+  render();
+  persist();
+
+  syncSongArrangement();
+  if (!wasPlaying) {
+    ideasState.weStartedPlayback = true;
+    playSong();
+  }
+
+  ideasState.selectedIdx = idx;
+  document.querySelectorAll('.idea-row').forEach((el, i) => {
+    el.classList.toggle('playing', i === idx);
+    el.classList.toggle('selected', i === idx);
+  });
+}
+
+async function keepIdea(idx) {
+  const idea = ideasState.ideas[idx];
+  if (!idea) return;
+
+  // Make sure the preview channel is loaded and has the picked idea's
+  // notes. auditionIdea does both — even if the user hits Keep without
+  // ever hovering, we still promote a working preview.
+  await auditionIdea(idx);
+
+  // Promote: strip the _preview markers, rename to the idea's name, done.
+  const ch = song.channels.find(c => c.id === ideasState.preview.channelId);
+  if (ch) {
+    ch.name = idea.name || 'Chords';
+    delete ch._preview;
+  }
+  const pat = song.patterns.find(p => p.id === ideasState.preview.patternId);
+  if (pat) {
+    pat.name = idea.name || 'Chords';
+    delete pat._preview;
+  }
+  const track = song.tracks.find(t => t.id === ideasState.preview.trackId);
+  if (track) {
+    const clip = (track.clips || []).find(c => c.id === ideasState.preview.clipId);
+    if (clip) delete clip._preview;
+  }
+  ideasState.preview.kept = true;
+  render();
+  persist();
+  closeIdeasPanel();
+}
+
+// Tear down the preview channel + pattern + clip if the user closed the
+// panel without keeping anything. Idempotent — safe to call twice.
+function teardownPreviewIfNotKept() {
+  const p = ideasState.preview;
+  if (!p || p.kept) return;
+  if (!p.channelId && !p.patternId && !p.clipId) return;
+
+  // 1) Stop playback if WE started it. If the user was already playing
+  //    before opening the panel, leave it running with their original
+  //    arrangement (minus the preview channel about to be removed).
+  if (ideasState.weStartedPlayback) {
+    stopAllEngineNotes();
+    engineTransport.stop();
+  }
+
+  // 2) Delete the playlist clip so SONG-mode won't walk into deleted state.
+  if (p.trackId && p.clipId) {
+    const track = song.tracks.find(t => t.id === p.trackId);
+    if (track) track.clips = (track.clips || []).filter(c => c.id !== p.clipId);
+  }
+
+  // 3) Delete the preview pattern.
+  if (p.patternId) {
+    song.patterns = song.patterns.filter(pat => pat.id !== p.patternId);
+    if (currentPatternId === p.patternId) currentPatternId = song.patterns[0]?.id || null;
+  }
+
+  // 4) Delete the preview channel from song state. The engine tolerates
+  //    leftover channels that aren't referenced by the current arrangement
+  //    (same convention `delete_channel` uses) — silence any held notes on
+  //    the way out so nothing hangs.
+  if (p.channelId) {
+    if (window.nasty && window.nasty.engine) {
+      window.nasty.engine.send({ cmd: 'all_notes_off', channelId: p.channelId });
+    }
+    song.channels = song.channels.filter(c => c.id !== p.channelId);
+    // Notes tagged to the preview channel would otherwise become orphans on
+    // any remaining pattern — sweep them out.
+    for (const pat of song.patterns) {
+      pat.notes = (pat.notes || []).filter(n => n.channelId !== p.channelId);
+    }
+  }
+
+  // 5) Restore the user's prior transport mode.
+  if (ideasState.priorTransportMode) {
+    song.transportMode = ideasState.priorTransportMode;
+  }
+
+  autoExpandBars();
+  render();
+  persist();
+  syncSongArrangement();
+}
+
+function renderIdeasPanel() {
+  const body = document.getElementById('ip-body');
+  if (!body) return;
+  body.innerHTML = '';
+  if (ideasState.loading && ideasState.ideas.length === 0) {
+    body.innerHTML = '<div class="ip-loading">Generating 5 ideas…</div>';
+    return;
+  }
+  if (!ideasState.loading && ideasState.ideas.length === 0) {
+    body.innerHTML = '<div class="ip-error">No ideas returned.</div>';
+    return;
+  }
+  ideasState.ideas.forEach((idea, i) => {
+    const row = document.createElement('div');
+    row.className = 'idea-row';
+    row.dataset.idx = String(i);
+    const title = document.createElement('div');
+    title.className = 'ir-title';
+    title.textContent = idea.name || `Idea ${i + 1}`;
+    const meta = document.createElement('div');
+    meta.className = 'ir-meta';
+    const parts = [];
+    if (idea.key) parts.push(idea.key);
+    if (idea.tempo) parts.push(idea.tempo + ' BPM');
+    if (idea.bars) parts.push(idea.bars + ' bar' + (idea.bars > 1 ? 's' : ''));
+    if (idea.instrument) parts.push(idea.instrument);
+    meta.textContent = parts.join(' · ');
+    const char = document.createElement('div');
+    char.className = 'ir-char';
+    char.textContent = idea.character || '';
+    const actions = document.createElement('div');
+    actions.className = 'ir-actions';
+    const playBtn = document.createElement('button');
+    playBtn.type = 'button';
+    playBtn.textContent = '▶ Play';
+    playBtn.addEventListener('click', (e) => { e.stopPropagation(); auditionIdea(i); });
+    const keepBtn = document.createElement('button');
+    keepBtn.type = 'button';
+    keepBtn.className = 'ir-keep';
+    keepBtn.textContent = 'Keep';
+    keepBtn.addEventListener('click', (e) => { e.stopPropagation(); keepIdea(i); });
+    actions.appendChild(playBtn);
+    actions.appendChild(keepBtn);
+    row.appendChild(title);
+    if (parts.length) row.appendChild(meta);
+    if (idea.character) row.appendChild(char);
+    row.appendChild(actions);
+    row.addEventListener('mouseenter', () => {
+      const cb = document.getElementById('ip-autoplay-hover');
+      if (cb && cb.checked) auditionIdea(i);
+    });
+    row.addEventListener('click', () => auditionIdea(i));
+    body.appendChild(row);
+  });
+}
+
+async function fetchChordIdeas(args) {
+  const apiBase = (window.nasty && window.nasty.apiBase) || '';
+  try {
+    const resp = await fetch(apiBase + '/nasty/chord-ideas', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt: args.prompt || '',
+        key:    args.key || null,
+        tempo:  args.tempo || null,
+        bars:   args.bars || null,
+      }),
+    });
+    if (!resp.ok) {
+      const detail = await resp.text().catch(() => resp.statusText);
+      throw new Error(`HTTP ${resp.status}: ${detail}`);
+    }
+    const data = await resp.json();
+    ideasState.ideas = Array.isArray(data.ideas) ? data.ideas : [];
+    ideasState.loading = false;
+    renderIdeasPanel();
+  } catch (err) {
+    console.error('[ideas] fetch failed', err);
+    ideasState.loading = false;
+    ideasState.ideas = [];
+    const body = document.getElementById('ip-body');
+    if (body) body.innerHTML = `<div class="ip-error">Idea generation failed: ${err.message || err}</div>`;
+  }
+}
+
+(function wireIdeasPanel() {
+  const closeBtn = document.getElementById('ip-close');
+  if (closeBtn) closeBtn.addEventListener('click', closeIdeasPanel);
+})();
+
+>>>>>>> Stashed changes
 async function applyToolCalls(calls) {
   const summaries = [];
   for (const call of calls) {

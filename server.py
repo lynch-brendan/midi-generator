@@ -2040,6 +2040,80 @@ class NastyChatRequest(BaseModel):
     plugins: list = []  # engine-scanned VST3/AU manifest
 
 
+<<<<<<< Updated upstream
+=======
+class NastyChordIdeasRequest(BaseModel):
+    # Free-text musical direction ("dark cinematic minor chords", "jazzy 7ths",
+    # "warm nostalgic pop progression"). Bias toward chord/harmony generation
+    # is added server-side — the caller doesn't have to say the word "chords."
+    prompt: str
+    key: Optional[str] = None
+    tempo: Optional[int] = None
+    bars: Optional[int] = None
+
+
+def _generate_chord_ideas(prompt: str, key: Optional[str], tempo: Optional[int],
+                          bars: Optional[int]) -> list[dict]:
+    # Reuse Muse's Claude-driven generator, but bias the prompt so Claude
+    # picks chord voicings / progressions rather than one-note melodies.
+    # We deliberately skip Muse's WAV render — Nasty auditions ideas
+    # in-DAW (on a preview channel, alongside the current song's drums),
+    # not through a server-rendered soundfont clip. Client uses the raw
+    # notes + gm_patch to hydrate a preview channel + pattern in the DAW.
+    chord_prompt = prompt.strip()
+    if "chord" not in chord_prompt.lower() and "progression" not in chord_prompt.lower():
+        chord_prompt = f"chord progression: {chord_prompt}"
+
+    data = generate_variations(chord_prompt)
+    top_gm_patch = int(data.get("gm_patch") or 0)
+
+    ideas: list[dict] = []
+    for var in data.get("variations", []):
+        try:
+            clean = sanitize_variation(var)
+            info = extract_variation_info(clean)
+        except Exception as e:
+            print(f"[nasty-ideas] sanitize failed: {e}", flush=True)
+            continue
+        # Prefer per-variation gm_patch, fall back to the top-level one Claude
+        # emitted for the whole batch.
+        gm_patch = int(clean.get("gm_patch", top_gm_patch) or 0)
+        # `bars` — trust Claude's declared value if in the allowed set, else
+        # infer from note timing. Same policy as the public Muse endpoint.
+        bars_val = _infer_bars(clean.get("notes", []), declared=clean.get("bars"))
+        ideas.append({
+            "id":         info.id,
+            "name":       info.name,
+            "character":  info.character,
+            "key":        clean.get("key"),
+            "tempo":      info.tempo,
+            "bars":       bars_val,
+            "note_count": info.note_count,
+            "notes":      clean["notes"],
+            "gm_patch":   gm_patch,
+            "instrument": clean.get("instrument"),
+        })
+    return ideas
+
+
+@app.post("/nasty/chord-ideas")
+def nasty_chord_ideas(req: NastyChordIdeasRequest):
+    # Called directly by the Nasty client after Claude fires
+    # `suggest_chord_ideas` in the chat loop. Kept as a separate endpoint (not
+    # a tool result payload) so the multi-kB idea list doesn't bloat every
+    # subsequent chat turn's context.
+    if not req.prompt.strip():
+        raise HTTPException(status_code=400, detail="prompt is required")
+    try:
+        ideas = _generate_chord_ideas(req.prompt, req.key, req.tempo, req.bars)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"idea generation failed: {e}")
+    if not ideas:
+        raise HTTPException(status_code=500, detail="no ideas generated")
+    return {"ideas": ideas, "prompt": req.prompt}
+
+
+>>>>>>> Stashed changes
 @app.get("/nasty")
 def nasty_page():
     return FileResponse(WEB_DIR / "nasty.html")
