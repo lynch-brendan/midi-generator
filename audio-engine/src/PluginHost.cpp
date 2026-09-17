@@ -2,6 +2,7 @@
 #include "GmSynth.h"
 #include "SampleDrum.h"
 #include "AudioClipPlayer.h"
+#include "NastyDucker.h"
 #include <iostream>
 #include <cstdio>
 
@@ -647,6 +648,20 @@ size_t PluginHost::pluginCount() const { return (size_t) knownPlugins.getNumType
 
 juce::var PluginHost::pluginListAsJson() const {
     juce::Array<juce::var> arr;
+    // Nasty-native effects appear at the top of the manifest so the UI's
+    // plugin picker surfaces them alongside VST3/AU plugins without any
+    // extra frontend work.
+    {
+        auto* d = new juce::DynamicObject();
+        d->setProperty("id",           juce::var("nasty:ducker"));
+        d->setProperty("name",         juce::var("NastyDucker"));
+        d->setProperty("format",       juce::var("Nasty"));
+        d->setProperty("manufacturer", juce::var("Nasty"));
+        d->setProperty("category",     juce::var("Fx|Dynamics"));
+        d->setProperty("isInstrument", juce::var(false));
+        d->setProperty("presets",      juce::var(juce::Array<juce::var>{}));
+        arr.add(juce::var(d));
+    }
     for (const auto& t : knownPlugins.getTypes()) {
         auto* o = new juce::DynamicObject();
         const auto id = t.createIdentifierString();
@@ -1134,13 +1149,14 @@ void PluginHost::rewireChannelUnlocked(ChannelSlot& slot) {
 
     // Resolve the MAIN audio route. Priority:
     //   1. First entry in sends[] with targetInput == "main"
-    //   2. Legacy targetChannelId (kept for compat with setChannelTarget
-    //      callers that predate the sends model)
-    //   3. master_bus if it exists and this slot isn't master_bus itself
-    //   4. Raw audio output node
-    // Sidechain sends are handled after the main route wires up below —
-    // they're additional connections, never a substitute for main.
-    Graph::NodeID targetNodeId = outNode->nodeID;
+    //   2. Legacy targetChannelId (only if sends[] is completely empty —
+    //      preserves old behaviour for channels that never got sends)
+    //   3. master_bus default (only if NO routing intent has been expressed
+    //      at all — sends empty AND targetChannelId empty)
+    // If the user has explicitly populated sends[] but removed every main
+    // entry, targetNodeId stays invalid → we skip the main output-connection
+    // add below. Result: strip is silent, matching FL's "disconnected" state.
+    Graph::NodeID targetNodeId;  // invalid = no main output
     juce::String resolvedTargetId;
     for (const auto& s : slot.sends) {
         if (s.targetInput == "main" && s.targetChannelId.isNotEmpty()) {
@@ -1148,7 +1164,15 @@ void PluginHost::rewireChannelUnlocked(ChannelSlot& slot) {
             break;
         }
     }
-    if (resolvedTargetId.isEmpty() && slot.targetChannelId.isNotEmpty()) {
+    // Fallback rule differs by slot type:
+    //   - master_bus (isBus + is-master): route to raw audio output
+    //   - other buses (isBus + not master): NO fallback. Empty sends = silent.
+    //     Buses carry explicit routing via sends[]; an empty sends list
+    //     means the user unplugged them.
+    //   - channels (not buses): use targetChannelId; if empty, fall back
+    //     to master_bus. Channels don't use sends[] in current data model.
+    if (resolvedTargetId.isEmpty() && !slot.isBus
+        && slot.targetChannelId.isNotEmpty()) {
         resolvedTargetId = slot.targetChannelId;
     }
     if (resolvedTargetId.isNotEmpty()) {
@@ -1156,9 +1180,21 @@ void PluginHost::rewireChannelUnlocked(ChannelSlot& slot) {
         if (it != channels.end()) targetNodeId = it->second.pluginNodeId;
     } else {
         auto masterIt = channels.find("master_bus");
-        if (masterIt != channels.end() && &slot != &masterIt->second) {
-            targetNodeId = masterIt->second.pluginNodeId;
+        const bool isMasterBus = (masterIt != channels.end()
+                                  && &slot == &masterIt->second);
+        if (isMasterBus) {
+            // Master's job is to be the sink — always route to raw output.
+            targetNodeId = outNode->nodeID;
+        } else if (!slot.isBus) {
+            // Channel with no explicit routing → default to master.
+            if (masterIt != channels.end()) {
+                targetNodeId = masterIt->second.pluginNodeId;
+            } else {
+                targetNodeId = outNode->nodeID;
+            }
         }
+        // Bus (not master) with no explicit sends: targetNodeId stays
+        // invalid → silent. Deliberate.
     }
 
     for (const auto& c : conns) {
@@ -1189,8 +1225,14 @@ void PluginHost::rewireChannelUnlocked(ChannelSlot& slot) {
         }
         prev = slot.gainNodeId;
     }
-    for (int ch = 0; ch < 2; ++ch) {
-        graph.addConnection({{prev, ch}, {targetNodeId, ch}});
+    // Only wire the main output if we actually resolved a target. When the
+    // user has explicitly emptied their main sends, targetNodeId stays
+    // invalid and this loop is skipped — the strip goes silent, matching
+    // FL's "unplugged" state.
+    if (targetNodeId != Graph::NodeID{}) {
+        for (int ch = 0; ch < 2; ++ch) {
+            graph.addConnection({{prev, ch}, {targetNodeId, ch}});
+        }
     }
     // Post-fader sends. Every send taps `prev` (which points at the gain node
     // if the channel has one, otherwise the last effect / instrument). For
@@ -1199,10 +1241,10 @@ void PluginHost::rewireChannelUnlocked(ChannelSlot& slot) {
     // JUCE routes those to input bus 1 (the sidechain bus). Silent no-op if
     // no such plugin exists; the send re-wires on the next rewire pass, so
     // dropping a compressor onto the target strip later picks it up.
-    // Additional sends: sidechain, plus main sends beyond the primary main
-    // route already wired above. We skip the first "main" send (already
-    // consumed as the primary target) but any second/third main send counts
-    // as a real send.
+    // Additional sends: sidechain, plus main sends beyond the primary one
+    // that was already consumed above as the resolved target. Skip the first
+    // main send we encounter (it drove targetNodeId); wire second+ as
+    // fan-out connections.
     bool firstMainConsumed = false;
     for (const auto& s : slot.sends) {
         if (s.targetChannelId.isEmpty()) continue;
@@ -1289,6 +1331,13 @@ juce::String PluginHost::setChannelSend(const juce::String& channelId,
                                         const juce::String& sendId,
                                         const juce::String& targetChannelId,
                                         const juce::String& targetInput) {
+    // Reject half-formed sends at the door — an empty targetChannelId in
+    // sends[] otherwise looks like "explicit routing intent" but resolves to
+    // nowhere, silently killing the strip. If the caller wants to remove a
+    // send they should send remove_channel_send, not set with empty target.
+    if (sendId.isEmpty() || targetChannelId.isEmpty()) {
+        return "send needs a sendId + non-empty targetChannelId";
+    }
     std::lock_guard<std::mutex> lock(mutex);
     auto it = channels.find(channelId);
     if (it == channels.end()) return "no such channel: " + channelId;
@@ -1297,10 +1346,8 @@ juce::String PluginHost::setChannelSend(const juce::String& channelId,
     auto existing = std::find_if(sends.begin(), sends.end(),
         [&](const SendSlot& s) { return s.sendId == sendId; });
     if (existing != sends.end()) sends.erase(existing);
-    if (targetChannelId.isNotEmpty()) {
-        sends.push_back({ sendId, targetChannelId,
-                          targetInput.isEmpty() ? juce::String("main") : targetInput });
-    }
+    sends.push_back({ sendId, targetChannelId,
+                      targetInput.isEmpty() ? juce::String("main") : targetInput });
     rewireChannelUnlocked(it->second);
     return {};
 }
@@ -1333,25 +1380,45 @@ juce::String PluginHost::addEffect(const juce::String& channelId,
                                    const juce::String& base64State,
                                    const juce::String& presetName) {
     std::cerr << "[addEffect] START ch=" << channelId << " slot=" << slotId << " pluginId=" << pluginId << std::endl;
-    const juce::PluginDescription* desc = nullptr;
-    for (const auto& t : knownPlugins.getTypes()) {
-        if (t.createIdentifierString() == pluginId) { desc = &t; break; }
-    }
-    if (!desc) {
-        std::cerr << "[addEffect] FAIL: plugin not found in manifest" << std::endl;
-        return "Plugin not found: " + pluginId;
-    }
-    std::cerr << "[addEffect] step1 found desc name=" << desc->name << " format=" << desc->pluginFormatName << std::endl;
 
-    // Create instance WITHOUT holding MessageManagerLock — plugin init needs
-    // the message loop to pump (Cocoa callbacks, plugin-internal callAsync).
-    // Holding the lock across this call deadlocks the engine on slow plugins.
-    juce::String err;
-    auto instance = formatManager.createPluginInstance(
-        *desc, graph.getSampleRate(), graph.getBlockSize(), err);
-    if (!instance) {
-        std::cerr << "[addEffect] FAIL: createPluginInstance returned null err='" << err << "'" << std::endl;
-        return err.isNotEmpty() ? err : juce::String("Instantiation failed");
+    // Nasty-native effects come from a small internal list, not from the
+    // VST3/AU manifest. Route them through their own factory so they load
+    // without a plugin scan and their bus layout (including our sidechain
+    // ducker's aux input) comes up exactly as we declared it.
+    std::unique_ptr<juce::AudioProcessor> instance;
+    if (pluginId == "nasty:ducker") {
+        instance = std::make_unique<NastyDucker>();
+        // Force-enable the sidechain bus. Without this, some hosts / graph
+        // configurations negotiate it to disabled and detection fails.
+        if (instance->getBusCount(true) > 1) {
+            auto* sc = instance->getBus(true, 1);
+            if (sc && sc->isEnabled() == false) {
+                sc->setCurrentLayout(juce::AudioChannelSet::stereo());
+            }
+        }
+        std::cerr << "[addEffect] internal NastyDucker instantiated (in="
+                  << instance->getTotalNumInputChannels() << ")" << std::endl;
+    } else {
+        const juce::PluginDescription* desc = nullptr;
+        for (const auto& t : knownPlugins.getTypes()) {
+            if (t.createIdentifierString() == pluginId) { desc = &t; break; }
+        }
+        if (!desc) {
+            std::cerr << "[addEffect] FAIL: plugin not found in manifest" << std::endl;
+            return "Plugin not found: " + pluginId;
+        }
+        std::cerr << "[addEffect] step1 found desc name=" << desc->name << " format=" << desc->pluginFormatName << std::endl;
+
+        // Create instance WITHOUT holding MessageManagerLock — plugin init needs
+        // the message loop to pump (Cocoa callbacks, plugin-internal callAsync).
+        // Holding the lock across this call deadlocks the engine on slow plugins.
+        juce::String err;
+        instance = formatManager.createPluginInstance(
+            *desc, graph.getSampleRate(), graph.getBlockSize(), err);
+        if (!instance) {
+            std::cerr << "[addEffect] FAIL: createPluginInstance returned null err='" << err << "'" << std::endl;
+            return err.isNotEmpty() ? err : juce::String("Instantiation failed");
+        }
     }
     std::cerr << "[addEffect] step2 created instance ok" << std::endl;
     instance->setPlayHead(playHead.get());
@@ -1376,8 +1443,13 @@ juce::String PluginHost::addEffect(const juce::String& channelId,
     }
 
     if (presetName.isNotEmpty()) {
-        const int idx = matchPresetIndex(*instance, presetName);
-        if (idx >= 0) instance->setCurrentProgram(idx);
+        // Preset matching only applies to real VST3/AU plugins (which are
+        // AudioPluginInstance under the hood). Nasty-native processors have
+        // one program and no preset library, so skip.
+        if (auto* pi = dynamic_cast<juce::AudioPluginInstance*>(instance.get())) {
+            const int idx = matchPresetIndex(*pi, presetName);
+            if (idx >= 0) pi->setCurrentProgram(idx);
+        }
     }
 
     // Now take MessageManagerLock for the graph mutation portion only.

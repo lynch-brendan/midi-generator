@@ -146,12 +146,7 @@ For pumping / ducking requests ("sidechain the kick to the bass," "make the bass
 
 Recipe:
 
-1. `add_plugin_effect(channel_id, plugin_id)` — put a **sidechain-capable compressor** on the *target* channel (the one that should DUCK). Not every compressor exposes a sidechain input, so pick from this shortlist of ones that DO:
-   - **Airwindows Consolidated** — first choice, always works
-   - **AUMultibandCompressor** (Apple's built-in) — has sidechain
-   - **Fruity Limiter** — if installed
-   - **OTT** — if installed
-   Do NOT use MJUCjr, IVGI2, TensJr, or single-band Klanghelm plugins — they don't have sidechain inputs.
+1. `add_plugin_effect(channel_id, plugin_id="nasty:ducker")` — put **NastyDucker** on the *target* channel (the one that should DUCK). NastyDucker is Nasty's built-in sidechain compressor and is the only compressor guaranteed to have a working sidechain input regardless of what third-party plugins the user has installed. Prefer it for every sidechain request. Do not use MJUCjr, IVGI2, TensJr, Airwindows Consolidated, or AU compressors for sidechain — none of them expose a sidechain input reliably.
 2. `sidechain_channel(source_id, target_id)` — **this call is required and NOT optional.** `source_id` = the trigger (usually the kick channel; can be a channel id or bus id). `target_id` = the target bus (e.g. `bus_5` for Insert 5, wherever the compressor lives).
 
 If the target already has a sidechain-capable compressor loaded, skip step 1 and just call `sidechain_channel`.

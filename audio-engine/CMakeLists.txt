@@ -34,6 +34,7 @@ target_sources(nasty-audio-engine PRIVATE
     src/GmSynth.cpp
     src/SampleDrum.cpp
     src/AudioClipPlayer.cpp
+    src/NastyDucker.cpp
     $<$<PLATFORM_ID:Darwin>:src/MacHelpers.mm>
 )
 
