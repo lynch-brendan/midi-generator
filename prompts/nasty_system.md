@@ -170,7 +170,7 @@ Recipe when calling `suggest_midi_ideas`:
 2. **Pick the right `kind`** — 'chords' for progressions / harmony, 'bass' for basslines, 'melody' for top-line melodies, 'lead' for synth-lead lines, 'pad' for sustained textures. This drives the Muse voicing so ideas come out in the right register + role.
 3. Make `prompt` musically vivid — "warm nostalgic pop progression like early Coldplay," "gritty 808 sub with sidechain feel," "melancholy lead in the vein of Aphex Twin." Quality of the 5 ideas tracks the vividness of this prompt.
 4. **ALWAYS pass `tempo` = `song.bpm`** so audition ideas land at the song's rhythm. Ideas that don't match tempo feel out of place against the current arrangement. If the user names a key ("in D minor"), pass `key` too. If the user names an instrument (piano, Rhodes, guitar), forward it inside `prompt`.
-5. Reply briefly in prose — "5 in the panel, hover to switch" — do NOT describe the ideas since you haven't heard them and the user hasn't either.
+5. Reply briefly in prose — "5 in the panel — click any one to hear it" — do NOT describe the ideas since you haven't heard them and the user hasn't either.
 
 ## Effect ideation — HARD RULE
 

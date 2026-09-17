@@ -3519,11 +3519,15 @@ const ideasState = {
   selectedIdx: -1,
   loading: false,
   // MIDI-mode preview state — populated on first audition.
+  //
+  // Audition runs in PAT mode on a hidden preview channel + preview pattern
+  // — no playlist clip is created. The pattern loops in isolation while the
+  // user auditions. Keep is what commits the idea to the arrangement (adds
+  // the clip to a playlist track). This keeps the arrangement window clean
+  // while cycling through options.
   preview: {
     channelId: null,
     patternId: null,
-    clipId: null,
-    trackId: null,
     gmProgram: null,
     kept: false,
   },
@@ -3540,6 +3544,7 @@ const ideasState = {
   // was already playing before opening the panel).
   weStartedPlayback: false,
   priorTransportMode: null,
+  priorCurrentPatternId: null,
 };
 
 function openIdeasPanel(prompt, kind) {
@@ -3609,10 +3614,11 @@ function closeIdeasPanel() {
     teardownEffectAuditionIfNotKept();
   }
   ideasState.selectedIdx = -1;
-  ideasState.preview = { channelId: null, patternId: null, clipId: null, trackId: null, gmProgram: null, kept: false };
+  ideasState.preview = { channelId: null, patternId: null, gmProgram: null, kept: false };
   ideasState.effects = { targetOwnerId: null, targetLabel: '', options: [], currentSlotId: null, kept: false };
   ideasState.weStartedPlayback = false;
   ideasState.priorTransportMode = null;
+  ideasState.priorCurrentPatternId = null;
 }
 
 // Convert Muse's dict-form notes {pitch, duration, velocity(1-127), time}
@@ -3661,37 +3667,28 @@ function firstFreeTrackAtBar(bar) {
 async function ensurePreviewLoaded(idea) {
   const wantProg = Math.max(0, Math.min(127, parseInt(idea.gm_patch, 10) || 0));
 
-  // First audition of this batch — create everything.
+  // First audition of this batch — create the preview channel + pattern.
+  // No playlist clip: audition runs in PAT mode against the preview
+  // pattern so the arrangement window stays clean. Keep creates the clip
+  // as the "commit to arrangement" step.
   if (!ideasState.preview.channelId) {
     const chId = 'preview-idea-' + Math.random().toString(36).slice(2, 6);
     const patId = 'preview-pat-' + chId;
-    const clipId = 'preview-clip-' + chId;
-    const trackId = firstFreeTrackAtBar(0);
 
     await addChannelFromInstrument({
       id: chId, name: 'Preview',
       pluginId: 'gm-' + wantProg, gmProgram: wantProg,
     });
 
-    // Stash the pattern (with placeholder notes — we'll overwrite in a sec).
     song.patterns.push({
       id: patId, name: 'Preview',
       lengthBars: idea.bars || 4,
       notes: [],
       color: PALETTE[song.patterns.length % PALETTE.length],
-      _preview: true,           // marker so we don't render this in the pattern list
+      _preview: true,
     });
-    // Playlist clip so SONG mode walks the preview pattern.
-    const track = song.tracks.find(t => t.id === trackId);
-    if (track) {
-      track.clips.push({
-        id: clipId, type: 'pattern',
-        patternId: patId, startBar: 0, lengthBars: idea.bars || 4,
-        _preview: true,
-      });
-    }
     ideasState.preview = {
-      channelId: chId, patternId: patId, clipId, trackId,
+      channelId: chId, patternId: patId,
       gmProgram: wantProg, kept: false,
     };
     return;
@@ -3720,41 +3717,36 @@ async function auditionIdea(idx) {
   const idea = ideasState.ideas[idx];
   if (!idea) return;
 
-  // Remember whether the user was mid-playback before we touched anything.
+  // Snapshot pre-audition transport state so closeIdeasPanel can restore
+  // it if the user closes without Keeping.
   const wasPlaying = engineTransport.isPlaying;
   if (ideasState.priorTransportMode === null) {
     ideasState.priorTransportMode = song.transportMode || 'pat';
+    ideasState.priorCurrentPatternId = currentPatternId;
   }
 
   await ensurePreviewLoaded(idea);
 
-  // Rewrite the preview pattern's notes to the picked idea's notes.
+  // Rewrite the preview pattern with the picked idea's notes.
   const pat = song.patterns.find(p => p.id === ideasState.preview.patternId);
   if (pat) {
     pat.notes = museIdeaToNastyNotes(idea, ideasState.preview.channelId);
     pat.lengthBars = idea.bars || 4;
     pat.name = idea.name || 'Preview';
   }
-  const clip = (song.tracks.find(t => t.id === ideasState.preview.trackId) || {}).clips || [];
-  const previewClip = clip.find(c => c.id === ideasState.preview.clipId);
-  if (previewClip) previewClip.lengthBars = idea.bars || 4;
 
-  // SONG mode so the idea plays alongside the existing arrangement (drums,
-  // bass, whatever else is on the playlist).
-  song.transportMode = 'song';
-  autoExpandBars();
+  // PAT mode + preview pattern as current → the pattern loops in
+  // isolation. No playlist clip, no arrangement pollution while cycling
+  // through ideas. Keep is what promotes to arrangement.
+  song.transportMode = 'pat';
+  currentPatternId = ideasState.preview.patternId;
   render();
   persist();
 
-  syncSongArrangement();
-  // Force the engine's SONG-mode loop to the preview pattern's length so
-  // the playhead wraps at the idea boundary instead of sweeping through
-  // whatever bar count the song has (default 500). If other clips extend
-  // past the preview, honor the longer of the two — that way drums that
-  // already loop 4-bar stay in sync with the audition.
-  const previewBeats = (idea.bars || 4) * 4;
-  const arrangedBeats = engineTransport.songLengthBeats();
-  engineTransport.setLoopBeats(Math.max(previewBeats, arrangedBeats));
+  if (engineTransport.available()) {
+    engineTransport.pushPattern(pat);
+    engineTransport.setLoopBeats((idea.bars || 4) * 4);
+  }
   if (!wasPlaying) {
     ideasState.weStartedPlayback = true;
     playSong();
@@ -3772,12 +3764,10 @@ async function keepIdea(idx) {
   const idea = ideasState.ideas[idx];
   if (!idea) return;
 
-  // Make sure the preview channel is loaded and has the picked idea's
-  // notes. auditionIdea does both — even if the user hits Keep without
-  // ever hovering, we still promote a working preview.
+  // Ensure the preview channel is loaded and has the picked idea's notes.
   await auditionIdea(idx);
 
-  // Promote: strip the _preview markers, rename to the idea's name, done.
+  // Promote the preview channel + pattern to permanent (strip markers).
   const ch = song.channels.find(c => c.id === ideasState.preview.channelId);
   if (ch) {
     ch.name = idea.name || 'Chords';
@@ -3788,11 +3778,24 @@ async function keepIdea(idx) {
     pat.name = idea.name || 'Chords';
     delete pat._preview;
   }
-  const track = song.tracks.find(t => t.id === ideasState.preview.trackId);
-  if (track) {
-    const clip = (track.clips || []).find(c => c.id === ideasState.preview.clipId);
-    if (clip) delete clip._preview;
+
+  // Commit to arrangement — add a playlist clip on the first free track
+  // at bar 0. This is the moment the idea leaves the audition sandbox and
+  // becomes part of the song. Switching to SONG mode so the user sees the
+  // arrangement they just committed to.
+  const trackId = firstFreeTrackAtBar(0);
+  const track = song.tracks.find(t => t.id === trackId);
+  const lengthBars = idea.bars || 4;
+  if (track && pat) {
+    track.clips.push({
+      id: 'clip-' + pat.id,
+      type: 'pattern',
+      patternId: pat.id, startBar: 0, lengthBars,
+    });
   }
+  song.transportMode = 'song';
+  autoExpandBars();
+  syncSongArrangement();
   ideasState.preview.kept = true;
   render();
   persist();
@@ -3804,45 +3807,38 @@ async function keepIdea(idx) {
 function teardownPreviewIfNotKept() {
   const p = ideasState.preview;
   if (!p || p.kept) return;
-  if (!p.channelId && !p.patternId && !p.clipId) return;
+  if (!p.channelId && !p.patternId) return;
 
   // 1) Stop playback if WE started it. If the user was already playing
-  //    before opening the panel, leave it running with their original
-  //    arrangement (minus the preview channel about to be removed).
+  //    before opening the panel, leave it running.
   if (ideasState.weStartedPlayback) {
     stopAllEngineNotes();
     engineTransport.stop();
   }
 
-  // 2) Delete the playlist clip so SONG-mode won't walk into deleted state.
-  if (p.trackId && p.clipId) {
-    const track = song.tracks.find(t => t.id === p.trackId);
-    if (track) track.clips = (track.clips || []).filter(c => c.id !== p.clipId);
-  }
-
-  // 3) Delete the preview pattern.
+  // 2) Delete the preview pattern and restore currentPatternId.
   if (p.patternId) {
     song.patterns = song.patterns.filter(pat => pat.id !== p.patternId);
-    if (currentPatternId === p.patternId) currentPatternId = song.patterns[0]?.id || null;
+    if (currentPatternId === p.patternId) {
+      currentPatternId = ideasState.priorCurrentPatternId || (song.patterns[0]?.id) || null;
+    }
   }
 
-  // 4) Delete the preview channel from song state. The engine tolerates
-  //    leftover channels that aren't referenced by the current arrangement
-  //    (same convention `delete_channel` uses) — silence any held notes on
-  //    the way out so nothing hangs.
+  // 3) Delete the preview channel from song state. Engine tolerates
+  //    leftover channels that aren't referenced by the current pattern
+  //    (same convention `delete_channel` uses); silence any held notes
+  //    on the way out so nothing hangs.
   if (p.channelId) {
     if (window.nasty && window.nasty.engine) {
       window.nasty.engine.send({ cmd: 'all_notes_off', channelId: p.channelId });
     }
     song.channels = song.channels.filter(c => c.id !== p.channelId);
-    // Notes tagged to the preview channel would otherwise become orphans on
-    // any remaining pattern — sweep them out.
     for (const pat of song.patterns) {
       pat.notes = (pat.notes || []).filter(n => n.channelId !== p.channelId);
     }
   }
 
-  // 5) Restore the user's prior transport mode.
+  // 4) Restore the user's prior transport mode.
   if (ideasState.priorTransportMode) {
     song.transportMode = ideasState.priorTransportMode;
   }
