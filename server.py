@@ -1685,6 +1685,26 @@ _NASTY_TOOLS = [
         "input_schema": {"type": "object", "properties": {}},
     },
     {
+        "name": "save_song",
+        "description": (
+            "Save the current song as a JSON file. Triggers a browser "
+            "download of nasty-song.json — the user's browser will prompt "
+            "them to pick a location. Use this whenever the user asks to "
+            "save / export their project."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "new_song",
+        "description": (
+            "Start a fresh empty project. Clears all channels, patterns, "
+            "playlist clips, and chat history. Use only when the user "
+            "explicitly asks to start over / new song / clear everything. "
+            "Their current work is lost unless they saved first."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "create_channel",
         "description": (
             "Create a new channel in the Channel Rack. A channel is one sound "

@@ -4333,6 +4333,21 @@ async function applyToolCalls(calls) {
       } else if (name === 'stop') {
         stopSong();
         summaries.push('■ stop');
+      } else if (name === 'save_song') {
+        saveToFile();
+        summaries.push('💾 saved (check browser downloads)');
+      } else if (name === 'new_song') {
+        // Same reset logic as the ✕ clear button, minus the confirm prompt
+        // (Claude fires this only on explicit user request — the request is
+        // the confirmation).
+        song = { version: SONG_SCHEMA_VERSION, bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] }, transportMode: 'pat' };
+        chatHistory = [];
+        currentPatternId = null;
+        ensureDefaults();
+        hydratePluginChannels();
+        document.getElementById('chat-messages').innerHTML = '';
+        stopSong();
+        summaries.push('◇ new song');
       } else if (name === 'start_recording') {
         const r = startAudioRecording();
         summaries.push(r.ok ? `● recording on ${r.busName}` : `× can't record: ${r.reason}`);
