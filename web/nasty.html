@@ -7668,7 +7668,13 @@ async function sendMessage(overrideText, opts) {
     chatHistory.push({ role: 'user', content: text });
     chatHistory.push({ role: 'assistant', content: data.text || 'done' });
     if (chatHistory.length > 20) chatHistory = chatHistory.slice(-20);
-    if (document.getElementById('autoplay').checked && song.tracks.some(t => t.clips.length)) {
+    // If Claude explicitly drove the transport this turn (play / stop /
+    // set_transport_mode), don't second-guess it with the autoplay hook —
+    // the double-call was flipping mode back after Claude had just set it.
+    const claudeDrovePlayback = (data.tool_calls || []).some(c =>
+      c.name === 'play' || c.name === 'stop' || c.name === 'set_transport_mode'
+    );
+    if (!claudeDrovePlayback && document.getElementById('autoplay').checked && song.tracks.some(t => t.clips.length)) {
       // The AI just fired a bunch of engine commands (add_gm, load_instrument,
       // pattern edits) over stdin. Those are async — if we hit play right now
       // the engine may still be loading a SoundFont for a channel that the
