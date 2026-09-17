@@ -678,7 +678,16 @@
   }
   .idea-row:hover { background: linear-gradient(#5a5a5a, var(--panel-3)); }
   .idea-row.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-  .idea-row.playing { border-color: var(--accent-2); }
+  .idea-row.playing {
+    border-color: var(--accent-2);
+    box-shadow: 0 0 0 1px var(--accent-2), 0 0 12px rgba(120, 220, 255, 0.35);
+    background: linear-gradient(#3a4a52, #2c3840);
+  }
+  .idea-row.kept { opacity: 0.6; }
+  .idea-row.kept .ir-actions button.ir-keep {
+    background: var(--panel-3); border-color: var(--line);
+    color: var(--dim); cursor: default;
+  }
   .idea-row .ir-title { font-weight: 700; font-size: 12px; }
   .idea-row .ir-meta { color: var(--dim); font-size: 10px; }
   .idea-row .ir-char { color: var(--dim); font-size: 10px; font-style: italic; line-height: 1.3; }
@@ -3766,19 +3775,34 @@ async function auditionIdea(idx) {
     el.classList.toggle('selected', i === idx);
   });
 
-  // Auto-cycle — schedule advance to the next idea after this one completes
-  // one full loop. Cancels any prior scheduled advance so back-to-back
-  // manual clicks don't chain.
+  // Auto-cycle — play the picked idea's pattern TWICE, insert a short
+  // silence, then advance to the next idea. Silence is real: engine stop
+  // between loops so the user hears the boundary. Length check is inside
+  // the timeout so more ideas arriving via streaming still get cycled to.
   if (ideasState.autoCycleTimeoutId) clearTimeout(ideasState.autoCycleTimeoutId);
-  if (ideasState.ideas.length > 1) {
-    const beats = (idea.bars || 4) * 4;
-    const ms = Math.max(500, (beats * 60000) / (song.bpm || 120));
+  const beats = (idea.bars || 4) * 4;
+  const oneLoopMs = Math.max(500, (beats * 60000) / (song.bpm || 120));
+  const twoLoopsMs = oneLoopMs * 2;
+  const silenceMs = 400;
+  const tick = () => {
+    if (ideasState.mode !== 'midi') return;
+    // If a batch is still streaming and only one has arrived, let the
+    // current one keep looping and re-check after another loop.
+    if (ideasState.ideas.length <= 1) {
+      ideasState.autoCycleTimeoutId = setTimeout(tick, oneLoopMs);
+      return;
+    }
+    // Stop engine to make the silence audible, then wait, then advance.
+    stopAllEngineNotes();
+    if (engineTransport.available()) engineTransport.stop();
+    ideasState.weStartedPlayback = false;  // next audition restarts playback
     ideasState.autoCycleTimeoutId = setTimeout(() => {
-      if (ideasState.mode !== 'midi' || ideasState.preview.kept) return;
+      if (ideasState.mode !== 'midi') return;
       const next = (idx + 1) % ideasState.ideas.length;
       auditionIdea(next);
-    }, ms);
-  }
+    }, silenceMs);
+  };
+  ideasState.autoCycleTimeoutId = setTimeout(tick, twoLoopsMs);
 }
 
 // "More like this" — reseed the panel with the picked idea as the
@@ -3835,11 +3859,12 @@ async function keepIdea(idx) {
   if (ideasState.mode === 'effects') return keepEffectIdea(idx);
   const idea = ideasState.ideas[idx];
   if (!idea) return;
+  if (idea._kept) return;   // already kept — no-op
 
-  // Ensure the preview channel is loaded and has the picked idea's notes.
+  // Ensure the preview channel is loaded with the picked idea's notes.
   await auditionIdea(idx);
 
-  // Promote the preview channel + pattern to permanent (strip markers).
+  // Promote preview → permanent (strip _preview markers, rename).
   const ch = song.channels.find(c => c.id === ideasState.preview.channelId);
   if (ch) {
     ch.name = idea.name || 'Chords';
@@ -3851,10 +3876,7 @@ async function keepIdea(idx) {
     delete pat._preview;
   }
 
-  // Commit to arrangement — add a playlist clip on the first free track
-  // at bar 0. This is the moment the idea leaves the audition sandbox and
-  // becomes part of the song. Switching to SONG mode so the user sees the
-  // arrangement they just committed to.
+  // Commit to arrangement — clip on first free track at bar 0.
   const trackId = firstFreeTrackAtBar(0);
   const track = song.tracks.find(t => t.id === trackId);
   const lengthBars = idea.bars || 4;
@@ -3865,13 +3887,21 @@ async function keepIdea(idx) {
       patternId: pat.id, startBar: 0, lengthBars,
     });
   }
-  song.transportMode = 'song';
   autoExpandBars();
-  syncSongArrangement();
-  ideasState.preview.kept = true;
+
+  // Reset preview slot so the next audition creates a NEW preview channel
+  // instead of overwriting the just-promoted one. Keep the panel open so
+  // the user can Keep multiple ideas in one batch (or reseed / close).
+  idea._kept = true;
+  ideasState.preview = { channelId: null, patternId: null, gmProgram: null, kept: false };
+  // Prior transport state stays "PAT + preview pattern" — but the
+  // preview pattern is now permanent (with the just-kept name). Playback
+  // continues on the newly-committed pattern until the user auditions a
+  // different idea (which spins up a fresh preview channel).
+
   render();
   persist();
-  closeIdeasPanel();
+  renderIdeasPanel();  // re-render so the kept row shows kept styling
 }
 
 // Tear down the preview channel + pattern + clip if the user closed the
@@ -4052,9 +4082,9 @@ function renderIdeasPanel() {
     if (idea.bars) parts.push(idea.bars + ' bar' + (idea.bars > 1 ? 's' : ''));
     if (idea.instrument) parts.push(idea.instrument);
     meta.textContent = parts.join(' · ');
-    const char = document.createElement('div');
-    char.className = 'ir-char';
-    char.textContent = idea.character || '';
+    // Muse's character field is music-theory verbose. Dropped from the
+    // panel — the name is short + evocative on its own ("Chromatic
+    // Wanderer" / "Slap Box Boom") and serves as the vibe descriptor.
     const actions = document.createElement('div');
     actions.className = 'ir-actions';
     const playBtn = document.createElement('button');
@@ -4076,8 +4106,8 @@ function renderIdeasPanel() {
     actions.appendChild(keepBtn);
     row.appendChild(title);
     if (parts.length) row.appendChild(meta);
-    if (idea.character) row.appendChild(char);
     row.appendChild(actions);
+    if (idea._kept) row.classList.add('kept');
     // Click a row to switch which idea auditions. Hover intentionally
     // does nothing — first idea auto-plays on arrival, further switching
     // is explicit-click only.
