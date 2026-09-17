@@ -4333,6 +4333,12 @@ async function applyToolCalls(calls) {
       } else if (name === 'stop') {
         stopSong();
         summaries.push('■ stop');
+      } else if (name === 'start_recording') {
+        const r = startAudioRecording();
+        summaries.push(r.ok ? `● recording on ${r.busName}` : `× can't record: ${r.reason}`);
+      } else if (name === 'stop_recording') {
+        stopAudioRecording();
+        summaries.push('■ recording stopped');
       } else if (name === 'set_transport_mode') {
         const mode = input.mode === 'song' ? 'song' : 'pat';
         if (song.transportMode !== mode) {
@@ -6387,6 +6393,70 @@ function addAudioClipFromRecording(ctx, path, lengthSamples) {
   persist();
 }
 
+// Global entry points for kicking off / ending an audio take. Shared between
+// the physical Rec + Play buttons and the voice-driven start_recording /
+// stop_recording tool paths. Returns { ok, reason?, busName? } so callers
+// can decide what to say to the user.
+function startAudioRecording() {
+  if (!(window.nasty && window.nasty.engine)) {
+    return { ok: false, reason: 'audio engine not running' };
+  }
+  const bus = (song.mixer.busses || []).find(b => b.audioInputEnabled);
+  if (!bus) {
+    return { ok: false, reason: 'no mic routed — open the mixer and click IN on a strip to route your mic first' };
+  }
+  bus.recArmed = true;
+  recArmed = true;
+  if (song.transportMode !== 'song') {
+    stopSong();
+    song.transportMode = 'song';
+    if (engineTransport.available()) engineTransport.setMode('song');
+    document.querySelectorAll('.patsong .ps-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.mode === 'song');
+    });
+  }
+  const rb = document.getElementById('rec-btn');
+  if (rb) {
+    rb.classList.add('recording');
+    rb.style.background = 'linear-gradient(var(--record), #b02830)';
+    rb.style.color = 'white';
+  }
+  pendingRecordingContext = {
+    busId: bus.id,
+    startSample: Math.max(0, engineTransport.currentSample || 0),
+  };
+  window.nasty.engine.send({ cmd: 'start_recording' });
+  playSong();
+  renderMixer();
+  persist();
+  return { ok: true, busName: (bus.name || 'bus').trim() };
+}
+
+function stopAudioRecording() {
+  if (window.nasty && window.nasty.engine) {
+    window.nasty.engine.send({ cmd: 'stop_recording' });
+  }
+  stopSong();
+  // Un-arm so a subsequent play doesn't accidentally roll another take.
+  recArmed = false;
+  const rb = document.getElementById('rec-btn');
+  if (rb) {
+    rb.classList.remove('recording');
+    rb.style.background = '';
+    rb.style.color = '';
+  }
+  for (const b of (song.mixer.busses || [])) b.recArmed = false;
+  renderMixer();
+  persist();
+  return { ok: true };
+}
+
+function isRecordingAudio() {
+  // pendingRecordingContext is set at startAudioRecording and cleared when
+  // the engine acknowledges the take (audio_clip_added event handler).
+  return pendingRecordingContext !== null;
+}
+
 function onMixerInputClick(busId) {
   const bus = (song.mixer.busses || []).find(b => b.id === busId);
   if (!bus) return;
@@ -8267,7 +8337,21 @@ const voiceInput = (() => {
     setBtn('on');
     setStatus("heard: " + text, 'listening');
     beep('ack');
-    sendMessage(text, { fromVoice: true });
+    if (isRecordingAudio()) {
+      // Mid-take mode: only accept commands that mean "stop the take."
+      // Anything else is dropped rather than sent to Claude — we don't
+      // want Claude editing the song while you're mid-take.
+      const t = text.toLowerCase().trim();
+      if (/\b(stop|end|cut|done|finish|kill|that'?s it|that is it)\b/.test(t)) {
+        stopAudioRecording();
+        setStatus("take ended", 'listening');
+      } else {
+        setStatus("ignored (recording): " + text, 'armed');
+        beep('no');
+      }
+    } else {
+      sendMessage(text, { fromVoice: true });
+    }
     setTimeout(() => {
       if (enabled) setStatus("say '" + WAKE + "' to talk", 'listening');
     }, 2500);

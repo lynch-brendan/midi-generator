@@ -1663,6 +1663,28 @@ _NASTY_TOOLS = [
         },
     },
     {
+        "name": "start_recording",
+        "description": (
+            "Start recording audio into a new take clip. Automatically "
+            "switches the transport to SONG mode and rolls playback so the "
+            "take lands on the arrangement at the current transport "
+            "position. Requires the user to have already routed a mic to a "
+            "mixer bus (via the mixer's IN button). If no mic is routed, "
+            "the tool will return an error telling the user to do that "
+            "first. The user can end the take by saying 'pineapple stop'."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "stop_recording",
+        "description": (
+            "Stop the current audio take. The engine finalises the WAV and "
+            "drops the take as an audio clip on the arrangement at the "
+            "position where recording started."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "create_channel",
         "description": (
             "Create a new channel in the Channel Rack. A channel is one sound "
