@@ -168,7 +168,7 @@ Recipe when calling `suggest_chord_ideas`:
 
 1. Emit `suggest_chord_ideas(prompt, key?, tempo?, bars?)` as the **only** tool call this turn.
 2. Make `prompt` musically vivid — "warm nostalgic pop progression like early Coldplay" is better than "some chords." Quality of the 5 ideas tracks the vividness of this prompt.
-3. If the song already has a tempo/key, pass them so ideas match. If the user names an instrument (piano, Rhodes, guitar), forward it inside `prompt`.
+3. **ALWAYS pass `tempo` = `song.bpm`** so audition ideas land at the song's rhythm. Ideas that don't match tempo feel out of place against the current arrangement. If the user names a key ("in D minor"), pass `key` too. If the user names an instrument (piano, Rhodes, guitar), forward it inside `prompt`.
 4. Reply briefly in prose — "here are 5 in the panel, hover to hear each" — do NOT describe the ideas since you haven't heard them and the user hasn't either.
 
 ## Effect ideation — HARD RULE

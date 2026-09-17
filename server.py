@@ -2093,6 +2093,14 @@ def _generate_chord_ideas(prompt: str, key: Optional[str], tempo: Optional[int],
     chord_prompt = prompt.strip()
     if "chord" not in chord_prompt.lower() and "progression" not in chord_prompt.lower():
         chord_prompt = f"chord progression: {chord_prompt}"
+    # Bias Muse toward the caller's song tempo / key when given, so ideas
+    # land at a rhythm/harmony compatible with what the user is auditioning
+    # against. Muse doesn't have a hard-lock knob in the non-streaming
+    # entry point; the prompt bias is the cheap lever.
+    if tempo:
+        chord_prompt = f"{chord_prompt} — at {int(tempo)} BPM"
+    if key:
+        chord_prompt = f"{chord_prompt} — in {key}"
 
     data = generate_variations(chord_prompt)
     top_gm_patch = int(data.get("gm_patch") or 0)

@@ -3748,6 +3748,14 @@ async function auditionIdea(idx) {
   persist();
 
   syncSongArrangement();
+  // Force the engine's SONG-mode loop to the preview pattern's length so
+  // the playhead wraps at the idea boundary instead of sweeping through
+  // whatever bar count the song has (default 500). If other clips extend
+  // past the preview, honor the longer of the two — that way drums that
+  // already loop 4-bar stay in sync with the audition.
+  const previewBeats = (idea.bars || 4) * 4;
+  const arrangedBeats = engineTransport.songLengthBeats();
+  engineTransport.setLoopBeats(Math.max(previewBeats, arrangedBeats));
   if (!wasPlaying) {
     ideasState.weStartedPlayback = true;
     playSong();
@@ -4027,6 +4035,12 @@ async function fetchChordIdeas(args) {
     ideasState.ideas = Array.isArray(data.ideas) ? data.ideas : [];
     ideasState.loading = false;
     renderIdeasPanel();
+    // Autoplay the first idea as soon as the batch lands — that's the
+    // main "click chat → hear something" moment. Requires no hover /
+    // click from the user. They can scroll through the rest to compare.
+    if (ideasState.ideas.length > 0 && ideasState.mode === 'midi') {
+      auditionIdea(0);
+    }
   } catch (err) {
     console.error('[ideas] fetch failed', err);
     ideasState.loading = false;
