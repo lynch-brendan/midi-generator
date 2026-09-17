@@ -8301,6 +8301,7 @@ document.getElementById('chat-input').addEventListener('keydown', (e) => {
 const voiceInput = (() => {
   const WAKE = 'pineapple';         // idle-mode wake word — single distinctive token
   const CANCEL_MS = 15000;          // how long to wait after a bare wake word (kept extended while you're talking)
+  const CONVERSATION_MS = 30000;    // after a command lands, stay armed for follow-ups — no wake word needed for this long
   const SPEECH_THRESH = 7;          // 0-127 amplitude; lower = more sensitive to quiet speech
   const SILENCE_MS = 900;           // silence before we consider the utterance done
   const MIN_UTTERANCE_MS = 200;     // ignore blips shorter than this
@@ -8393,11 +8394,25 @@ const voiceInput = (() => {
         setStatus("ignored (recording): " + text, 'armed');
         beep('no');
       }
-    } else {
-      sendMessage(text, { fromVoice: true });
+      setTimeout(() => {
+        if (enabled && !armed) setStatus("say '" + WAKE + "' to talk", 'listening');
+      }, 2500);
+      return;
     }
+    // Normal chat command: fire it, then open a conversation window so
+    // the next 30s of utterances land without needing to say pineapple
+    // again. Every follow-up utterance resets the timer.
+    sendMessage(text, { fromVoice: true });
+    armed = true;
+    setBtn('armed');
+    clearTimeout(armedTimer);
+    armedTimer = setTimeout(() => {
+      armed = false;
+      setBtn('on');
+      setStatus("say '" + WAKE + "' to talk", 'listening');
+    }, CONVERSATION_MS);
     setTimeout(() => {
-      if (enabled) setStatus("say '" + WAKE + "' to talk", 'listening');
+      if (enabled && armed) setStatus("keep talking — no pineapple needed (30s)", 'armed');
     }, 2500);
   }
 
@@ -8426,7 +8441,7 @@ const voiceInput = (() => {
       env.useBrowserCache = true;
       transcriber = await pipeline(
         'automatic-speech-recognition',
-        'Xenova/whisper-tiny.en',
+        'Xenova/whisper-base.en',
         { quantized: true, progress_callback: (p) => {
           if (p.status === 'progress' && p.file && p.progress != null) {
             setStatus("downloading " + p.file + " — " + Math.round(p.progress) + "%", '');
