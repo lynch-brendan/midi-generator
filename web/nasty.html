@@ -632,6 +632,73 @@
   .autoplay-toggle { color: var(--dim); font-size: 11px; margin-left: auto; }
   .thinking { color: var(--dim); font-style: italic; font-size: 11px; }
 
+  /* Ideas panel — floats to the left of the chat dock. Populated when
+     Claude fires suggest_chord_ideas or try_effects. Autoplay-on-hover
+     audition (midi mode), click to lock, Keep to promote / leave loaded. */
+  #ideas-panel {
+    position: fixed;
+    right: 350px; top: 80px;
+    width: 320px; max-height: calc(100vh - 120px);
+    background: var(--panel);
+    border: 1px solid var(--line); border-radius: 3px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.06);
+    z-index: 70; display: flex; flex-direction: column; overflow: hidden;
+  }
+  #ideas-panel.hidden { display: none; }
+  #ideas-panel .ip-header {
+    padding: 0 8px; height: 22px;
+    background: linear-gradient(#5a5a5a, var(--panel-3));
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 6px;
+    font-weight: 700; color: var(--text); font-size: 10px;
+    text-transform: uppercase; letter-spacing: 1px;
+  }
+  #ideas-panel .ip-header .ip-x { margin-left: auto; padding: 1px 6px; font-size: 10px; }
+  #ideas-panel .ip-controls {
+    padding: 6px 8px; border-bottom: 1px solid var(--line);
+    background: var(--panel-2); display: flex; flex-direction: column; gap: 4px;
+    font-size: 11px; color: var(--dim);
+  }
+  #ideas-panel .ip-prompt-echo {
+    color: var(--text); font-style: italic; font-size: 11px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  #ideas-panel .ip-autoplay { display: flex; align-items: center; gap: 6px; }
+  #ideas-panel .ip-body {
+    flex: 1; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 5px;
+    background: var(--workspace);
+  }
+  .idea-row {
+    padding: 6px 8px; border-radius: 2px;
+    background: linear-gradient(var(--panel-3), var(--panel-2));
+    border: 1px solid var(--line);
+    cursor: pointer; user-select: none;
+    font-size: 11px; color: var(--text);
+    display: flex; flex-direction: column; gap: 3px;
+  }
+  .idea-row:hover { background: linear-gradient(#5a5a5a, var(--panel-3)); }
+  .idea-row.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .idea-row.playing { border-color: var(--accent-2); }
+  .idea-row .ir-title { font-weight: 700; font-size: 12px; }
+  .idea-row .ir-meta { color: var(--dim); font-size: 10px; }
+  .idea-row .ir-char { color: var(--dim); font-size: 10px; font-style: italic; line-height: 1.3; }
+  .idea-row .ir-actions { display: flex; gap: 4px; margin-top: 3px; }
+  .idea-row .ir-actions button {
+    flex: 1; padding: 3px 6px; font-size: 10px;
+    background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
+    cursor: pointer; border-radius: 2px;
+  }
+  .idea-row .ir-actions button.ir-keep {
+    background: linear-gradient(var(--accent), #d94276); border-color: #111;
+    color: white; font-weight: 600;
+  }
+  .idea-row .ir-actions button:hover { filter: brightness(1.15); }
+  #ideas-panel .ip-loading, #ideas-panel .ip-error {
+    padding: 20px 12px; text-align: center;
+    color: var(--dim); font-size: 11px; font-style: italic;
+  }
+  #ideas-panel .ip-error { color: #ff6b6b; }
+
   .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 150;
     display: flex; align-items: center; justify-content: center; }
   .modal.hidden { display: none; }
@@ -2101,6 +2168,22 @@
     </div>
 
   </div>
+</div>
+
+<!-- IDEAS PANEL — populated when Claude fires suggest_chord_ideas or try_effects. -->
+<div id="ideas-panel" class="hidden">
+  <div class="ip-header">
+    Ideas
+    <button class="ip-x" id="ip-close" title="Close">×</button>
+  </div>
+  <div class="ip-controls">
+    <div class="ip-prompt-echo" id="ip-prompt-echo"></div>
+    <label class="ip-autoplay">
+      <input type="checkbox" id="ip-autoplay-hover" checked />
+      autoplay on hover
+    </label>
+  </div>
+  <div class="ip-body" id="ip-body"></div>
 </div>
 
 <div id="piano-roll" class="hidden">
