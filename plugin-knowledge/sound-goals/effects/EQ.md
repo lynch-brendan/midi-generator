@@ -9,6 +9,14 @@ Frequency shaping — cut lows, boost highs, notch feedback, carve space. Reach 
 
 ## Options
 
+### Airwindows Consolidated
+
+- **Character:** Unconventional, DSP-first EQ designs; ranges from the extremely approachable (SmoothEQ3) to experimental averaging-based filters (Average, AverMatrix) and parametric biquad stacks (BiquadStack, Parametric). Tonal character tends toward smooth, musical, and phase-coherent rather than surgical.
+- **Best for:** Gentle tonal shaping and color, experimental filter-as-effect applications, mixing EQ where character matters over precision, console-integrated EQ via ConsoleX channel algorithms.
+- **Emotional tags:** Smooth, musical, analog-flavored, subtle.
+- **Comparison:** Not a replacement for a fully-featured surgical EQ (no spectrum analyzer, limited band counts on most algorithms); better compared to "color EQ" plugins like Pultec emulations or Neve-style EQs in terms of workflow philosophy. BiquadStack offers more conventional parametric functionality.
+- **How to use:** `add_plugin_effect(channel_id=..., plugin_id="Airwindows Consolidated", parameters={"algorithm": "SmoothEQ3"})` for approachable tonal shaping, or `"algorithm": "Parametric"` for a three-band Console-X-based EQ.
+
 ### AUParametricEQ
 
 - **Character:** Clean, transparent, surgical. A textbook digital peaking EQ with no added color, saturation, or analog modeling.

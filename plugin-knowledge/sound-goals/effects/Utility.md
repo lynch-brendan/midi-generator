@@ -9,6 +9,14 @@ Metering, spectrum analysis, tuning, volume adjustment, gain staging. Reach for 
 
 ## Options
 
+### Airwindows Consolidated
+
+- **Character:** A plugin-selector meta-tool housing 500+ algorithms; as a utility it offers console bus systems (ConsoleX, ConsoleH channel/buss pairs for summing coloration), monitoring tools (Monitoring3 with headphone crossfeed), stereo manipulation (PurestDualPan), and gain utilities (PurestGain). The overall plugin itself functions as a utility framework for the entire Airwindows ecosystem.
+- **Best for:** Console emulation/summing color via ConsoleX channel+buss pairs, headphone mix monitoring (Cans crossfeed in Monitoring3), precision gain staging (PurestGain), stereo pan management.
+- **Emotional tags:** Transparent, functional, professional, workflow-oriented.
+- **Comparison:** Console system algorithms compete with paid console emulation bundles (SSL/API channel strips); monitoring algorithms fill a role similar to standalone crossfeed tools like Goodhertz CanOpener but at no cost.
+- **How to use:** `add_plugin_effect(channel_id=..., plugin_id="Airwindows Consolidated", parameters={"algorithm": "Channel9"})` on each channel and `"algorithm": "Console9Buss"` on the master for console emulation; `"algorithm": "Monitoring3"` on the master for headphone monitoring.
+
 ### AUSoundIsolation
 
 - **Character:** Clean, surgical, ML-based source separation. Transparent at moderate settings; sterile and artifact-prone when pushed. Not a coloration tool — it removes rather than shapes.

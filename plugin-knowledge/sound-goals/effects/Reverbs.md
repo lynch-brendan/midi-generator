@@ -9,6 +9,14 @@ Space and depth effects — halls, rooms, plates, cathedrals. Reach for these on
 
 ## Options
 
+### Airwindows Consolidated
+
+- **Character:** Lush, spatial, and analog-textured; reverb algorithms range from dark and cavernous (Galactic, Galactic2) to airy and diffuse (BrightAmbience3) to smooth and undersampled (CreamCoat). Many have a handcrafted, organic quality absent from algorithmic reverbs based on conventional Schroeder/FDN designs.
+- **Best for:** Room glue on drums and percussion, huge ambient pads and guitars, vintage spring/plate-style ambience on vocals, early-reflections-only spatial placement, experimental and sci-fi reverb textures (kAlienSpaceship).
+- **Emotional tags:** Ethereal, spacious, nostalgic, cinematic, eerie, dreamy, warm.
+- **Comparison:** Galactic is frequently compared to high-end lush algorithmic reverbs like Valhalla Room but with a distinctly handcrafted DSP character; BrightAmbience series fills a role similar to short plate reverbs; CreamCoat occupies smooth convolution-adjacent territory. Generally darker and less clinical than Valhalla Shimmer, less modulated than Valhalla Supermassive.
+- **How to use:** `add_plugin_effect(channel_id=..., plugin_id="Airwindows Consolidated", parameters={"algorithm": "Galactic"})` — then dial in the algorithm-specific wet/dry and size parameters.
+
 ### AUReverb2
 
 - **Character:** Clean, neutral, utilitarian algorithmic reverb. Not colored or lush — sits closer to a generic digital plate/room than to a boutique reverb. Tone can be shaped from bright to dark via the split low/high decay controls.

@@ -9,6 +9,14 @@ Echo and repeat effects — slap delay, ping-pong, tempo-synced dub delay, tape 
 
 ## Options
 
+### Airwindows Consolidated
+
+- **Character:** Warm, tape-flavored delays and ambience processors; includes tape-style delay (TapeDelay, TapeDelay2), pitch-shifted delay (PitchDelay), sample-accurate delays (SampleDelay, PurestEcho), and ADT (Automatic Double Tracking) for vintage doubling effects.
+- **Best for:** Vintage tape echo on vocals and guitars, ADT doubling for width, rhythmic delay throws, sample-offset stereo placement.
+- **Emotional tags:** Vintage, warm, retro, spacious, intimate.
+- **Comparison:** TapeDelay has a characterful tape-flutter quality reminiscent of hardware tape echo units; less feature-rich than dedicated delay plugins (no sync grid, no tap tempo in most algorithms) but more characterful than transparent digital delays.
+- **How to use:** `add_plugin_effect(channel_id=..., plugin_id="Airwindows Consolidated", parameters={"algorithm": "TapeDelay2"})` for tape echo, or `"algorithm": "ADT"` for vintage doubling.
+
 ### AUDelay
 
 - **Character:** Clean, plain, transparent digital delay with a lowpass-filtered feedback path for gently darkening repeats. No modulation, no analog coloration — a utilitarian "just a delay" sound.

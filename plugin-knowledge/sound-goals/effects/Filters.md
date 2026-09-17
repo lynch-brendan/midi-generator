@@ -9,6 +9,14 @@ Low-pass, high-pass, band-pass filtering — carve frequencies, do filter sweeps
 
 ## Options
 
+### Airwindows Consolidated
+
+- **Character:** Precise, DSP-designed filters including highpass (Hermepass), biquad-based designs (Biquad, BiquadPlus, BiquadDouble, BiquadTriple), and aggressive bandpass (Wolfbot). Generally aimed at corrective or creative tonal sculpting rather than sweepable resonant filter effects.
+- **Best for:** Sub-bass highpassing (Hermepass), precise low/high cuts in mastering or mixing context, aggressive bandpass tone-shaping, bass frequency management (Floor, Infrasonic for sub content).
+- **Emotional tags:** Clean, precise, aggressive (Wolfbot), functional.
+- **Comparison:** Hermepass is a high-regarded highpass filter known for its musical slope behavior; Wolfbot is explicitly aggressive and experimental. Less "synthy" than resonant filter plugins (no self-oscillation), more focused on precise frequency management.
+- **How to use:** `add_plugin_effect(channel_id=..., plugin_id="Airwindows Consolidated", parameters={"algorithm": "Hermepass"})` for musical highpass filtering, or `"algorithm": "Wolfbot"` for aggressive bandpass shaping.
+
 ### AULowShelfFilter
 
 - **Character:** Clean, non-resonant shelving filter — smooth low-frequency tilt with no self-oscillation or character.

@@ -9,6 +9,14 @@ Harmonic addition — warmth, grit, fuzz, tape saturation, tube warmth, bitcrush
 
 ## Options
 
+### Airwindows Consolidated
+
+- **Character:** Subtle to aggressive analog warmth; saturation algorithms cover soft-knee tape-style rounding (IronOxide5, TopTape8), gentle harmonic density (Density, Spiral2), console channel coloration (Channel9, TubeDesk, TransDesk), and experimental soft-clipping (PurestSaturation). Generally musical and non-harsh even at higher drive settings.
+- **Best for:** Adding harmonic warmth and gentle grit to individual tracks, bus saturation/console emulation for mix glue, tape-style compression-with-saturation for drums and bass, amp simulation for guitar and bass DI.
+- **Emotional tags:** Warm, gritty, vintage, organic, punchy, thick.
+- **Comparison:** IronOxide5 is often cited as competitive with paid tape emulations (UAD Oxide, Softube Tape); Channel9/TubeDesk offer console coloration comparable to free versions of SSL/API-style channel strips but with a uniquely Airwindows DSP character. More subtle and "correct-sounding" than most free distortion plugins.
+- **How to use:** `add_plugin_effect(channel_id=..., plugin_id="Airwindows Consolidated", parameters={"algorithm": "IronOxide5"})` for tape saturation, or `"algorithm": "Spiral2"` for soft harmonic saturation.
+
 ### AUDistortion
 
 - **Character:** Digital, gritty, and often extreme — a multi-stage effect that can range from mild crunch through bitcrushed lo-fi to clangy, metallic ring-modulated destruction. Not a warm analog-style saturator; sounds distinctly digital.
