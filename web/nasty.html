@@ -3655,6 +3655,8 @@ function closeIdeasPanel() {
 // Convert Muse's dict-form notes {pitch, duration, velocity(1-127), time}
 // to Nasty pattern notes {channelId, pitch, startBeat, durationBeats,
 // velocity(0-1)}. Velocity is normalised from MIDI's 1-127 to Nasty's 0-1.
+// If channelId is null (drums mode), routes each note to a per-piece
+// drum channel by pitch and drops any pitch that doesn't map.
 function museIdeaToNastyNotes(idea, channelId) {
   const out = [];
   for (const n of idea.notes || []) {
@@ -3663,9 +3665,25 @@ function museIdeaToNastyNotes(idea, channelId) {
     const t = Math.max(0, Number(n.time) || 0);
     const vRaw = Number(n.velocity);
     const vel = Number.isFinite(vRaw) ? Math.max(0.05, Math.min(1, vRaw / 127)) : 0.8;
-    out.push({ channelId, pitch: p, startBeat: t, durationBeats: dur, velocity: vel });
+    const cid = channelId || drumChannelForPitch(p);
+    if (!cid) continue;
+    out.push({ channelId: cid, pitch: p, startBeat: t, durationBeats: dur, velocity: vel });
   }
   return out;
+}
+
+// Route a General MIDI drum pitch to whichever pre-created Nasty drum
+// channel exists in the current song. Falls back through pitch aliases
+// (e.g. both 35+36 land on kick, both 42+44+46 land on hats). Returns
+// null if the corresponding channel doesn't exist — that pitch's note
+// just drops.
+function drumChannelForPitch(pitch) {
+  const has = (id) => song.channels.some(c => c.id === id);
+  if ((pitch === 35 || pitch === 36) && has('ch_kick'))  return 'ch_kick';
+  if ((pitch === 38 || pitch === 40) && has('ch_snare')) return 'ch_snare';
+  if ((pitch === 42 || pitch === 44 || pitch === 46) && has('ch_hh')) return 'ch_hh';
+  if (pitch === 39 && has('ch_clap')) return 'ch_clap';
+  return null;
 }
 
 // Pick a channel_id slug for the kept idea. Tries chord-<name-slug>; on
@@ -3691,25 +3709,30 @@ function firstFreeTrackAtBar(bar) {
   return (tracks[tracks.length - 1]?.id) || 'track_1';
 }
 
-// Lazy — creates preview channel + pattern + clip if they don't exist yet.
+// Lazy — creates preview channel + pattern if they don't exist yet.
 // GM program is taken from `idea` on first call. On subsequent auditions
-// we swap the GM program by tearing down and rebuilding the GM channel
-// binding (the engine's `add_gm_channel` is idempotent per channelId).
+// we swap the GM program on the same preview channel (idempotent).
+//
+// DRUMS special case: no preview channel is created. Drum ideas route
+// their notes to Nasty's pre-existing per-piece drum channels (ch_kick /
+// ch_snare / ch_hh / ch_clap) so the audition plays through the real
+// drum samples. Only the preview pattern is temp.
 async function ensurePreviewLoaded(idea) {
-  const wantProg = Math.max(0, Math.min(127, parseInt(idea.gm_patch, 10) || 0));
+  const isDrums = ideasState.kind === 'drums';
 
-  // First audition of this batch — create the preview channel + pattern.
-  // No playlist clip: audition runs in PAT mode against the preview
-  // pattern so the arrangement window stays clean. Keep creates the clip
-  // as the "commit to arrangement" step.
-  if (!ideasState.preview.channelId) {
-    const chId = 'preview-idea-' + Math.random().toString(36).slice(2, 6);
-    const patId = 'preview-pat-' + chId;
+  if (!ideasState.preview.patternId) {
+    const patId = 'preview-pat-' + Math.random().toString(36).slice(2, 6);
+    let chId = null;
 
-    await addChannelFromInstrument({
-      id: chId, name: 'Preview',
-      pluginId: 'gm-' + wantProg, gmProgram: wantProg,
-    });
+    if (!isDrums) {
+      const wantProg = Math.max(0, Math.min(127, parseInt(idea.gm_patch, 10) || 0));
+      chId = 'preview-idea-' + Math.random().toString(36).slice(2, 6);
+      await addChannelFromInstrument({
+        id: chId, name: 'Preview',
+        pluginId: 'gm-' + wantProg, gmProgram: wantProg,
+      });
+      ideasState.preview.gmProgram = wantProg;
+    }
 
     song.patterns.push({
       id: patId, name: 'Preview',
@@ -3718,17 +3741,17 @@ async function ensurePreviewLoaded(idea) {
       color: PALETTE[song.patterns.length % PALETTE.length],
       _preview: true,
     });
-    ideasState.preview = {
-      channelId: chId, patternId: patId,
-      gmProgram: wantProg, kept: false,
-    };
+    ideasState.preview.channelId = chId;   // null for drums
+    ideasState.preview.patternId = patId;
+    ideasState.preview.kept = false;
     return;
   }
 
-  // Subsequent auditions — swap GM program on the existing preview channel
-  // if the new idea wants a different instrument. Cheap: the engine keeps
-  // the same channel, just reloads the GM program via add_gm_channel (which
-  // is idempotent — same channelId = replace).
+  // Subsequent auditions in a non-drums batch — swap the preview channel's
+  // GM program to match the new idea. Drums have no channel to swap; the
+  // pattern's routed-by-pitch notes are the whole story.
+  if (isDrums) return;
+  const wantProg = Math.max(0, Math.min(127, parseInt(idea.gm_patch, 10) || 0));
   if (wantProg !== ideasState.preview.gmProgram && window.nasty && window.nasty.engine) {
     const sf2 = window.nasty.sf2Path ? await window.nasty.sf2Path() : '';
     window.nasty.engine.send({
@@ -3736,7 +3759,6 @@ async function ensurePreviewLoaded(idea) {
       channelId: ideasState.preview.channelId,
       program: wantProg, sf2Path: sf2,
     });
-    // Reflect the swap in song.channels so future persist()s stay coherent.
     const ch = song.channels.find(c => c.id === ideasState.preview.channelId);
     if (ch) { ch.pluginId = 'gm-' + wantProg; ch.gmProgram = wantProg; }
     ideasState.preview.gmProgram = wantProg;
@@ -3758,7 +3780,10 @@ async function auditionIdea(idx) {
 
   await ensurePreviewLoaded(idea);
 
-  // Rewrite the preview pattern with the picked idea's notes.
+  // Rewrite the preview pattern with the picked idea's notes. For drums,
+  // channelId is null → museIdeaToNastyNotes routes by pitch to the
+  // per-piece drum channels; for anything else, all notes point at the
+  // single preview channel.
   const pat = song.patterns.find(p => p.id === ideasState.preview.patternId);
   if (pat) {
     pat.notes = museIdeaToNastyNotes(idea, ideasState.preview.channelId);

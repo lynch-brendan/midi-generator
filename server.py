@@ -2061,13 +2061,16 @@ _NASTY_TOOLS = [
                 },
                 "kind": {
                     "type": "string",
-                    "enum": ["chords", "bass", "melody", "lead", "pad"],
+                    "enum": ["chords", "bass", "melody", "lead", "pad", "drums"],
                     "description": (
                         "Which musical part the user wants ideas for. "
-                        "Defaults to 'chords' if omitted. Pick 'bass' for "
+                        "Defaults to 'chords' if omitted. 'bass' for "
                         "basslines, 'melody' for top-line melodies, 'lead' "
                         "for synth-lead lines, 'pad' for sustained "
-                        "textures."
+                        "textures, 'drums' for kick/snare/hat patterns "
+                        "(client routes by pitch to Nasty's per-piece "
+                        "drum channels — you emit MIDI pitches 36 kick, "
+                        "38 snare, 42/46 hats, 39 clap)."
                     ),
                 },
                 "key":    {"type": "string"},
@@ -2202,6 +2205,7 @@ _MIDI_KIND_HINTS = {
     "melody": "melody line",
     "lead":   "lead line",
     "pad":    "sustained pad / texture",
+    "drums":  "drum pattern (use MIDI 36=kick, 38=snare, 42=closed hat, 46=open hat, 39=clap — the client routes by pitch to Nasty's per-piece drum channels)",
 }
 
 
