@@ -2030,6 +2030,38 @@ _NASTY_TOOLS = [
             "required": ["name"],
         },
     },
+    {
+        "name": "try_effects",
+        "description": (
+            "Open the Ideas Panel with 5 effect-plugin options for the user "
+            "to A/B on a channel or mixer bus. Use this for exploratory "
+            "effect asks: 'give me some reverb options', 'try 5 delays on "
+            "the vocal', 'what compressors would work on this bass', "
+            "'suggest some saturators'. YOU pick the 5 plugin_ids from the "
+            "Installed plugins manifest — MUST be `isInstrument: false` "
+            "plugins, ideally spanning the vibe range the user asked for "
+            "(e.g. for reverbs: one plate, one hall, one shimmer, one "
+            "spring, one weird). The Ideas Panel loads them one at a time "
+            "onto the target so the user hears each in-DAW alongside the "
+            "song; Keep leaves the picked one loaded, Close removes it and "
+            "restores the prior state. `target_id` is the channel id (the "
+            "client will route to the channel's mixer bus automatically "
+            "the same way `add_plugin_effect` does)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "target_id": {"type": "string"},
+                "plugin_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "minItems": 2,
+                    "maxItems": 8,
+                },
+            },
+            "required": ["target_id", "plugin_ids"],
+        },
+    },
 ]
 
 
@@ -2337,6 +2369,25 @@ def nasty_chat(req: NastyChatRequest):
                     )
             elif block.name in ("add_track", "add_clip") and "id" in inp:
                 result_text = f"applied; id={inp['id']}"
+            elif block.name == "suggest_chord_ideas":
+                # Ideas Panel is populated by a direct client → /nasty/chord-ideas
+                # fetch — the tool call just signals intent. Kept small so
+                # Muse's 5-variation JSON doesn't ride along on every
+                # subsequent turn's context.
+                result_text = (
+                    "Ideas Panel opened with 5 chord variations for the user "
+                    "to audition and pick — no further tool calls needed on "
+                    "your side."
+                )
+            elif block.name == "try_effects":
+                # Effects Ideas Panel opens on the client with the plugin_ids
+                # you picked from the manifest. No server work — client
+                # swaps the loaded plugin on the target in place per audition.
+                result_text = (
+                    "Effects Ideas Panel opened with the plugins you picked. "
+                    "The user will A/B them and Keep the winner — no further "
+                    "tool calls needed on your side."
+                )
             else:
                 result_text = "applied"
             tool_results.append({

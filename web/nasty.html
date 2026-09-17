@@ -3429,18 +3429,31 @@ function waitForEngineDrained() {
 // the preview pattern, re-push the song arrangement. Keep = promote the
 // preview to permanent. Close = tear down the preview.
 const ideasState = {
+  // 'midi'    — chord/melody/bass/drum ideas from Muse. Ideas play through a
+  //             preview channel + preview pattern + preview clip.
+  // 'effects' — 5 effect plugins to A/B on an existing channel/bus. Ideas
+  //             swap the loaded plugin on the target in place.
+  mode: 'midi',
   prompt: '',
-  ideas: [],            // [{id, name, character, key, tempo, bars, notes, gm_patch}, ...]
+  ideas: [],            // MIDI mode: [{id, name, character, key, tempo, bars, notes, gm_patch}, ...]
   selectedIdx: -1,
   loading: false,
-  // Preview state — populated on first audition.
+  // MIDI-mode preview state — populated on first audition.
   preview: {
-    channelId: null,    // GM channel id we invented for the audition
-    patternId: null,    // scratch pattern hosting the idea's notes
-    clipId: null,       // playlist clip pointing at the preview pattern
-    trackId: null,      // which playlist track the clip lives on
-    gmProgram: null,    // current GM program loaded on the preview channel
-    kept: false,        // set true when the user Keeps — skip teardown on close
+    channelId: null,
+    patternId: null,
+    clipId: null,
+    trackId: null,
+    gmProgram: null,
+    kept: false,
+  },
+  // Effects-mode state.
+  effects: {
+    targetOwnerId: null,      // resolved channel/bus id where audition effects load
+    targetLabel: '',          // human label ("Vocal → Insert 3") for the panel header
+    options: [],              // [{pluginId, name, category}, ...]
+    currentSlotId: null,      // slotId of the currently-loaded audition effect
+    kept: false,
   },
   // Whether *we* started playback for the audition. Used on close to
   // decide whether to stop the transport or leave it running (if the user
@@ -3450,6 +3463,7 @@ const ideasState = {
 };
 
 function openIdeasPanel(prompt) {
+  ideasState.mode = 'midi';
   ideasState.prompt = prompt || '';
   ideasState.ideas = [];
   ideasState.selectedIdx = -1;
@@ -3459,11 +3473,62 @@ function openIdeasPanel(prompt) {
   renderIdeasPanel();
 }
 
+// Effects-mode entry point. Called from applyToolCalls when Claude fires
+// `try_effects`. Populates the panel with 5 plugin options for the user to
+// A/B on the target channel/bus.
+function openEffectIdeasPanel(targetChannelId, pluginIds) {
+  ideasState.mode = 'effects';
+  ideasState.prompt = '';
+  ideasState.selectedIdx = -1;
+  ideasState.loading = false;
+  // Resolve the target the same way `add_plugin_effect` does — if the
+  // channel routes to a mixer bus, the effect goes on the bus; otherwise
+  // on the channel itself. That's where the user expects to see it.
+  const ch = song.channels.find(c => c.id === targetChannelId);
+  let targetOwnerId = targetChannelId;
+  let targetLabel = targetChannelId;
+  if (ch) {
+    const busNum = ch.targetInsertNum || 0;
+    const bus = busNum > 0
+      ? (song.mixer && song.mixer.busses || []).find(b => b.num === busNum)
+      : null;
+    targetOwnerId = bus ? bus.id : ch.id;
+    targetLabel = bus ? `${ch.name} → Insert ${busNum}` : ch.name;
+  }
+  // Look up plugin metadata (name, category) from the manifest so the panel
+  // renders something readable. Unknown ids get a stub row — no silent drop.
+  const options = [];
+  for (const pid of (pluginIds || [])) {
+    const plug = (enginePluginsList || []).find(p => p.id === pid);
+    options.push({
+      pluginId: pid,
+      name: plug ? plug.name : pid,
+      category: plug ? (plug.category || plug.format || '') : 'not installed',
+      installed: !!plug,
+    });
+  }
+  ideasState.effects = {
+    targetOwnerId, targetLabel,
+    options,
+    currentSlotId: null,
+    kept: false,
+  };
+  document.getElementById('ideas-panel').classList.remove('hidden');
+  document.getElementById('ip-prompt-echo').textContent =
+    `effects for ${targetLabel} — click to audition, Keep the winner`;
+  renderIdeasPanel();
+}
+
 function closeIdeasPanel() {
   document.getElementById('ideas-panel').classList.add('hidden');
-  teardownPreviewIfNotKept();
+  if (ideasState.mode === 'midi') {
+    teardownPreviewIfNotKept();
+  } else if (ideasState.mode === 'effects') {
+    teardownEffectAuditionIfNotKept();
+  }
   ideasState.selectedIdx = -1;
   ideasState.preview = { channelId: null, patternId: null, clipId: null, trackId: null, gmProgram: null, kept: false };
+  ideasState.effects = { targetOwnerId: null, targetLabel: '', options: [], currentSlotId: null, kept: false };
   ideasState.weStartedPlayback = false;
   ideasState.priorTransportMode = null;
 }
@@ -3569,6 +3634,7 @@ async function ensurePreviewLoaded(idea) {
 }
 
 async function auditionIdea(idx) {
+  if (ideasState.mode === 'effects') return auditionEffectIdea(idx);
   const idea = ideasState.ideas[idx];
   if (!idea) return;
 
@@ -3612,6 +3678,7 @@ async function auditionIdea(idx) {
 }
 
 async function keepIdea(idx) {
+  if (ideasState.mode === 'effects') return keepEffectIdea(idx);
   const idea = ideasState.ideas[idx];
   if (!idea) return;
 
@@ -3696,10 +3763,114 @@ function teardownPreviewIfNotKept() {
   syncSongArrangement();
 }
 
+// ---- Effects mode ------------------------------------------------------
+// Audition = load the picked plugin as an effect on the target owner
+// (channel or bus), removing any previously-loaded audition effect so only
+// ONE audition slot exists at a time. The original effect chain on the
+// target is preserved — Keep leaves the picked plugin in place, Close
+// removes it and the chain returns to its pre-audition state.
+function auditionEffectIdea(idx) {
+  const opt = ideasState.effects.options[idx];
+  if (!opt) return;
+  if (!opt.installed) {
+    console.warn('[ideas] plugin not installed:', opt.pluginId);
+    return;
+  }
+  // Remove the prior audition effect (if any) — keeps the owner's chain
+  // clean between rapid switches.
+  if (ideasState.effects.currentSlotId) {
+    removeEffectFromChannel(ideasState.effects.targetOwnerId, ideasState.effects.currentSlotId);
+    ideasState.effects.currentSlotId = null;
+  }
+  // Grab the plugin from the manifest by id and load it. addEffectToChannel
+  // is the same path add_plugin_effect uses — engine load, mixer strip
+  // refresh, auto-open UI.
+  const plug = (enginePluginsList || []).find(p => p.id === opt.pluginId);
+  if (!plug) return;
+  const owner = findEffectOwner(ideasState.effects.targetOwnerId);
+  const beforeSlotIds = new Set((owner && owner.effects || []).filter(e => e && e.type === 'plugin').map(e => e.slotId));
+  addEffectToChannel(ideasState.effects.targetOwnerId, plug, null);
+  // addEffectToChannel invents the slotId internally — recover it by diffing
+  // the effects list. Cleaner than plumbing the id back through a return
+  // value change (which would ripple through every existing caller).
+  const afterSlots = (findEffectOwner(ideasState.effects.targetOwnerId) || {}).effects || [];
+  const newSlot = afterSlots.find(e => e && e.type === 'plugin' && !beforeSlotIds.has(e.slotId));
+  if (newSlot) ideasState.effects.currentSlotId = newSlot.slotId;
+  ideasState.selectedIdx = idx;
+  document.querySelectorAll('.idea-row').forEach((el, i) => {
+    el.classList.toggle('playing', i === idx);
+    el.classList.toggle('selected', i === idx);
+  });
+}
+
+function keepEffectIdea(idx) {
+  const opt = ideasState.effects.options[idx];
+  if (!opt) return;
+  // Ensure the picked plugin is the current audition (in case they hit Keep
+  // without ever clicking a specific row).
+  if (ideasState.selectedIdx !== idx || !ideasState.effects.currentSlotId) {
+    auditionEffectIdea(idx);
+  }
+  ideasState.effects.kept = true;
+  closeIdeasPanel();
+}
+
+function teardownEffectAuditionIfNotKept() {
+  const e = ideasState.effects;
+  if (!e || e.kept) return;
+  if (e.currentSlotId && e.targetOwnerId) {
+    removeEffectFromChannel(e.targetOwnerId, e.currentSlotId);
+  }
+}
+
 function renderIdeasPanel() {
   const body = document.getElementById('ip-body');
   if (!body) return;
   body.innerHTML = '';
+
+  // ---- Effects-mode render ---------------------------------------------
+  if (ideasState.mode === 'effects') {
+    const opts = ideasState.effects.options || [];
+    if (opts.length === 0) {
+      body.innerHTML = '<div class="ip-error">No effects to try.</div>';
+      return;
+    }
+    opts.forEach((opt, i) => {
+      const row = document.createElement('div');
+      row.className = 'idea-row';
+      if (!opt.installed) row.style.opacity = '0.5';
+      const title = document.createElement('div');
+      title.className = 'ir-title';
+      title.textContent = opt.name;
+      const meta = document.createElement('div');
+      meta.className = 'ir-meta';
+      meta.textContent = opt.category || '';
+      const actions = document.createElement('div');
+      actions.className = 'ir-actions';
+      const tryBtn = document.createElement('button');
+      tryBtn.type = 'button';
+      tryBtn.textContent = '▶ Try';
+      tryBtn.addEventListener('click', (e) => { e.stopPropagation(); auditionEffectIdea(i); });
+      const keepBtn = document.createElement('button');
+      keepBtn.type = 'button';
+      keepBtn.className = 'ir-keep';
+      keepBtn.textContent = 'Keep';
+      keepBtn.addEventListener('click', (e) => { e.stopPropagation(); keepEffectIdea(i); });
+      actions.appendChild(tryBtn);
+      actions.appendChild(keepBtn);
+      row.appendChild(title);
+      if (opt.category) row.appendChild(meta);
+      row.appendChild(actions);
+      // Click row = audition. No hover-autoplay for effects — loading a
+      // plugin per hover would thrash and click while the cursor drifted
+      // through the panel.
+      row.addEventListener('click', () => auditionEffectIdea(i));
+      body.appendChild(row);
+    });
+    return;
+  }
+
+  // ---- MIDI-mode render (chord ideas etc.) -----------------------------
   if (ideasState.loading && ideasState.ideas.length === 0) {
     body.innerHTML = '<div class="ip-loading">Generating 5 ideas…</div>';
     return;
@@ -3792,7 +3963,21 @@ async function applyToolCalls(calls) {
   for (const call of calls) {
     const { name, input } = call;
     try {
-      if (name === 'set_tempo') {
+      if (name === 'suggest_chord_ideas') {
+        // Ideas Panel — chord/melody/bass MIDI ideas from Muse. The tool
+        // just signals intent; the client fetches the 5-idea payload
+        // directly from /nasty/chord-ideas so it doesn't ride along on
+        // every subsequent chat turn's context.
+        openIdeasPanel(input.prompt || '');
+        fetchChordIdeas(input);
+        summaries.push(`5 chord ideas → panel`);
+      } else if (name === 'try_effects') {
+        // Effects mode of the ideas panel — Claude picked N plugin_ids
+        // from the manifest; the client A/Bs them on the target owner in
+        // place, one loaded at a time.
+        openEffectIdeasPanel(input.target_id, input.plugin_ids || []);
+        summaries.push(`${(input.plugin_ids || []).length} effects → panel (${input.target_id})`);
+      } else if (name === 'set_tempo') {
         song.bpm = input.bpm; summaries.push(`tempo → ${input.bpm} BPM`);
       } else if (name === 'create_channel') {
         if (!song.channels.find(c => c.id === input.id)) {
