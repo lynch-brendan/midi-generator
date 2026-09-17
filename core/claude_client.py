@@ -143,7 +143,7 @@ def _user_message(prompt: str, lock_key: str = None, lock_tempo: int = None, cou
     )
 
 
-def _seed_user_message(prompt: str, seed: dict, lock_key: str = None, lock_tempo: int = None) -> str:
+def _seed_user_message(prompt: str, seed: dict, lock_key: str = None, lock_tempo: int = None, count: int = 5) -> str:
     musical_fields = {k: v for k, v in seed.items() if k not in ("midi_url", "wav_url", "note_count")}
     seed_json = json.dumps(musical_fields, indent=2)
     direction = prompt.strip() or "explore natural variations"
@@ -160,8 +160,8 @@ def _seed_user_message(prompt: str, seed: dict, lock_key: str = None, lock_tempo
         "Use your musician's ear to decide the right instrument(s). If the user wants the same thing evolved — same feel, "
         f"different pattern, more intensity — stay on {seed_instrument} or something close. If they're asking for a "
         "different sound or a new part, pick what fits naturally. Don't overthink it: what would a session player reach for?\n\n"
-        "Generate 5 variations that fulfill the request. Each must differ from the others — vary density, register, and dynamics. "
-        "The 5 variations must also differ from the seed itself. "
+        f"Generate {count} variations that fulfill the request. Each must differ from the others — vary density, register, and dynamics. "
+        f"The {count} variations must also differ from the seed itself. "
         f"{key_rule} "
         "Each variation must include a 'bars' field. "
         "The last note must land at or near bars × 4.0 beats. "
@@ -170,7 +170,7 @@ def _seed_user_message(prompt: str, seed: dict, lock_key: str = None, lock_tempo
     )
 
 
-def _multi_seed_user_message(prompt: str, seeds: list, lock_key: str = None, lock_tempo: int = None) -> str:
+def _multi_seed_user_message(prompt: str, seeds: list, lock_key: str = None, lock_tempo: int = None, count: int = 5) -> str:
     """Build a prompt that gives Claude the full arrangement context of multiple loops."""
     direction = prompt.strip() or "add something that fits this arrangement"
     key_rule = (
@@ -204,7 +204,7 @@ def _multi_seed_user_message(prompt: str, seeds: list, lock_key: str = None, loc
         "- What's missing from this arrangement? A counter-melody? A pad? A rhythmic accent? A bass anchor?\n"
         "- What register is free? If everything is in the mid-range, go high or low.\n"
         "- Match the tempo of the existing loops unless the user asks otherwise.\n\n"
-        "Generate 5 variations that fulfill the request and fit musically with the existing loops. "
+        f"Generate {count} variations that fulfill the request and fit musically with the existing loops. "
         "Each variation must be genuinely different from the others — vary density, register, and dynamics. "
         f"{key_rule} "
         "Each variation must include a 'bars' field. "
@@ -253,10 +253,10 @@ def stream_variations(prompt: str, seed_variation: dict = None, lock_key: str = 
     system_prompt = _load_system_prompt()
 
     if seed_variations and len(seed_variations) > 1:
-        user_content = _multi_seed_user_message(prompt, seed_variations, lock_key, lock_tempo)
+        user_content = _multi_seed_user_message(prompt, seed_variations, lock_key, lock_tempo, count=count)
     elif seed_variation or (seed_variations and len(seed_variations) == 1):
         single = seed_variation or seed_variations[0]
-        user_content = _seed_user_message(prompt, single, lock_key, lock_tempo)
+        user_content = _seed_user_message(prompt, single, lock_key, lock_tempo, count=count)
     else:
         user_content = _user_message(prompt, lock_key, lock_tempo, count=count)
     messages = [{"role": "user", "content": user_content}]
