@@ -1685,6 +1685,32 @@ _NASTY_TOOLS = [
         "input_schema": {"type": "object", "properties": {}},
     },
     {
+        "name": "keep_idea",
+        "description": (
+            "When the Ideas Panel is open, promote one of the on-screen "
+            "ideas to a permanent channel + arrangement clip. Match by "
+            "`name` (fuzzy substring, case-insensitive — 'morning light' "
+            "matches 'Morning Light Chords') OR by 1-based `index`. Use "
+            "when the user says 'keep the X one' or 'I like number 2.'"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name":  {"type": "string"},
+                "index": {"type": "integer"},
+            },
+        },
+    },
+    {
+        "name": "close_ideas_panel",
+        "description": (
+            "Close the Ideas Panel and stop the auto-cycle audition. Use "
+            "when the user says 'close the panel,' 'stop cycling,' 'never "
+            "mind,' or asks for something unrelated after ideas were up."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "save_song",
         "description": (
             "Save the current song as a JSON file. Triggers a browser "
@@ -2210,6 +2236,7 @@ class NastyChatRequest(BaseModel):
     message: str
     history: list = []
     plugins: list = []  # engine-scanned VST3/AU manifest
+    ideas_panel: dict | None = None  # populated when the Ideas Panel is on-screen
 
 
 class NastyMidiIdeasRequest(BaseModel):
@@ -2372,6 +2399,25 @@ def nasty_chat(req: NastyChatRequest):
         f"```json\n{json.dumps(slim_plugins, indent=2)}\n```\n\n"
     )
 
+    # When the Ideas Panel is on-screen, tell Claude what's in it so it can
+    # honor requests like "keep the morning light one" or "close the panel."
+    ideas_block = ""
+    if req.ideas_panel and isinstance(req.ideas_panel, dict):
+        items = req.ideas_panel.get("ideas") or []
+        if items:
+            kind = req.ideas_panel.get("kind", "ideas")
+            lines = "\n".join(
+                f"  {it.get('index')}. {it.get('name', '?')}"
+                + (" (already kept)" if it.get("kept") else "")
+                for it in items
+            )
+            ideas_block = (
+                f"\n⚠️ Ideas Panel is OPEN ({kind}). On-screen options:\n"
+                f"{lines}\n"
+                f"If the user says 'keep the X one' / 'I like number 2' — call keep_idea. "
+                f"If they say 'close it' / 'never mind' / ask something unrelated — call close_ideas_panel first.\n\n"
+            )
+
     # Match community plugin-knowledge entries against the user's installed
     # plugins. Only include entries that correspond to a plugin they actually
     # have. Community-maintained cheatsheets tell Claude where preset files
@@ -2454,6 +2500,7 @@ def nasty_chat(req: NastyChatRequest):
     # turns — that's the whole point of prompt caching.
     user_content = (
         f"Current song state:\n```json\n{json.dumps(slim_song, indent=2)}\n```\n\n"
+        + ideas_block
         + sound_goals_block
         + f"User: {req.message}"
     )

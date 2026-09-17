@@ -4333,6 +4333,24 @@ async function applyToolCalls(calls) {
       } else if (name === 'stop') {
         stopSong();
         summaries.push('■ stop');
+      } else if (name === 'keep_idea') {
+        // Fuzzy resolve by name (case-insensitive substring) OR 1-based index.
+        let idx = -1;
+        if (Number.isInteger(input.index) && input.index >= 1 && input.index <= ideasState.ideas.length) {
+          idx = input.index - 1;
+        } else if (typeof input.name === 'string' && input.name.trim()) {
+          const needle = input.name.toLowerCase().trim();
+          idx = ideasState.ideas.findIndex(i => (i.name || '').toLowerCase().includes(needle));
+        }
+        if (idx < 0) {
+          summaries.push(`× keep_idea: no match for "${input.name || input.index}"`);
+        } else {
+          await keepIdea(idx);
+          summaries.push(`♥ kept "${ideasState.ideas[idx].name}"`);
+        }
+      } else if (name === 'close_ideas_panel') {
+        closeIdeasPanel();
+        summaries.push('◇ ideas panel closed');
       } else if (name === 'save_song') {
         saveToFile();
         summaries.push('💾 saved (check browser downloads)');
@@ -7742,6 +7760,17 @@ async function sendMessage(overrideText, opts) {
         // remembers from training data. Coerce null → [] so the server sees
         // "empty" instead of "missing" (scan not done vs. no plugins).
         plugins: Array.isArray(enginePluginsList) ? enginePluginsList : [],
+        // If the Ideas Panel is on-screen, ship the list of options so
+        // Claude can honor "keep the morning light one" / "close it."
+        ideas_panel: (ideasState && ideasState.ideas && ideasState.ideas.length) ? {
+          kind: ideasState.kind,
+          mode: ideasState.mode,
+          ideas: ideasState.ideas.map((idea, idx) => ({
+            index: idx + 1,
+            name: idea.name || (`Option ${idx + 1}`),
+            kept: !!idea._kept,
+          })),
+        } : null,
       }),
     });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
