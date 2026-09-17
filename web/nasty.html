@@ -8304,10 +8304,16 @@ document.getElementById('chat-input').addEventListener('keydown', (e) => {
 // after typing.
 const voiceInput = (() => {
   const WAKE = 'pineapple';
+  // Whisper often mangles "pineapple" — especially in short utterances.
+  // Include every mishearing we've seen plus a broad fallback: any word
+  // that contains "apple" or "pineapp" as a substring.
   const WAKE_VARIANTS = [
     'pineapple', 'pine apple', 'pineapples', 'pine apples',
-    'pineapp', 'pine app', 'pineappl'
+    'pineapp', 'pine app', 'pineappl', 'pineapples',
+    'pinapple', 'pin apple', 'panapple', 'pineappol',
+    'big apple', 'the apple', 'pine',
   ];
+  const WAKE_FALLBACK = /\b(apple|pineap|pinap)\w*/i;
   const SPEECH_THRESH = 7;          // 0-127 amplitude; lower = more sensitive to quiet speech
   const SILENCE_MS = 900;           // silence before we consider the utterance done
   const MIN_UTTERANCE_MS = 200;     // ignore blips shorter than this
@@ -8358,7 +8364,12 @@ const voiceInput = (() => {
         bestLen = w.length;
       }
     }
-    return bestIdx === -1 ? null : { idx: bestIdx, len: bestLen };
+    if (bestIdx !== -1) return { idx: bestIdx, len: bestLen };
+    // Fallback regex — any word containing "apple" / "pineap" / "pinap" —
+    // catches the long tail of Whisper mangles.
+    const m = h.match(WAKE_FALLBACK);
+    if (m) return { idx: m.index, len: m[0].length };
+    return null;
   }
 
   function sendBuffer() {
@@ -8479,6 +8490,11 @@ const voiceInput = (() => {
       const text = (result.text || '').trim();
       if (!text) return;
       console.log('[voice] transcript:', text);
+      // Show every transcript persistently — critical for diagnosing wake-word
+      // reliability. Format: [state] "what whisper heard"
+      const stateTag = listening ? '🎙 listening' : '⏸ paused';
+      const disp = text.length > 90 ? text.slice(0, 90) + '…' : text;
+      setStatus(stateTag + ' — heard: ' + disp, listening ? 'armed' : 'listening');
       handleTranscript(text);
     } catch (e) {
       console.error('[voice] transcribe error', e);
