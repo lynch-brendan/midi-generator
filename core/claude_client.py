@@ -239,13 +239,15 @@ def stream_thinking(prompt: str) -> Generator[Dict, None, None]:
             yield {"type": "thought", "token": text}
 
 
-def stream_variations(prompt: str, seed_variation: dict = None, lock_key: str = None, lock_tempo: int = None, seed_variations: list = None) -> Generator[Dict, None, None]:
+def stream_variations(prompt: str, seed_variation: dict = None, lock_key: str = None, lock_tempo: int = None, seed_variations: list = None, model: str = None) -> Generator[Dict, None, None]:
     """
     Stream Claude's response and yield parsed objects as they become available.
     Yields: one 'meta' dict first, then one 'variation' dict per variation, then 'done'.
     If seed_variation is provided, Claude interprets the prompt to decide whether to evolve
     the existing sound or generate a complementary part on a different instrument.
     lock_key and lock_tempo pin all variations to an exact key/tempo when set.
+    `model` overrides the default MODEL constant (Sonnet 4.6) — Nasty's
+    chord-ideas endpoint passes Haiku 4.5 for cheaper / faster ideation.
     """
     client = anthropic.Anthropic()
     system_prompt = _load_system_prompt()
@@ -264,7 +266,7 @@ def stream_variations(prompt: str, seed_variation: dict = None, lock_key: str = 
     emitted_ids: set = set()
 
     with client.messages.stream(
-        model=MODEL,
+        model=model or MODEL,
         max_tokens=MAX_TOKENS,
         system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
         messages=messages,

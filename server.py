@@ -2082,73 +2082,94 @@ class NastyChordIdeasRequest(BaseModel):
     bars: Optional[int] = None
 
 
-def _generate_chord_ideas(prompt: str, key: Optional[str], tempo: Optional[int],
-                          bars: Optional[int]) -> list[dict]:
-    # Reuse Muse's Claude-driven generator, but bias the prompt so Claude
-    # picks chord voicings / progressions rather than one-note melodies.
-    # We deliberately skip Muse's WAV render — Nasty auditions ideas
-    # in-DAW (on a preview channel, alongside the current song's drums),
-    # not through a server-rendered soundfont clip. Client uses the raw
-    # notes + gm_patch to hydrate a preview channel + pattern in the DAW.
-    chord_prompt = prompt.strip()
-    if "chord" not in chord_prompt.lower() and "progression" not in chord_prompt.lower():
-        chord_prompt = f"chord progression: {chord_prompt}"
-    # Bias Muse toward the caller's song tempo / key when given, so ideas
-    # land at a rhythm/harmony compatible with what the user is auditioning
-    # against. Muse doesn't have a hard-lock knob in the non-streaming
-    # entry point; the prompt bias is the cheap lever.
-    if tempo:
-        chord_prompt = f"{chord_prompt} — at {int(tempo)} BPM"
-    if key:
-        chord_prompt = f"{chord_prompt} — in {key}"
+# Haiku 4.5 for chord ideation. ~3-4× faster than Sonnet 4.6, ~5× cheaper.
+# Ideas are exploratory (user auditions + picks) so imperfect musicality
+# is acceptable — the user has ears. Swap back to Sonnet if quality craters.
+_IDEAS_MODEL = "claude-haiku-4-5-20251001"
 
-    data = generate_variations(chord_prompt)
-    top_gm_patch = int(data.get("gm_patch") or 0)
 
-    ideas: list[dict] = []
-    for var in data.get("variations", []):
-        try:
-            clean = sanitize_variation(var)
-            info = extract_variation_info(clean)
-        except Exception as e:
-            print(f"[nasty-ideas] sanitize failed: {e}", flush=True)
-            continue
-        # Prefer per-variation gm_patch, fall back to the top-level one Claude
-        # emitted for the whole batch.
-        gm_patch = int(clean.get("gm_patch", top_gm_patch) or 0)
-        # `bars` — trust Claude's declared value if in the allowed set, else
-        # infer from note timing. Same policy as the public Muse endpoint.
-        bars_val = _infer_bars(clean.get("notes", []), declared=clean.get("bars"))
-        ideas.append({
-            "id":         info.id,
-            "name":       info.name,
-            "character":  info.character,
-            "key":        clean.get("key"),
-            "tempo":      info.tempo,
-            "bars":       bars_val,
-            "note_count": info.note_count,
-            "notes":      clean["notes"],
-            "gm_patch":   gm_patch,
-            "instrument": clean.get("instrument"),
-        })
-    return ideas
+def _format_chord_idea(var: dict, top_gm_patch: int) -> Optional[dict]:
+    """Sanitize one Muse variation into the payload the Ideas Panel expects.
+    Returns None if the variation is unusable."""
+    try:
+        clean = sanitize_variation(var)
+        info = extract_variation_info(clean)
+    except Exception as e:
+        print(f"[nasty-ideas] sanitize failed: {e}", flush=True)
+        return None
+    gm_patch = int(clean.get("gm_patch", top_gm_patch) or 0)
+    bars_val = _infer_bars(clean.get("notes", []), declared=clean.get("bars"))
+    return {
+        "id":         info.id,
+        "name":       info.name,
+        "character":  info.character,
+        "key":        clean.get("key"),
+        "tempo":      info.tempo,
+        "bars":       bars_val,
+        "note_count": info.note_count,
+        "notes":      clean["notes"],
+        "gm_patch":   gm_patch,
+        "instrument": clean.get("instrument"),
+    }
+
+
+def _chord_ideas_prompt(prompt: str) -> str:
+    # Bias Muse toward chord voicings / progressions rather than a single
+    # melody line. Muse's system prompt already understands chords; the
+    # user-message hint just steers ambiguous requests.
+    p = prompt.strip()
+    if "chord" not in p.lower() and "progression" not in p.lower():
+        p = f"chord progression: {p}"
+    return p
 
 
 @app.post("/nasty/chord-ideas")
 def nasty_chord_ideas(req: NastyChordIdeasRequest):
-    # Called directly by the Nasty client after Claude fires
-    # `suggest_chord_ideas` in the chat loop. Kept as a separate endpoint (not
-    # a tool result payload) so the multi-kB idea list doesn't bloat every
-    # subsequent chat turn's context.
+    # Streaming SSE endpoint. Each Muse variation yields as it's parsed
+    # from the model's streaming output → the Ideas Panel populates ideas
+    # incrementally so the first playable idea lands in ~2-3 s instead
+    # of waiting ~10-15 s for the full batch. Also survives Cloudflare's
+    # gateway timeout, which killed the old non-streaming call at ~30 s.
     if not req.prompt.strip():
         raise HTTPException(status_code=400, detail="prompt is required")
-    try:
-        ideas = _generate_chord_ideas(req.prompt, req.key, req.tempo, req.bars)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"idea generation failed: {e}")
-    if not ideas:
-        raise HTTPException(status_code=500, detail="no ideas generated")
-    return {"ideas": ideas, "prompt": req.prompt}
+    chord_prompt = _chord_ideas_prompt(req.prompt)
+
+    def event_stream():
+        top_gm_patch = 0
+        count = 0
+        try:
+            for event in stream_variations(
+                chord_prompt,
+                lock_key=req.key or None,
+                lock_tempo=int(req.tempo) if req.tempo else None,
+                model=_IDEAS_MODEL,
+            ):
+                etype = event.get("type")
+                if etype == "meta":
+                    top_gm_patch = int(event.get("gm_patch") or 0)
+                    # Meta hint before any idea arrives so the panel can
+                    # show the instrument the batch is targeting.
+                    yield "data: " + json.dumps({
+                        "type": "meta",
+                        "instrument": event.get("instrument"),
+                        "gm_patch": top_gm_patch,
+                    }) + "\n\n"
+                elif etype == "variation":
+                    idea = _format_chord_idea(event["variation"], top_gm_patch)
+                    if idea is None:
+                        continue
+                    count += 1
+                    yield "data: " + json.dumps({"type": "idea", "idea": idea}) + "\n\n"
+                elif etype == "done":
+                    yield "data: " + json.dumps({"type": "done", "count": count}) + "\n\n"
+        except Exception as e:
+            # SSE errors surface as an in-band `error` event so the client
+            # can render a message in-panel instead of hanging forever on
+            # an unclosed stream.
+            print(f"[nasty-ideas] stream failed: {e}", flush=True)
+            yield "data: " + json.dumps({"type": "error", "detail": str(e)}) + "\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @app.get("/nasty")

@@ -4014,6 +4014,11 @@ function renderIdeasPanel() {
   });
 }
 
+// SSE-streaming reader. Ideas arrive one-by-one from the server as Muse
+// finishes each variation; the panel populates incrementally so the first
+// playable idea lands in ~2-3 s instead of waiting for the whole batch.
+// Autoplay fires on the first idea, so the user hears music the moment
+// the first variation completes.
 async function fetchChordIdeas(args) {
   const apiBase = (window.nasty && window.nasty.apiBase) || '';
   try {
@@ -4027,24 +4032,61 @@ async function fetchChordIdeas(args) {
         bars:   args.bars || null,
       }),
     });
-    if (!resp.ok) {
+    if (!resp.ok || !resp.body) {
       const detail = await resp.text().catch(() => resp.statusText);
       throw new Error(`HTTP ${resp.status}: ${detail}`);
     }
-    const data = await resp.json();
-    ideasState.ideas = Array.isArray(data.ideas) ? data.ideas : [];
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let firstIdeaFired = false;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      // SSE events are separated by a blank line; each event's payload
+      // starts with `data: `. Consume complete events from the buffer.
+      let sepIdx;
+      while ((sepIdx = buffer.indexOf('\n\n')) !== -1) {
+        const raw = buffer.slice(0, sepIdx);
+        buffer = buffer.slice(sepIdx + 2);
+        const line = raw.split('\n').find(l => l.startsWith('data:'));
+        if (!line) continue;
+        let payload;
+        try {
+          payload = JSON.parse(line.slice(5).trim());
+        } catch {
+          continue;
+        }
+        if (payload.type === 'idea') {
+          ideasState.ideas.push(payload.idea);
+          renderIdeasPanel();
+          // First idea → start audition immediately. Later ideas append
+          // silently until the user clicks/hovers one.
+          if (!firstIdeaFired && ideasState.mode === 'midi') {
+            firstIdeaFired = true;
+            auditionIdea(ideasState.ideas.length - 1);
+          }
+        } else if (payload.type === 'done') {
+          ideasState.loading = false;
+          renderIdeasPanel();
+        } else if (payload.type === 'error') {
+          throw new Error(payload.detail || 'stream error');
+        }
+        // 'meta' events are informational — panel doesn't render them yet.
+      }
+    }
     ideasState.loading = false;
-    renderIdeasPanel();
-    // Autoplay the first idea as soon as the batch lands — that's the
-    // main "click chat → hear something" moment. Requires no hover /
-    // click from the user. They can scroll through the rest to compare.
-    if (ideasState.ideas.length > 0 && ideasState.mode === 'midi') {
-      auditionIdea(0);
+    // If stream closed without a done event and no ideas arrived, surface
+    // that as an error so the panel doesn't sit blank.
+    if (ideasState.ideas.length === 0) {
+      const body = document.getElementById('ip-body');
+      if (body) body.innerHTML = '<div class="ip-error">No ideas returned.</div>';
     }
   } catch (err) {
-    console.error('[ideas] fetch failed', err);
+    console.error('[ideas] stream failed', err);
     ideasState.loading = false;
-    ideasState.ideas = [];
     const body = document.getElementById('ip-body');
     if (body) body.innerHTML = `<div class="ip-error">Idea generation failed: ${err.message || err}</div>`;
   }
