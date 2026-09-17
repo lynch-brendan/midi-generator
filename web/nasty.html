@@ -2211,7 +2211,7 @@
         <textarea id="chat-input" placeholder="Tell Nasty what to make..."></textarea>
         <div id="send-row">
           <button id="send-btn">Send</button>
-          <button id="voice-btn" title="Voice mode — say 'pineapple' to wake Nasty up">🎤 voice</button>
+          <button id="voice-btn" title="Voice mode — talk freely, say 'pineapple' when you're done to send">🎤 voice</button>
           <select id="voice-mic" title="Voice input device" style="display:none;"></select>
           <label class="autoplay-toggle">
             <input type="checkbox" id="autoplay" checked /> auto-play after
@@ -8291,24 +8291,27 @@ document.getElementById('chat-input').addEventListener('keydown', (e) => {
 });
 
 // ============================================================
-// Voice input — wake-word ("pineapple") gated speech-to-chat
+// Voice input — "pineapple" as the SEND signal
 // ============================================================
-// Runs Whisper (tiny.en) locally in-browser via transformers.js WASM.
-// Zero cloud, zero cost, ~75MB one-time model download cached in
-// IndexedDB. Mic → RMS-based voice-activity detection → MediaRecorder
-// captures each utterance between silences → Whisper transcribes on
-// device → we scan for the wake phrase and route the command.
+// Model: mic runs continuously. Each utterance chunk → Whisper (local
+// base.en WASM) → transcript appended to a running message buffer.
+// When the transcript contains "pineapple," everything accumulated so
+// far (minus the word "pineapple") is sent to Claude and the buffer
+// resets. No wake-word gate, no armed timers — you just talk, then
+// say "pineapple" when you're done. Same model as saying "enter"
+// after typing.
 const voiceInput = (() => {
-  const WAKE = 'pineapple';         // idle-mode wake word — single distinctive token
-  const CANCEL_MS = 15000;          // how long to wait after a bare wake word (kept extended while you're talking)
-  const CONVERSATION_MS = 30000;    // after a command lands, stay armed for follow-ups — no wake word needed for this long
+  const WAKE = 'pineapple';
+  const WAKE_VARIANTS = [
+    'pineapple', 'pine apple', 'pineapples', 'pine apples',
+    'pineapp', 'pine app', 'pineappl'
+  ];
   const SPEECH_THRESH = 7;          // 0-127 amplitude; lower = more sensitive to quiet speech
   const SILENCE_MS = 900;           // silence before we consider the utterance done
   const MIN_UTTERANCE_MS = 200;     // ignore blips shorter than this
 
   let enabled = false;
-  let armed = false;                // wake word heard, next utterance is the command
-  let armedTimer = null;
+  let messageBuffer = '';           // accumulated transcript since the last "pineapple" send
   let stream = null;
   let audioCtx = null;
   let analyser = null;
@@ -8340,93 +8343,77 @@ const voiceInput = (() => {
     if (state === 'armed') b.classList.add('armed');
   }
 
-  // Whisper tiny.en isn't perfect — "pineapple" comes back as "pine apple",
-  // "pineapples", "pineapp", etc. Match any of these as the wake word.
-  const WAKE_VARIANTS = [
-    'pineapple', 'pine apple', 'pineapples', 'pine apples',
-    'pineapp', 'pine app', 'pineappl'
-  ];
-  function extractCommand(heard) {
-    const h = heard.toLowerCase();
+  // Find "pineapple" (or a Whisper mishearing) in a transcript. Returns
+  // { idx, len } for the FIRST occurrence, or null.
+  function findWake(text) {
+    const h = text.toLowerCase();
     let bestIdx = -1, bestLen = 0;
     for (const w of WAKE_VARIANTS) {
       const idx = h.indexOf(w);
-      if (idx !== -1 && (bestIdx === -1 || idx < bestIdx || w.length > bestLen)) {
+      if (idx !== -1 && (bestIdx === -1 || idx < bestIdx)) {
         bestIdx = idx;
         bestLen = w.length;
       }
     }
-    if (bestIdx === -1) return null;
-    return heard.slice(bestIdx + bestLen).replace(/^[,.\s!?]+/, '').trim();
+    return bestIdx === -1 ? null : { idx: bestIdx, len: bestLen };
   }
 
-  function refreshArmedTimer() {
-    clearTimeout(armedTimer);
-    armedTimer = setTimeout(() => {
-      armed = false;
-      setBtn('on');
-      setStatus("say '" + WAKE + "' to talk", 'listening');
-    }, CANCEL_MS);
-  }
-
-  function armForCommand() {
-    armed = true;
-    setBtn('armed');
-    setStatus("listening for command…", 'armed');
-    refreshArmedTimer();
-  }
-
-  function fireCommand(text) {
-    clearTimeout(armedTimer);
-    armed = false;
-    setBtn('on');
-    setStatus("heard: " + text, 'listening');
+  function sendBuffer() {
+    const toSend = messageBuffer.trim();
+    messageBuffer = '';
+    if (!toSend) return;
+    setStatus("sending: " + toSend.slice(0, 80), 'listening');
     beep('ack');
-    if (isRecordingAudio()) {
-      // Mid-take mode: only accept commands that mean "stop the take."
-      // Anything else is dropped rather than sent to Claude — we don't
-      // want Claude editing the song while you're mid-take.
-      const t = text.toLowerCase().trim();
-      if (/\b(stop|end|cut|done|finish|kill|that'?s it|that is it)\b/.test(t)) {
-        stopAudioRecording();
-        setStatus("take ended", 'listening');
-      } else {
-        setStatus("ignored (recording): " + text, 'armed');
-        beep('no');
-      }
-      setTimeout(() => {
-        if (enabled && !armed) setStatus("say '" + WAKE + "' to talk", 'listening');
-      }, 2500);
-      return;
-    }
-    // Normal chat command: fire it, then open a conversation window so
-    // the next 30s of utterances land without needing to say pineapple
-    // again. Every follow-up utterance resets the timer.
-    sendMessage(text, { fromVoice: true });
-    armed = true;
-    setBtn('armed');
-    clearTimeout(armedTimer);
-    armedTimer = setTimeout(() => {
-      armed = false;
-      setBtn('on');
-      setStatus("say '" + WAKE + "' to talk", 'listening');
-    }, CONVERSATION_MS);
+    sendMessage(toSend, { fromVoice: true });
     setTimeout(() => {
-      if (enabled && armed) setStatus("keep talking — no pineapple needed (30s)", 'armed');
+      if (enabled && !messageBuffer) {
+        setStatus("keep talking — say 'pineapple' to send", 'listening');
+      }
     }, 2500);
+  }
+
+  // Ingest a Whisper chunk. Split on any "pineapple" occurrences — each
+  // pineapple is a SEND boundary. Text before it flushes the buffer;
+  // text after it starts a new buffer.
+  function accumulate(text) {
+    let remaining = text;
+    while (remaining && remaining.trim()) {
+      const hit = findWake(remaining);
+      if (!hit) {
+        messageBuffer = (messageBuffer ? messageBuffer + ' ' : '') + remaining.trim();
+        break;
+      }
+      const before = remaining.slice(0, hit.idx).trim();
+      if (before) messageBuffer = (messageBuffer ? messageBuffer + ' ' : '') + before;
+      sendBuffer();
+      remaining = remaining.slice(hit.idx + hit.len).replace(/^[,.\s!?]+/, '');
+    }
+    if (messageBuffer && enabled) {
+      const tail = messageBuffer.length > 80 ? '…' + messageBuffer.slice(-80) : messageBuffer;
+      setStatus("buffering: " + tail, 'armed');
+    }
   }
 
   function handleTranscript(finalText) {
     if (!enabled) return;
-    if (armed) {
-      const cmd = finalText.trim();
-      if (cmd) fireCommand(cmd);
+    if (isRecordingAudio()) {
+      // Mid-take: don't accumulate (that's the take audio). Only stop the
+      // take on "pineapple stop" (both words required so lyrics don't
+      // accidentally end it).
+      const t = finalText.toLowerCase();
+      const hasPineapple = findWake(t) !== null;
+      const hasStop = /\b(stop|end|cut|done|finish|kill|that'?s it|that is it)\b/.test(t);
+      if (hasPineapple && hasStop) {
+        beep('ack');
+        stopAudioRecording();
+        setStatus("take ended", 'listening');
+        setTimeout(() => {
+          if (enabled) setStatus("keep talking — say 'pineapple' to send", 'listening');
+        }, 2500);
+      }
       return;
     }
-    const cmd = extractCommand(finalText);
-    if (cmd === null) return;
-    if (cmd) fireCommand(cmd);
-    else armForCommand();
+    accumulate(finalText);
   }
 
   async function loadModel() {
@@ -8470,14 +8457,6 @@ const voiceInput = (() => {
       const text = (result.text || '').trim();
       if (!text) return;
       console.log('[voice] transcript:', text);
-      // Debug-transparent feedback: briefly show what Whisper heard even
-      // if there's no wake word, so you can tell it's alive.
-      if (enabled && !armed) {
-        setStatus("heard: " + text, 'listening');
-        setTimeout(() => {
-          if (enabled && !armed) setStatus("say '" + WAKE + "' to talk", 'listening');
-        }, 2200);
-      }
       handleTranscript(text);
     } catch (e) {
       console.error('[voice] transcribe error', e);
@@ -8503,9 +8482,6 @@ const voiceInput = (() => {
           try { recorder.start(200); } catch (_) {}
         }
         silenceStart = null;
-        // As long as any speech is happening while armed, don't let the
-        // armed window time out mid-utterance.
-        if (armed) refreshArmedTimer();
       } else if (recording) {
         if (silenceStart === null) silenceStart = now;
         if (now - silenceStart > SILENCE_MS) {
@@ -8606,8 +8582,7 @@ const voiceInput = (() => {
 
   function stop() {
     enabled = false;
-    armed = false;
-    clearTimeout(armedTimer);
+    messageBuffer = '';
     teardownMic();
     setBtn(null);
     setStatus('', '');
@@ -8623,7 +8598,7 @@ const voiceInput = (() => {
     teardownMic();
     try {
       await initMic();
-      setStatus("say '" + WAKE + "' to talk", 'listening');
+      setStatus("keep talking — say 'pineapple' to send", 'listening');
     } catch (e) {
       setStatus("mic error: " + (e.message || e), '');
       console.error('[voice] switch failed', e);
@@ -8703,7 +8678,7 @@ const voiceInput = (() => {
     setBtn('on');
     const ok = await start();
     if (!ok) { enabled = false; setBtn(null); return; }
-    setStatus("say '" + WAKE + "' to talk", 'listening');
+    setStatus("keep talking — say 'pineapple' to send", 'listening');
   }
 
   return { toggle, stop, beep, switchMic };
