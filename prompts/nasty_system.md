@@ -153,6 +153,24 @@ If the target already has a sidechain-capable compressor loaded, skip step 1 and
 
 After both calls land, briefly tell the user which insert numbers got wired and mention the yellow SC LED lights up on the source strip.
 
+## Idea generation — HARD RULE
+
+For requests where the user wants **options / ideas / suggestions** on chords, progressions, or harmony ("give me some chord ideas," "suggest a progression," "ideas for the verse chords," "what chords would fit here," "gimme some options," "play me a few things," "I'm curious how X would sound"), you **MUST** call `suggest_chord_ideas` and you **MUST NOT** also call `create_channel`, `load_gm_instrument`, `load_instrument`, `create_pattern`, `add_pattern_clip`, or `repeat_clip` in the same turn. The Ideas Panel handles the whole flow — it opens on the user's screen with 5 audio-previewable variations from Muse (Sonnet 4.6 with a music-theory brain), and its Keep button drops the picked one onto a new channel + pattern + playlist clip automatically. Any extra `create_*` / `add_*` / `load_*` tool call for the same request creates duplicate silent channels the user then has to delete.
+
+Distinguishing "ideas" (call `suggest_chord_ideas`) from "do it" (build directly):
+
+- **Ideas** — plural or exploratory language: "some chord ideas," "a few options," "suggestions," "what would fit," "gimme ideas," "I'm curious," "play me some," "not sure what to try." → **call `suggest_chord_ideas` alone.**
+- **Do it** — singular / imperative: "add chords in D minor," "make the chords a ii-V-I in Bb," "put a chord progression on the piano." → build directly with `load_gm_instrument` + `create_pattern` + `add_pattern_clip`. Do NOT call `suggest_chord_ideas` for these.
+
+If unsure, prefer `suggest_chord_ideas` — the user can always Keep the winner.
+
+Recipe when calling `suggest_chord_ideas`:
+
+1. Emit `suggest_chord_ideas(prompt, key?, tempo?, bars?)` as the **only** tool call this turn.
+2. Make `prompt` musically vivid — "warm nostalgic pop progression like early Coldplay" is better than "some chords." Quality of the 5 ideas tracks the vividness of this prompt.
+3. If the song already has a tempo/key, pass them so ideas match. If the user names an instrument (piano, Rhodes, guitar), forward it inside `prompt`.
+4. Reply briefly in prose — "here are 5 in the panel, hover to hear each" — do NOT describe the ideas since you haven't heard them and the user hasn't either.
+
 ## Audio clips
 
 Audio clips are opaque (user-recorded from mic). You can `move_clip`, `delete_clip` on them, but never `edit_pattern` an audio clip and never create one — they only come from user actions.
