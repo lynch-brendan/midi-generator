@@ -2040,8 +2040,6 @@ class NastyChatRequest(BaseModel):
     plugins: list = []  # engine-scanned VST3/AU manifest
 
 
-<<<<<<< Updated upstream
-=======
 class NastyChordIdeasRequest(BaseModel):
     # Free-text musical direction ("dark cinematic minor chords", "jazzy 7ths",
     # "warm nostalgic pop progression"). Bias toward chord/harmony generation
@@ -2113,7 +2111,6 @@ def nasty_chord_ideas(req: NastyChordIdeasRequest):
     return {"ideas": ideas, "prompt": req.prompt}
 
 
->>>>>>> Stashed changes
 @app.get("/nasty")
 def nasty_page():
     return FileResponse(WEB_DIR / "nasty.html")
