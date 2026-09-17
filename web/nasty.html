@@ -3958,7 +3958,7 @@ function renderIdeasPanel() {
 
   // ---- MIDI-mode render (chord ideas etc.) -----------------------------
   if (ideasState.loading && ideasState.ideas.length === 0) {
-    body.innerHTML = '<div class="ip-loading">Generating 5 ideas…</div>';
+    body.innerHTML = '<div class="ip-loading">Generating ideas…</div>';
     return;
   }
   if (!ideasState.loading && ideasState.ideas.length === 0) {
@@ -4104,7 +4104,7 @@ async function applyToolCalls(calls) {
         const kind = (input.kind || 'chords').toLowerCase();
         openIdeasPanel(input.prompt || '', kind);
         fetchMidiIdeas(input);
-        summaries.push(`5 ${kind} ideas → panel`);
+        summaries.push(`${kind} ideas → panel`);
       } else if (name === 'try_effects') {
         // Effects mode of the ideas panel — Claude picked N plugin_ids
         // from the manifest; the client A/Bs them on the target owner in

@@ -2033,7 +2033,7 @@ _NASTY_TOOLS = [
     {
         "name": "suggest_midi_ideas",
         "description": (
-            "Open the Ideas Panel with 5 MIDI ideas (chord progression, "
+            "Open the Ideas Panel with a few MIDI ideas (chord progression, "
             "bass line, melody, lead, or pad) for the user to audition + "
             "pick. Use this ANY time the user asks for options / ideas / "
             "a few / suggestions on a musical part — 'give me some chord "
@@ -2055,7 +2055,7 @@ _NASTY_TOOLS = [
                         "Musically vivid direction — 'warm nostalgic pop "
                         "progression in the vein of early Coldplay,' 'gritty "
                         "808 sub with sidechain feel,' 'melancholy lead in "
-                        "the vein of Aphex Twin.' Quality of the 5 ideas "
+                        "the vein of Aphex Twin.' Quality of the ideas "
                         "tracks the vividness of this prompt."
                     ),
                 },
@@ -2205,6 +2205,7 @@ def nasty_midi_ideas(req: NastyMidiIdeasRequest):
                 lock_key=req.key or None,
                 lock_tempo=int(req.tempo) if req.tempo else None,
                 model=_IDEAS_MODEL,
+                count=3,
             ):
                 etype = event.get("type")
                 if etype == "meta":
@@ -2467,7 +2468,7 @@ def nasty_chat(req: NastyChatRequest):
                 # every subsequent turn's context.
                 kind = (inp.get("kind") or "chords").lower()
                 result_text = (
-                    f"Ideas Panel opened with 5 {kind} ideas for the user "
+                    f"Ideas Panel opened with 3 {kind} ideas for the user "
                     "to audition and pick — no further tool calls needed on "
                     "your side."
                 )

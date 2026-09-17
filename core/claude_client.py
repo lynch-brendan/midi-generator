@@ -124,18 +124,18 @@ def _lock_constraints(lock_key: str = None, lock_tempo: int = None) -> str:
     return ("\n\n" + "\n".join(parts)) if parts else ""
 
 
-def _user_message(prompt: str, lock_key: str = None, lock_tempo: int = None) -> str:
+def _user_message(prompt: str, lock_key: str = None, lock_tempo: int = None, count: int = 5) -> str:
     angle = random.choice(_CREATIVE_ANGLES)
     key_rule = (
         f'Every variation MUST use "{lock_key}" as its key and scale_notes.'
         if lock_key else
-        "Each variation must have its own key and scale_notes — vary the tonal center across the 5 variations."
+        f"Each variation must have its own key and scale_notes — vary the tonal center across the {count} variations."
     )
     return (
-        f'Generate 5 musical variations for: "{prompt}"\n\n'
+        f'Generate {count} musical variations for: "{prompt}"\n\n'
         f"Creative direction for this session: {angle}\n\n"
         f"{key_rule} "
-        "Return the complete JSON object with all 5 variations, each with a full note sequence and its own instrument + gm_patch fields. "
+        f"Return the complete JSON object with all {count} variations, each with a full note sequence and its own instrument + gm_patch fields. "
         "Each variation must include a 'bars' field (1, 2, 4, or 8) — choose based on musical role per the BAR LENGTH GUIDE. "
         "The last note must land at or near bars × 4.0 beats. "
         f"Remember: return ONLY raw JSON, no markdown."
@@ -239,7 +239,7 @@ def stream_thinking(prompt: str) -> Generator[Dict, None, None]:
             yield {"type": "thought", "token": text}
 
 
-def stream_variations(prompt: str, seed_variation: dict = None, lock_key: str = None, lock_tempo: int = None, seed_variations: list = None, model: str = None) -> Generator[Dict, None, None]:
+def stream_variations(prompt: str, seed_variation: dict = None, lock_key: str = None, lock_tempo: int = None, seed_variations: list = None, model: str = None, count: int = 5) -> Generator[Dict, None, None]:
     """
     Stream Claude's response and yield parsed objects as they become available.
     Yields: one 'meta' dict first, then one 'variation' dict per variation, then 'done'.
@@ -258,7 +258,7 @@ def stream_variations(prompt: str, seed_variation: dict = None, lock_key: str = 
         single = seed_variation or seed_variations[0]
         user_content = _seed_user_message(prompt, single, lock_key, lock_tempo)
     else:
-        user_content = _user_message(prompt, lock_key, lock_tempo)
+        user_content = _user_message(prompt, lock_key, lock_tempo, count=count)
     messages = [{"role": "user", "content": user_content}]
 
     buffer = ""
