@@ -632,6 +632,73 @@
   .autoplay-toggle { color: var(--dim); font-size: 11px; margin-left: auto; }
   .thinking { color: var(--dim); font-style: italic; font-size: 11px; }
 
+  /* Ideas panel — floats to the left of the chat dock. Populated when
+     Claude fires the suggest_chord_ideas tool. Autoplay-on-hover audition,
+     click to lock, Keep to drop into the song. */
+  #ideas-panel {
+    position: fixed;
+    right: 350px; top: 80px;
+    width: 320px; max-height: calc(100vh - 120px);
+    background: var(--panel);
+    border: 1px solid var(--line); border-radius: 3px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.06);
+    z-index: 70; display: flex; flex-direction: column; overflow: hidden;
+  }
+  #ideas-panel.hidden { display: none; }
+  #ideas-panel .ip-header {
+    padding: 0 8px; height: 22px;
+    background: linear-gradient(#5a5a5a, var(--panel-3));
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 6px;
+    font-weight: 700; color: var(--text); font-size: 10px;
+    text-transform: uppercase; letter-spacing: 1px;
+  }
+  #ideas-panel .ip-header .ip-x { margin-left: auto; padding: 1px 6px; font-size: 10px; }
+  #ideas-panel .ip-controls {
+    padding: 6px 8px; border-bottom: 1px solid var(--line);
+    background: var(--panel-2); display: flex; flex-direction: column; gap: 4px;
+    font-size: 11px; color: var(--dim);
+  }
+  #ideas-panel .ip-prompt-echo {
+    color: var(--text); font-style: italic; font-size: 11px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  #ideas-panel .ip-autoplay { display: flex; align-items: center; gap: 6px; }
+  #ideas-panel .ip-body {
+    flex: 1; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 5px;
+    background: var(--workspace);
+  }
+  .idea-row {
+    padding: 6px 8px; border-radius: 2px;
+    background: linear-gradient(var(--panel-3), var(--panel-2));
+    border: 1px solid var(--line);
+    cursor: pointer; user-select: none;
+    font-size: 11px; color: var(--text);
+    display: flex; flex-direction: column; gap: 3px;
+  }
+  .idea-row:hover { background: linear-gradient(#5a5a5a, var(--panel-3)); }
+  .idea-row.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .idea-row.playing { border-color: var(--accent-2); }
+  .idea-row .ir-title { font-weight: 700; font-size: 12px; }
+  .idea-row .ir-meta { color: var(--dim); font-size: 10px; }
+  .idea-row .ir-char { color: var(--dim); font-size: 10px; font-style: italic; line-height: 1.3; }
+  .idea-row .ir-actions { display: flex; gap: 4px; margin-top: 3px; }
+  .idea-row .ir-actions button {
+    flex: 1; padding: 3px 6px; font-size: 10px;
+    background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
+    cursor: pointer; border-radius: 2px;
+  }
+  .idea-row .ir-actions button.ir-keep {
+    background: linear-gradient(var(--accent), #d94276); border-color: #111;
+    color: white; font-weight: 600;
+  }
+  .idea-row .ir-actions button:hover { filter: brightness(1.15); }
+  #ideas-panel .ip-loading, #ideas-panel .ip-error {
+    padding: 20px 12px; text-align: center;
+    color: var(--dim); font-size: 11px; font-style: italic;
+  }
+  #ideas-panel .ip-error { color: #ff6b6b; }
+
   .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 150;
     display: flex; align-items: center; justify-content: center; }
   .modal.hidden { display: none; }
@@ -677,11 +744,18 @@
   #mixer-wires {
     position: absolute; inset: 0; pointer-events: none; z-index: 5;
   }
+  /* Wires: thin lines, muted colors, no neon, no animation. Sag downward
+     from source strip → destination strip. Sidechain = warm amber, main =
+     soft off-white. Solid — no marching ants. */
   #mixer-wires path {
-    fill: none; stroke: #f5b800; stroke-width: 1.5;
-    filter: drop-shadow(0 0 3px rgba(245, 184, 0, 0.6));
+    fill: none; stroke: #b58a2a; stroke-width: 1.25;
+    stroke-linecap: round;
   }
-  #mixer-wires .arrow { fill: #f5b800; stroke: none; }
+  #mixer-wires .arrow {
+    fill: #b58a2a; stroke: none;
+  }
+  #mixer-wires .plug { stroke: none; fill: #b58a2a; }
+  #mixer-wires .plug-main { fill: #b0b0b0; }
   .mixer-strip {
     width: 62px; flex-shrink: 0; height: 100%;
     background: var(--panel-2); border: 1px solid var(--line);
@@ -2103,6 +2177,22 @@
   </div>
 </div>
 
+<!-- IDEAS PANEL — populated when Claude fires suggest_chord_ideas. -->
+<div id="ideas-panel" class="hidden">
+  <div class="ip-header">
+    Ideas
+    <button class="ip-x" id="ip-close" title="Close">×</button>
+  </div>
+  <div class="ip-controls">
+    <div class="ip-prompt-echo" id="ip-prompt-echo"></div>
+    <label class="ip-autoplay">
+      <input type="checkbox" id="ip-autoplay-hover" checked />
+      autoplay on hover
+    </label>
+  </div>
+  <div class="ip-body" id="ip-body"></div>
+</div>
+
 <div id="piano-roll" class="hidden">
   <div id="piano-roll-panel">
     <div id="pr-header">
@@ -2675,6 +2765,13 @@ function ensureShape(s) {
         });
       }
     }
+  }
+  // Every load: strip half-formed sends (missing targetChannelId, or missing
+  // sendId). An earlier build let one slip through and it poisoned bus_3's
+  // routing so the strip stayed silent no matter what the user did.
+  for (const b of (s.mixer.busses || [])) {
+    if (!b.sends) continue;
+    b.sends = b.sends.filter(x => x && x.sendId && x.targetChannelId);
   }
   s.patterns.forEach((p, i) => {
     p.notes = p.notes || [];
@@ -3414,12 +3511,258 @@ function waitForEngineDrained() {
   });
 }
 
+// ============================================================
+// Ideas Panel — Muse-generated chord/progression audition dock
+// ============================================================
+// Populated when Claude fires the `suggest_chord_ideas` tool. The tool call
+// itself just signals intent; the actual 5-idea payload is fetched directly
+// from /nasty/chord-ideas so it doesn't ride along on every subsequent chat
+// turn (would burn ~5-8 kB of context per idea batch).
+const ideasState = {
+  prompt: '',
+  ideas: [],            // [{id, name, character, key, tempo, bars, notes, gm_patch, wav_url}, ...]
+  selectedIdx: -1,
+  audioEl: null,        // <audio> singleton for audition playback
+  loading: false,
+};
+
+function openIdeasPanel(prompt) {
+  ideasState.prompt = prompt || '';
+  ideasState.ideas = [];
+  ideasState.selectedIdx = -1;
+  ideasState.loading = true;
+  document.getElementById('ideas-panel').classList.remove('hidden');
+  document.getElementById('ip-prompt-echo').textContent = prompt || '';
+  renderIdeasPanel();
+}
+
+function closeIdeasPanel() {
+  document.getElementById('ideas-panel').classList.add('hidden');
+  stopIdeaAudition();
+}
+
+function stopIdeaAudition() {
+  if (ideasState.audioEl) {
+    try { ideasState.audioEl.pause(); } catch {}
+    ideasState.audioEl.src = '';
+  }
+  ideasState.selectedIdx = -1;
+  document.querySelectorAll('.idea-row').forEach(el => el.classList.remove('playing', 'selected'));
+}
+
+function auditionIdea(idx) {
+  const idea = ideasState.ideas[idx];
+  if (!idea || !idea.wav_url) return;
+  if (!ideasState.audioEl) {
+    ideasState.audioEl = new Audio();
+    ideasState.audioEl.addEventListener('ended', () => {
+      document.querySelectorAll('.idea-row').forEach(el => el.classList.remove('playing'));
+    });
+  }
+  try { ideasState.audioEl.pause(); } catch {}
+  ideasState.audioEl.src = idea.wav_url;
+  ideasState.audioEl.currentTime = 0;
+  ideasState.audioEl.play().catch(err => console.warn('[ideas] audition play failed', err));
+  ideasState.selectedIdx = idx;
+  document.querySelectorAll('.idea-row').forEach((el, i) => {
+    el.classList.toggle('playing', i === idx);
+    el.classList.toggle('selected', i === idx);
+  });
+}
+
+// Convert Muse's dict-form notes {pitch, duration, velocity(1-127), time}
+// to Nasty pattern notes {channelId, pitch, startBeat, durationBeats,
+// velocity(0-1)}. Velocity is normalised from MIDI's 1-127 to Nasty's 0-1.
+function museIdeaToNastyNotes(idea, channelId) {
+  const out = [];
+  for (const n of idea.notes || []) {
+    const p = Math.max(0, Math.min(127, Math.round(Number(n.pitch))));
+    const dur = Math.max(0.05, Number(n.duration) || 0.5);
+    const t = Math.max(0, Number(n.time) || 0);
+    const vRaw = Number(n.velocity);
+    const vel = Number.isFinite(vRaw) ? Math.max(0.05, Math.min(1, vRaw / 127)) : 0.8;
+    out.push({ channelId, pitch: p, startBeat: t, durationBeats: dur, velocity: vel });
+  }
+  return out;
+}
+
+// Pick a channel_id slug for the kept idea. Tries chord-<name-slug>; on
+// collision, appends a random suffix so the Keep action never silently
+// fails against an existing id.
+function ideaChannelId(idea) {
+  const base = (idea.name || 'chords').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 20).replace(/^-+|-+$/g, '') || 'chords';
+  let id = 'chords-' + base;
+  const existing = new Set(song.channels.map(c => c.id));
+  if (!existing.has(id)) return id;
+  return id + '-' + Math.random().toString(36).slice(2, 6);
+}
+
+// Pick a playlist track with no clip at bar 0 (so the kept idea lands
+// somewhere visible without stomping on existing content). Falls back to
+// track_1 if every track has a clip at bar 0.
+function firstFreeTrackAtBar(bar) {
+  for (const t of (song.tracks || [])) {
+    if (!(t.clips || []).some(c => c.startBar === bar)) return t.id;
+  }
+  return (song.tracks || [])[0]?.id || 'track_1';
+}
+
+async function keepIdea(idx) {
+  const idea = ideasState.ideas[idx];
+  if (!idea) return;
+  stopIdeaAudition();
+
+  const channelId = ideaChannelId(idea);
+  const channelName = idea.name || 'Chords';
+  const prog = Math.max(0, Math.min(127, parseInt(idea.gm_patch, 10) || 0));
+
+  // 1) GM instrument channel (same path load_gm_instrument tool takes).
+  await addChannelFromInstrument({
+    id: channelId, name: channelName,
+    pluginId: 'gm-' + prog, gmProgram: prog,
+  });
+
+  // 2) Pattern with the idea's notes.
+  const patternId = 'pat-' + channelId + '-' + Math.random().toString(36).slice(2, 6);
+  const notes = museIdeaToNastyNotes(idea, channelId);
+  const lengthBars = idea.bars || 4;
+  song.patterns.push({
+    id: patternId, name: idea.name || 'Chords',
+    lengthBars, notes,
+    color: PALETTE[song.patterns.length % PALETTE.length],
+  });
+  if (!currentPatternId) currentPatternId = patternId;
+
+  // 3) Playlist clip on the first free track at bar 0.
+  const trackId = firstFreeTrackAtBar(0);
+  const track = song.tracks.find(t => t.id === trackId);
+  if (track) {
+    track.clips.push({
+      id: 'clip-' + patternId,
+      type: 'pattern',
+      patternId, startBar: 0, lengthBars,
+    });
+    song.transportMode = 'song';
+  }
+
+  autoExpandBars();
+  syncSongArrangement();
+  render();
+  persist();
+  closeIdeasPanel();
+}
+
+function renderIdeasPanel() {
+  const body = document.getElementById('ip-body');
+  if (!body) return;
+  body.innerHTML = '';
+  if (ideasState.loading && ideasState.ideas.length === 0) {
+    body.innerHTML = '<div class="ip-loading">Generating 5 ideas…</div>';
+    return;
+  }
+  if (!ideasState.loading && ideasState.ideas.length === 0) {
+    body.innerHTML = '<div class="ip-error">No ideas returned.</div>';
+    return;
+  }
+  ideasState.ideas.forEach((idea, i) => {
+    const row = document.createElement('div');
+    row.className = 'idea-row';
+    row.dataset.idx = String(i);
+    const title = document.createElement('div');
+    title.className = 'ir-title';
+    title.textContent = idea.name || `Idea ${i + 1}`;
+    const meta = document.createElement('div');
+    meta.className = 'ir-meta';
+    const parts = [];
+    if (idea.key) parts.push(idea.key);
+    if (idea.tempo) parts.push(idea.tempo + ' BPM');
+    if (idea.bars) parts.push(idea.bars + ' bar' + (idea.bars > 1 ? 's' : ''));
+    if (idea.instrument) parts.push(idea.instrument);
+    meta.textContent = parts.join(' · ');
+    const char = document.createElement('div');
+    char.className = 'ir-char';
+    char.textContent = idea.character || '';
+    const actions = document.createElement('div');
+    actions.className = 'ir-actions';
+    const playBtn = document.createElement('button');
+    playBtn.type = 'button';
+    playBtn.textContent = '▶ Play';
+    playBtn.addEventListener('click', (e) => { e.stopPropagation(); auditionIdea(i); });
+    const keepBtn = document.createElement('button');
+    keepBtn.type = 'button';
+    keepBtn.className = 'ir-keep';
+    keepBtn.textContent = 'Keep';
+    keepBtn.addEventListener('click', (e) => { e.stopPropagation(); keepIdea(i); });
+    actions.appendChild(playBtn);
+    actions.appendChild(keepBtn);
+    row.appendChild(title);
+    if (parts.length) row.appendChild(meta);
+    if (idea.character) row.appendChild(char);
+    row.appendChild(actions);
+    row.addEventListener('mouseenter', () => {
+      const cb = document.getElementById('ip-autoplay-hover');
+      if (cb && cb.checked) auditionIdea(i);
+    });
+    row.addEventListener('click', () => auditionIdea(i));
+    body.appendChild(row);
+  });
+}
+
+async function fetchChordIdeas(args) {
+  const apiBase = (window.nasty && window.nasty.apiBase) || '';
+  try {
+    const resp = await fetch(apiBase + '/nasty/chord-ideas', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt: args.prompt || '',
+        key:    args.key || null,
+        tempo:  args.tempo || null,
+        bars:   args.bars || null,
+      }),
+    });
+    if (!resp.ok) {
+      const detail = await resp.text().catch(() => resp.statusText);
+      throw new Error(`HTTP ${resp.status}: ${detail}`);
+    }
+    const data = await resp.json();
+    const ideas = Array.isArray(data.ideas) ? data.ideas : [];
+    // Prefix relative /output/ WAV URLs with apiBase so audition works under
+    // Electron's file:// origin. Absolute (R2) URLs pass through unchanged.
+    for (const idea of ideas) {
+      if (idea.wav_url && idea.wav_url.startsWith('/')) {
+        idea.wav_url = apiBase + idea.wav_url;
+      }
+    }
+    ideasState.ideas = ideas;
+    ideasState.loading = false;
+    renderIdeasPanel();
+  } catch (err) {
+    console.error('[ideas] fetch failed', err);
+    ideasState.loading = false;
+    ideasState.ideas = [];
+    const body = document.getElementById('ip-body');
+    if (body) body.innerHTML = `<div class="ip-error">Idea generation failed: ${err.message || err}</div>`;
+  }
+}
+
+(function wireIdeasPanel() {
+  const closeBtn = document.getElementById('ip-close');
+  if (closeBtn) closeBtn.addEventListener('click', closeIdeasPanel);
+})();
+
 async function applyToolCalls(calls) {
   const summaries = [];
   for (const call of calls) {
     const { name, input } = call;
     try {
-      if (name === 'set_tempo') {
+      if (name === 'suggest_chord_ideas') {
+        // Client-side UI dispatch — Claude signalled intent; we open the
+        // panel and fire the direct fetch for the 5 idea payloads.
+        openIdeasPanel(input.prompt || '');
+        fetchChordIdeas(input);
+        summaries.push(`5 chord ideas → panel`);
+      } else if (name === 'set_tempo') {
         song.bpm = input.bpm; summaries.push(`tempo → ${input.bpm} BPM`);
       } else if (name === 'create_channel') {
         if (!song.channels.find(c => c.id === input.id)) {
@@ -4401,16 +4744,10 @@ function drawWire(svg, strips, container, srcId, dstId, inputType, sendId) {
   const midX = (sx + dx) / 2;
   const midY = Math.max(sy, dy) + sag;
   const isSc = inputType === 'sidechain';
+  // Thin single-stroke wire. No shadow, no glow, no animation.
   const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
   path.setAttribute('d', `M ${sx} ${sy} Q ${midX} ${midY} ${dx} ${dy}`);
-  if (!isSc) {
-    path.setAttribute('stroke', '#dcdcdc');
-    path.style.filter = 'drop-shadow(0 0 3px rgba(220,220,220,0.5))';
-  }
-  // Make the whole wire clickable — click anywhere on it to delete this
-  // send. Sidechain wires can always be deleted; main-route wires refuse
-  // if it's the strip's last main route (otherwise you'd end up with a
-  // routing dead-end that plays back silent).
+  if (!isSc) path.setAttribute('stroke', '#b0b0b0');
   if (sendId) {
     path.style.pointerEvents = 'stroke';
     path.style.cursor = 'pointer';
@@ -4419,12 +4756,19 @@ function drawWire(svg, strips, container, srcId, dstId, inputType, sendId) {
     path.addEventListener('click', () => deleteSendById(srcId, sendId));
   }
   svg.appendChild(path);
-  // Arrow points UP into the destination triangle since the wire is arriving
-  // from below.
+  // Small "plug" dot at the source end.
+  const plug = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  plug.setAttribute('cx', sx);
+  plug.setAttribute('cy', sy);
+  plug.setAttribute('r', '2');
+  plug.setAttribute('class', 'plug' + (isSc ? '' : ' plug-main'));
+  svg.appendChild(plug);
+  // Small arrowhead pointing into the destination triangle.
   const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-  arrow.setAttribute('points', `${dx - 4},${dy + 6} ${dx + 4},${dy + 6} ${dx},${dy}`);
+  arrow.setAttribute('points',
+    `${dx - 3.5},${dy + 5} ${dx + 3.5},${dy + 5} ${dx},${dy}`);
   arrow.setAttribute('class', 'arrow');
-  if (!isSc) arrow.setAttribute('fill', '#dcdcdc');
+  if (!isSc) arrow.setAttribute('fill', '#b0b0b0');
   if (sendId) {
     arrow.style.pointerEvents = 'fill';
     arrow.style.cursor = 'pointer';
@@ -4438,15 +4782,9 @@ function deleteSendById(srcId, sendId) {
   if (!source) return;
   const send = (source.sends || []).find(s => s.sendId === sendId);
   if (!send) return;
-  // Refuse to delete the last main route — a bus with no main send plays
-  // back silent, which is a footgun. Prompt the user to redirect it first.
-  if (send.targetInput === 'main') {
-    const mainCount = (source.sends || []).filter(s => s.targetInput === 'main').length;
-    if (mainCount <= 1) {
-      alert("Can't remove the last main route — the strip needs a destination. Right-click another strip's arrow to redirect first.");
-      return;
-    }
-  }
+  // No last-main-route guard. A bus with no main send is silent — that's a
+  // legitimate "disconnect this strip" state, not a footgun. Same semantics
+  // as unplugging a physical patch cable.
   source.sends = source.sends.filter(s => s.sendId !== sendId);
   if (window.nasty && window.nasty.engine) {
     window.nasty.engine.send({
@@ -4516,19 +4854,21 @@ function buildStrip({ id, name, volume, color, kind, fxCount, muted, solo, num, 
       onMixerArmClick(id);
     });
   }
-  // FL-style routing arrow. Right-click opens the routing menu for the
-  // SELECTED strip → THIS strip. Left-click also opens the menu (feels more
-  // discoverable than making it right-click-only). No-op when the user
-  // right-clicks the currently-selected strip's own arrow.
+  // FL-style routing arrow:
+  //   Left-click  → toggle main audio route from SELECTED → THIS (replace)
+  //   Right-click → FL-style menu (Route / Route only / Sidechain / Sidechain only)
   const routeArrow = strip.querySelector('.routearrow');
   if (routeArrow) {
-    const showMenu = (e) => {
+    routeArrow.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleRoute(id, 'main');
+    });
+    routeArrow.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       e.stopPropagation();
       openRouteMenu(id, e.clientX, e.clientY);
-    };
-    routeArrow.addEventListener('contextmenu', showMenu);
-    routeArrow.addEventListener('click', showMenu);
+    });
   }
   const fader = strip.querySelector('.fader');
   fader.addEventListener('input', () => onStripFader(id, kind, faderPositionToGain(parseFloat(fader.value))));
@@ -5165,9 +5505,29 @@ async function addChannelFromInstrument({ id, name, pluginId, gmProgram, drumPit
 let pendingMicBusId = null;
 
 // ------------------------------------------------------------
-// FL-style routing menu — right-click a strip's bottom arrow to route the
-// SELECTED source strip to that target with a specific input port.
+// FL-style routing arrows — direct click actions, no text menu.
+// Left-click toggles main audio route, right-click toggles sidechain.
 // ------------------------------------------------------------
+function toggleRoute(targetStripId, inputType) {
+  const source = (song.mixer.busses || []).find(b => b.id === selectedStripId);
+  if (!source) return; // Master selected or nothing — no routing from there.
+  if (source.id === targetStripId) return; // Self-routing = no-op.
+  const target = (song.mixer.busses || []).find(b => b.id === targetStripId)
+    || (targetStripId === 'master' ? { id: 'master', num: 0, name: 'Master' } : null);
+  if (!target) return;
+
+  const targetEngineId = target.id === 'master' ? 'master_bus' : target.id;
+  const existing = (source.sends || []).find(
+    s => s.targetInput === inputType
+      && (s.targetChannelId === target.id || s.targetChannelId === targetEngineId));
+
+  // Fan-out toggle: click empty arrow → add route (leaves other routes intact),
+  // click a currently-lit arrow → remove that specific route. Matches FL:
+  // main routes stack, and click is a per-target toggle. "Route to this
+  // track only" (replace mode) lives on the right-click menu.
+  applyRoutingChange(source, target, inputType, existing ? 'remove' : 'add');
+}
+
 function openRouteMenu(targetStripId, clientX, clientY) {
   const source = (song.mixer.busses || []).find(b => b.id === selectedStripId);
   const target = (song.mixer.busses || []).find(b => b.id === targetStripId);
@@ -5186,35 +5546,12 @@ function openRouteMenu(targetStripId, clientX, clientY) {
   const existingSc = (source.sends || []).find(
     s => s.targetInput === 'sidechain' && s.targetChannelId === targetStripId);
 
-  const existingMain = (source.sends || []).find(
-    s => s.targetInput === 'main' && s.targetChannelId === targetStripId);
-  const mainSendCount = (source.sends || []).filter(s => s.targetInput === 'main').length;
-
   const rows = [];
-  rows.push(`<div class="rm-header">Route ${label(source)} → ${label(target)}</div>`);
-  if (existingMain) {
-    // Refuse if this is the only main route — same footgun-guard as the
-    // wire-click delete path.
-    if (mainSendCount > 1) {
-      rows.push(`<div class="rm-item destructive" data-action="remove-main">Remove main audio route to here</div>`);
-    }
-  } else {
-    // If a main route already exists elsewhere, offer to REPLACE it. If not,
-    // offer to add an additional main route (fan-out).
-    if (mainSendCount === 0) {
-      rows.push(`<div class="rm-item" data-action="add-main">Route main audio here</div>`);
-    } else {
-      rows.push(`<div class="rm-item" data-action="replace-main">Route main audio here (replace current)</div>`);
-      rows.push(`<div class="rm-item" data-action="add-main">Also send main audio here (fan out)</div>`);
-    }
-  }
-  if (existingSc) {
-    rows.push(`<div class="rm-item destructive" data-action="remove-sc">Remove sidechain to this insert</div>`);
-  } else {
-    rows.push(`<div class="rm-item" data-action="add-sc">Sidechain to this insert</div>`);
-  }
+  rows.push(`<div class="rm-item" data-action="add-main">Route to this track</div>`);
+  rows.push(`<div class="rm-item" data-action="replace-main">Route to this track only</div>`);
   rows.push(`<div class="rm-sep"></div>`);
-  rows.push(`<div class="rm-item" data-action="cancel">Cancel</div>`);
+  rows.push(`<div class="rm-item" data-action="add-sc">Sidechain to this track</div>`);
+  rows.push(`<div class="rm-item" data-action="replace-sc">Sidechain to this track only</div>`);
 
   menu.innerHTML = rows.join('');
   menu.classList.remove('hidden');
@@ -5236,16 +5573,14 @@ function openRouteMenu(targetStripId, clientX, clientY) {
   menu.querySelectorAll('.rm-item').forEach(el => {
     el.addEventListener('click', () => {
       const action = el.dataset.action;
-      if (action === 'add-sc') {
-        applyRoutingChange(source, target, 'sidechain', 'add');
-      } else if (action === 'remove-sc') {
-        applyRoutingChange(source, target, 'sidechain', 'remove');
-      } else if (action === 'add-main') {
+      if (action === 'add-main') {
         applyRoutingChange(source, target, 'main', 'add');
       } else if (action === 'replace-main') {
         applyRoutingChange(source, target, 'main', 'replace');
-      } else if (action === 'remove-main') {
-        applyRoutingChange(source, target, 'main', 'remove');
+      } else if (action === 'add-sc') {
+        applyRoutingChange(source, target, 'sidechain', 'add');
+      } else if (action === 'replace-sc') {
+        applyRoutingChange(source, target, 'sidechain', 'replace');
       }
       close();
     });
@@ -5259,14 +5594,6 @@ function applyRoutingChange(source, target, inputType, op) {
     const existing = source.sends.find(
       s => s.targetInput === inputType && (s.targetChannelId === target.id || s.targetChannelId === targetEngineId));
     if (!existing) return;
-    // Guard against removing the last main route.
-    if (inputType === 'main') {
-      const mainCount = source.sends.filter(s => s.targetInput === 'main').length;
-      if (mainCount <= 1) {
-        alert("Can't remove the last main route — the strip needs a destination.");
-        return;
-      }
-    }
     source.sends = source.sends.filter(s => s !== existing);
     if (window.nasty && window.nasty.engine) {
       window.nasty.engine.send({
@@ -5275,10 +5602,12 @@ function applyRoutingChange(source, target, inputType, op) {
       });
     }
   } else if (op === 'replace' || op === 'add') {
-    // Sidechain: MVP is one SC send per source, always replaces.
-    // Main + replace: nuke all existing main sends, add fresh one.
-    // Main + add: fan-out — keep existing mains, append.
-    if (inputType === 'sidechain' || (inputType === 'main' && op === 'replace')) {
+    // Replace: nuke every existing send of this type, add a fresh one to
+    // the requested target. Matches FL's "Route to this track only".
+    // Add: fan-out — keep existing sends of this type, append a new one
+    // to the target UNLESS a send to exactly this target already exists
+    // (avoid double-connecting the audio graph).
+    if (op === 'replace') {
       for (const old of source.sends.filter(s => s.targetInput === inputType)) {
         if (window.nasty && window.nasty.engine) {
           window.nasty.engine.send({
@@ -5288,6 +5617,10 @@ function applyRoutingChange(source, target, inputType, op) {
         }
       }
       source.sends = source.sends.filter(s => s.targetInput !== inputType);
+    } else {
+      const dupe = source.sends.find(
+        s => s.targetInput === inputType && s.targetChannelId === targetEngineId);
+      if (dupe) return; // already routed there; no-op
     }
     const sendId = 'send_' + Math.random().toString(36).slice(2, 8);
     source.sends.push({ sendId, targetChannelId: targetEngineId, targetInput: inputType });
@@ -8016,19 +8349,20 @@ async function hydratePluginChannels() {
   // apply to the whole mix. Graph mutations are now suspended-processing
   // wrapped in rewireChannelUnlocked to avoid the earlier SIGSEGV.
   window.nasty.engine.send({ cmd: 'create_bus', channelId: 'master_bus' });
+  // First pass: create every bus so cross-bus sends can resolve their
+  // targets regardless of iteration order. Second pass fires sends AND mic
+  // routes only after every bus is live in the engine.
   for (const b of (song.mixer.busses || [])) {
     window.nasty.engine.send({ cmd: 'create_bus', channelId: b.id });
-    // Restore the FL-style "IN" mic feed if this insert was tagged for input.
+  }
+  for (const b of (song.mixer.busses || [])) {
     if (b.audioInputEnabled) {
       window.nasty.engine.send({
         cmd: 'set_channel_audio_input', channelId: b.id, enabled: true,
       });
     }
-    // Restore any sends (sidechain / routing) attached to this bus. Sent
-    // AFTER create_bus so both source + target exist; sent BEFORE the effect
-    // chain hydration below so the send resolves the moment the target's
-    // sidechain-capable plugin arrives.
     for (const s of (b.sends || [])) {
+      if (!s || !s.targetChannelId) continue; // drop bogus / half-formed sends
       window.nasty.engine.send({
         cmd: 'set_channel_send',
         channelId: b.id, sendId: s.sendId,

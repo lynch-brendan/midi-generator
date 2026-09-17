@@ -122,7 +122,7 @@ APP_URL = os.environ.get("APP_URL", "http://localhost:8000")
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from core.claude_client import stream_variations, stream_thinking
+from core.claude_client import stream_variations, stream_thinking, generate_variations
 from core.midi_writer import write_midi, write_drum_stems
 from core.audio_renderer import render_midi_to_wav
 from core.expression import apply_expression
@@ -2010,6 +2010,38 @@ _NASTY_TOOLS = [
         },
     },
     {
+        "name": "suggest_chord_ideas",
+        "description": (
+            "Ask the Muse music-generator (Sonnet 4.6 with a music-theory "
+            "system prompt) for 5 chord/progression ideas the user can "
+            "audition and drop into the song. Use this when the user asks "
+            "for musical IDEAS — chords, progressions, harmony, 'give me "
+            "some chord options', 'suggest a progression', 'ideas for the "
+            "verse chords'. The 5 ideas appear in the user's Ideas Panel "
+            "with audio previews (WAV) and a Keep button that drops the "
+            "picked idea onto a new channel + pattern in the song. "
+            "You DO NOT need to also call load_gm_instrument or "
+            "create_pattern — the Keep flow handles instrument + pattern "
+            "creation. Just call this tool with a musical description and "
+            "let the user pick. `prompt` should be a rich musical direction "
+            "('dark minor 7th chords, cinematic', 'jazzy ii-V-I in Bb', "
+            "'nostalgic pop progression like early Coldplay') — quality of "
+            "ideas depends on the vividness of this prompt. Optionally lock "
+            "`key` (e.g. 'D minor') or `tempo` (BPM) to match the current song. "
+            "`bars` defaults to 4."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "prompt": {"type": "string"},
+                "key":    {"type": "string"},
+                "tempo":  {"type": "integer"},
+                "bars":   {"type": "integer", "enum": [1, 2, 4, 8]},
+            },
+            "required": ["prompt"],
+        },
+    },
+    {
         "name": "get_plugin_cheatsheet",
         "description": (
             "Fetch the full cheatsheet for a specific plugin the user has "
@@ -2038,6 +2070,72 @@ class NastyChatRequest(BaseModel):
     message: str
     history: list = []
     plugins: list = []  # engine-scanned VST3/AU manifest
+
+
+class NastyChordIdeasRequest(BaseModel):
+    # Free-text musical direction ("dark cinematic minor chords", "jazzy 7ths",
+    # "warm nostalgic pop progression"). Bias toward chord/harmony generation
+    # is added server-side — the caller doesn't have to say the word "chords."
+    prompt: str
+    key: Optional[str] = None
+    tempo: Optional[int] = None
+    bars: Optional[int] = None
+
+
+def _generate_chord_ideas(prompt: str, key: Optional[str], tempo: Optional[int],
+                          bars: Optional[int]) -> list[dict]:
+    import time
+    # Reuse Muse's Claude-driven generator, but bias the prompt so Claude
+    # picks chord voicings / progressions rather than one-note melodies.
+    # Everything else (WAV render, GM patch, note format) is shared with the
+    # public Muse endpoint.
+    chord_prompt = prompt.strip()
+    if "chord" not in chord_prompt.lower() and "progression" not in chord_prompt.lower():
+        chord_prompt = f"chord progression: {chord_prompt}"
+
+    data = generate_variations(chord_prompt)
+    top_gm_patch = int(data.get("gm_patch") or 0)
+    top_is_drums = bool(data.get("is_drums", False))
+    slug = f"nasty-ideas-{int(time.time() * 1000)}"
+
+    ideas: list[dict] = []
+    for var in data.get("variations", []):
+        try:
+            result = _process_variation(var, top_gm_patch, slug, is_drums=top_is_drums)
+        except Exception as e:
+            print(f"[nasty-ideas] variation render failed: {e}", flush=True)
+            continue
+        ideas.append({
+            "id":         result["id"],
+            "name":       result["name"],
+            "character":  result["character"],
+            "key":        result.get("key"),
+            "tempo":      result["tempo"],
+            "bars":       result["bars"],
+            "note_count": result["note_count"],
+            "notes":      result["notes"],
+            "gm_patch":   result["gm_patch"],
+            "instrument": result.get("instrument"),
+            "wav_url":    result.get("wav_url"),
+        })
+    return ideas
+
+
+@app.post("/nasty/chord-ideas")
+def nasty_chord_ideas(req: NastyChordIdeasRequest):
+    # Called directly by the Nasty client after Claude fires
+    # `suggest_chord_ideas` in the chat loop. Kept as a separate endpoint (not
+    # a tool result payload) so the multi-kB idea list doesn't bloat every
+    # subsequent chat turn's context.
+    if not req.prompt.strip():
+        raise HTTPException(status_code=400, detail="prompt is required")
+    try:
+        ideas = _generate_chord_ideas(req.prompt, req.key, req.tempo, req.bars)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"idea generation failed: {e}")
+    if not ideas:
+        raise HTTPException(status_code=500, detail="no ideas generated")
+    return {"ideas": ideas, "prompt": req.prompt}
 
 
 @app.get("/nasty")
@@ -2266,6 +2364,16 @@ def nasty_chat(req: NastyChatRequest):
                     )
             elif block.name in ("add_track", "add_clip") and "id" in inp:
                 result_text = f"applied; id={inp['id']}"
+            elif block.name == "suggest_chord_ideas":
+                # Ideas are generated + shown to the user by the client via a
+                # direct /nasty/chord-ideas call — Claude just needs to know
+                # the panel is open. Kept small so Muse's 5-variation JSON
+                # (~4-8 kB) doesn't ride along on every subsequent turn.
+                result_text = (
+                    "5 chord ideas are being generated and shown to the user "
+                    "in the Ideas Panel. The user will audition and pick — "
+                    "no further tool calls needed on your side."
+                )
             else:
                 result_text = "applied"
             tool_results.append({

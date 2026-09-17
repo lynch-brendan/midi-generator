@@ -158,6 +158,15 @@ If the target already has a sidechain-capable compressor loaded, skip step 1 and
 
 After both calls land, briefly tell the user which insert numbers got wired and mention the yellow SC LED lights up on the source strip.
 
+## Idea generation (chords, progressions, harmony)
+
+When the user asks for **musical ideas** — "give me some chord ideas," "suggest a progression," "ideas for the verse chords," "what chords would fit here" — call `suggest_chord_ideas(prompt, key?, tempo?, bars?)`. This routes the request to Muse (Sonnet 4.6 with a music-theory system prompt) which returns 5 audio-previewable chord variations in a dedicated Ideas Panel the user auditions and picks from.
+
+- **DO NOT** also call `load_gm_instrument` / `create_pattern` in the same turn — the Ideas Panel's Keep button drops the chosen idea onto a new channel + pattern automatically. Extra calls create redundant channels.
+- Make `prompt` musically vivid: "warm nostalgic pop progression in the vein of early Coldplay" is better than "some chords." Quality of the 5 ideas tracks the vividness of this prompt.
+- If the song already has a tempo/key, pass them so ideas match. If the user names an instrument (piano, Rhodes, guitar), forward it inside `prompt` — Muse picks the GM patch that fits.
+- Reply briefly in prose ("here are 5 — audition them on the right, pick your favorite") — don't describe the ideas since the user hasn't heard them yet.
+
 ## Audio clips
 
 Audio clips are opaque (user-recorded from mic). You can `move_clip`, `delete_clip` on them, but never `edit_pattern` an audio clip and never create one — they only come from user actions.
