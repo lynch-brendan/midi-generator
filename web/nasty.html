@@ -3545,6 +3545,10 @@ const ideasState = {
   weStartedPlayback: false,
   priorTransportMode: null,
   priorCurrentPatternId: null,
+  // Auto-cycle: after each idea's pattern completes one loop, advance to
+  // the next idea (wrap after the last). Cancelled on manual click / new
+  // audition / panel close so we don't fire against a stale audition.
+  autoCycleTimeoutId: null,
 };
 
 function openIdeasPanel(prompt, kind) {
@@ -3608,6 +3612,10 @@ function openEffectIdeasPanel(targetChannelId, pluginIds) {
 
 function closeIdeasPanel() {
   document.getElementById('ideas-panel').classList.add('hidden');
+  if (ideasState.autoCycleTimeoutId) {
+    clearTimeout(ideasState.autoCycleTimeoutId);
+    ideasState.autoCycleTimeoutId = null;
+  }
   if (ideasState.mode === 'midi') {
     teardownPreviewIfNotKept();
   } else if (ideasState.mode === 'effects') {
@@ -3756,6 +3764,70 @@ async function auditionIdea(idx) {
   document.querySelectorAll('.idea-row').forEach((el, i) => {
     el.classList.toggle('playing', i === idx);
     el.classList.toggle('selected', i === idx);
+  });
+
+  // Auto-cycle — schedule advance to the next idea after this one completes
+  // one full loop. Cancels any prior scheduled advance so back-to-back
+  // manual clicks don't chain.
+  if (ideasState.autoCycleTimeoutId) clearTimeout(ideasState.autoCycleTimeoutId);
+  if (ideasState.ideas.length > 1) {
+    const beats = (idea.bars || 4) * 4;
+    const ms = Math.max(500, (beats * 60000) / (song.bpm || 120));
+    ideasState.autoCycleTimeoutId = setTimeout(() => {
+      if (ideasState.mode !== 'midi' || ideasState.preview.kept) return;
+      const next = (idx + 1) % ideasState.ideas.length;
+      auditionIdea(next);
+    }, ms);
+  }
+}
+
+// "More like this" — reseed the panel with the picked idea as the
+// generation seed. Muse's stream_variations understands seed_variation
+// and will produce variations that stay close to the seed's harmony /
+// register / feel (or, for a different `kind`, complementary parts that
+// fit the seed).
+//
+// The current on-screen ideas that the user hasn't Kept are lost — Keep
+// anything worth saving BEFORE hitting this. Kept ideas are already
+// permanent on the arrangement + channel rack so they survive the wipe.
+async function moreLikeIdea(idx) {
+  const idea = ideasState.ideas[idx];
+  if (!idea) return;
+  const ok = window.confirm(
+    'Generate more ideas like this one?\n\n' +
+    'The current panel ideas will be erased. Keep the ones you want first, then continue.'
+  );
+  if (!ok) return;
+
+  if (ideasState.autoCycleTimeoutId) {
+    clearTimeout(ideasState.autoCycleTimeoutId);
+    ideasState.autoCycleTimeoutId = null;
+  }
+
+  // Snapshot the seed BEFORE wiping — muse cares about instrument / notes
+  // / key / tempo / bars from the seed variation to bias the batch.
+  const seed = {
+    instrument: idea.instrument,
+    gm_patch:   idea.gm_patch,
+    key:        idea.key,
+    tempo:      idea.tempo,
+    bars:       idea.bars,
+    notes:      idea.notes,
+    name:       idea.name,
+    character:  idea.character,
+  };
+
+  // Wipe the current batch. Preview channel/pattern stay in place —
+  // they'll be repopulated with the first new idea when it streams in.
+  ideasState.ideas = [];
+  ideasState.selectedIdx = -1;
+  ideasState.loading = true;
+  renderIdeasPanel();
+
+  fetchMidiIdeas({
+    prompt: ideasState.prompt || '',
+    kind:   ideasState.kind || 'chords',
+    seed,
   });
 }
 
@@ -3989,12 +4061,18 @@ function renderIdeasPanel() {
     playBtn.type = 'button';
     playBtn.textContent = '▶ Play';
     playBtn.addEventListener('click', (e) => { e.stopPropagation(); auditionIdea(i); });
+    const moreBtn = document.createElement('button');
+    moreBtn.type = 'button';
+    moreBtn.textContent = 'More like';
+    moreBtn.title = 'Generate more ideas seeded on this one';
+    moreBtn.addEventListener('click', (e) => { e.stopPropagation(); moreLikeIdea(i); });
     const keepBtn = document.createElement('button');
     keepBtn.type = 'button';
     keepBtn.className = 'ir-keep';
     keepBtn.textContent = 'Keep';
     keepBtn.addEventListener('click', (e) => { e.stopPropagation(); keepIdea(i); });
     actions.appendChild(playBtn);
+    actions.appendChild(moreBtn);
     actions.appendChild(keepBtn);
     row.appendChild(title);
     if (parts.length) row.appendChild(meta);
@@ -4025,6 +4103,7 @@ async function fetchMidiIdeas(args) {
         key:    args.key || null,
         tempo:  args.tempo || null,
         bars:   args.bars || null,
+        seed:   args.seed || null,
       }),
     });
     if (!resp.ok || !resp.body) {

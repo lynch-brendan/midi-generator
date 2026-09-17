@@ -2128,11 +2128,17 @@ class NastyMidiIdeasRequest(BaseModel):
     #   - 'melody' : lead melodic line
     #   - 'lead'   : lead synth line
     #   - 'pad'    : sustained pad / texture
+    #
+    # `seed` — optional previous idea (or Kept pattern) whose notes bias
+    # this batch toward variations of / complements to it. Set by the
+    # "More like this" button in the Ideas Panel. Muse's stream_variations
+    # already understands seed_variation; we pass this through unchanged.
     prompt: str
     kind: Optional[str] = "chords"
     key: Optional[str] = None
     tempo: Optional[int] = None
     bars: Optional[int] = None
+    seed: Optional[dict] = None
 
 
 # Haiku 4.5 for chord ideation. ~3-4× faster than Sonnet 4.6, ~5× cheaper.
@@ -2204,6 +2210,7 @@ def nasty_midi_ideas(req: NastyMidiIdeasRequest):
                 chord_prompt,
                 lock_key=req.key or None,
                 lock_tempo=int(req.tempo) if req.tempo else None,
+                seed_variation=req.seed or None,
                 model=_IDEAS_MODEL,
                 count=3,
             ):
