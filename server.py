@@ -2080,33 +2080,53 @@ _NASTY_TOOLS = [
     {
         "name": "try_effects",
         "description": (
-            "Open the Ideas Panel with 5 effect-plugin options for the user "
-            "to A/B on a channel or mixer bus. Use this for exploratory "
-            "effect asks: 'give me some reverb options', 'try 5 delays on "
-            "the vocal', 'what compressors would work on this bass', "
-            "'suggest some saturators'. YOU pick the 5 plugin_ids from the "
-            "Installed plugins manifest — MUST be `isInstrument: false` "
-            "plugins, ideally spanning the vibe range the user asked for "
-            "(e.g. for reverbs: one plate, one hall, one shimmer, one "
-            "spring, one weird). The Ideas Panel loads them one at a time "
-            "onto the target so the user hears each in-DAW alongside the "
-            "song; Keep leaves the picked one loaded, Close removes it and "
-            "restores the prior state. `target_id` is the channel id (the "
-            "client will route to the channel's mixer bus automatically "
-            "the same way `add_plugin_effect` does)."
+            "Open the Ideas Panel with a few effect-plugin options for the "
+            "user to A/B on a channel or mixer bus. Use for exploratory "
+            "effect asks: 'give me some reverb options,' 'try a few delays "
+            "on the vocal,' 'what compressors would work here,' 'suggest "
+            "some saturators.' YOU pick the plugins from the Installed "
+            "plugins manifest — MUST be `isInstrument: false`. For each, "
+            "pick a `preset_name` from that plugin's `presets` array in "
+            "the manifest that matches the vibe the user asked for — that "
+            "way each audition lands at a *musical* setting instead of the "
+            "plugin's raw default (which is often dry / subtle / silent). "
+            "Span the vibe range across your picks (for reverbs: one "
+            "plate, one hall, one shimmer, one spring, one weird — each "
+            "with a matching preset). The Ideas Panel loads them one at a "
+            "time onto the target so the user hears each in-DAW alongside "
+            "the song; Keep leaves the picked one loaded, Close removes it "
+            "and restores the prior state. `target_id` is the channel id "
+            "(the client resolves to the channel's mixer bus the same way "
+            "`add_plugin_effect` does)."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "target_id": {"type": "string"},
-                "plugin_ids": {
+                "plugins": {
                     "type": "array",
-                    "items": {"type": "string"},
+                    "description": (
+                        "Array of {plugin_id, preset_name?} objects. Pick "
+                        "3-5 effect plugins spanning the vibe range. Each "
+                        "MUST reference an `isInstrument: false` plugin "
+                        "from the manifest; `preset_name` (optional but "
+                        "STRONGLY encouraged) should be a real entry from "
+                        "that plugin's `presets` array — omit only if the "
+                        "plugin has no presets exposed."
+                    ),
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "plugin_id":   {"type": "string"},
+                            "preset_name": {"type": "string"},
+                        },
+                        "required": ["plugin_id"],
+                    },
                     "minItems": 2,
                     "maxItems": 8,
                 },
             },
-            "required": ["target_id", "plugin_ids"],
+            "required": ["target_id", "plugins"],
         },
     },
 ]

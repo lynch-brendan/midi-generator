@@ -3574,9 +3574,13 @@ function openIdeasPanel(prompt, kind) {
 }
 
 // Effects-mode entry point. Called from applyToolCalls when Claude fires
-// `try_effects`. Populates the panel with 5 plugin options for the user to
+// `try_effects`. Populates the panel with N plugin options for the user to
 // A/B on the target channel/bus.
-function openEffectIdeasPanel(targetChannelId, pluginIds) {
+//
+// `plugins` shape: array of {plugin_id, preset_name?}. Claude picks the
+// preset per plugin so each audition lands at a musical setting instead
+// of the plugin's raw default (which is often dry/silent for reverbs).
+function openEffectIdeasPanel(targetChannelId, plugins) {
   ideasState.mode = 'effects';
   ideasState.prompt = '';
   ideasState.selectedIdx = -1;
@@ -3596,15 +3600,25 @@ function openEffectIdeasPanel(targetChannelId, pluginIds) {
     targetLabel = bus ? `${ch.name} → Insert ${busNum}` : ch.name;
   }
   // Look up plugin metadata (name, category) from the manifest so the panel
-  // renders something readable. Unknown ids get a stub row — no silent drop.
+  // renders something readable. Filter out instrument plugins — Claude
+  // shouldn't pick them for try_effects but a synth loaded in an effect
+  // slot passes signal through weirdly and the user hears no meaningful
+  // change.
   const options = [];
-  for (const pid of (pluginIds || [])) {
-    const plug = (enginePluginsList || []).find(p => p.id === pid);
+  for (const p of (plugins || [])) {
+    const pid = p && p.plugin_id;
+    if (!pid) continue;
+    const plug = (enginePluginsList || []).find(pp => pp.id === pid);
+    const isEffect = plug ? !plug.isInstrument : true;
     options.push({
-      pluginId: pid,
-      name: plug ? plug.name : pid,
-      category: plug ? (plug.category || plug.format || '') : 'not installed',
-      installed: !!plug,
+      pluginId:    pid,
+      presetName:  (p.preset_name || '').trim(),
+      name:        plug ? plug.name : pid,
+      category:    plug ? (plug.category || plug.format || '') : 'not installed',
+      installed:   !!plug,
+      isEffect,
+      skipReason:  !plug ? 'not installed'
+                  : (plug.isInstrument ? 'instrument (not an effect)' : ''),
     });
   }
   ideasState.effects = {
@@ -3615,7 +3629,7 @@ function openEffectIdeasPanel(targetChannelId, pluginIds) {
   };
   document.getElementById('ideas-panel').classList.remove('hidden');
   document.getElementById('ip-prompt-echo').textContent =
-    `effects for ${targetLabel} — click to audition, Keep the winner`;
+    `effects for ${targetLabel} — click to try, Keep the winner`;
   renderIdeasPanel();
 }
 
@@ -3960,8 +3974,8 @@ function teardownPreviewIfNotKept() {
 function auditionEffectIdea(idx) {
   const opt = ideasState.effects.options[idx];
   if (!opt) return;
-  if (!opt.installed) {
-    console.warn('[ideas] plugin not installed:', opt.pluginId);
+  if (!opt.installed || !opt.isEffect) {
+    console.warn('[ideas] skipping', opt.pluginId, '—', opt.skipReason);
     return;
   }
   // Remove the prior audition effect (if any) — keeps the owner's chain
@@ -3970,17 +3984,14 @@ function auditionEffectIdea(idx) {
     removeEffectFromChannel(ideasState.effects.targetOwnerId, ideasState.effects.currentSlotId);
     ideasState.effects.currentSlotId = null;
   }
-  // Grab the plugin from the manifest by id and load it. addEffectToChannel
-  // is the same path add_plugin_effect uses — engine load, mixer strip
-  // refresh, auto-open UI.
   const plug = (enginePluginsList || []).find(p => p.id === opt.pluginId);
   if (!plug) return;
   const owner = findEffectOwner(ideasState.effects.targetOwnerId);
   const beforeSlotIds = new Set((owner && owner.effects || []).filter(e => e && e.type === 'plugin').map(e => e.slotId));
-  addEffectToChannel(ideasState.effects.targetOwnerId, plug, null);
-  // addEffectToChannel invents the slotId internally — recover it by diffing
-  // the effects list. Cleaner than plumbing the id back through a return
-  // value change (which would ripple through every existing caller).
+  // Load with the preset Claude picked — falls through to the plugin's
+  // default program if the name doesn't fuzzy-match (still audible for
+  // most effects, just not the intended vibe).
+  addEffectToChannel(ideasState.effects.targetOwnerId, plug, null, opt.presetName || null);
   const afterSlots = (findEffectOwner(ideasState.effects.targetOwnerId) || {}).effects || [];
   const newSlot = afterSlots.find(e => e && e.type === 'plugin' && !beforeSlotIds.has(e.slotId));
   if (newSlot) ideasState.effects.currentSlotId = newSlot.slotId;
@@ -4026,13 +4037,13 @@ function renderIdeasPanel() {
     opts.forEach((opt, i) => {
       const row = document.createElement('div');
       row.className = 'idea-row';
-      if (!opt.installed) row.style.opacity = '0.5';
+      if (!opt.installed || !opt.isEffect) row.style.opacity = '0.5';
       const title = document.createElement('div');
       title.className = 'ir-title';
-      title.textContent = opt.name;
+      title.textContent = opt.name + (opt.presetName ? ` — ${opt.presetName}` : '');
       const meta = document.createElement('div');
       meta.className = 'ir-meta';
-      meta.textContent = opt.category || '';
+      meta.textContent = opt.skipReason || opt.category || '';
       const actions = document.createElement('div');
       actions.className = 'ir-actions';
       const tryBtn = document.createElement('button');
@@ -4215,11 +4226,12 @@ async function applyToolCalls(calls) {
         fetchMidiIdeas(input);
         summaries.push(`${kind} ideas → panel`);
       } else if (name === 'try_effects') {
-        // Effects mode of the ideas panel — Claude picked N plugin_ids
-        // from the manifest; the client A/Bs them on the target owner in
-        // place, one loaded at a time.
-        openEffectIdeasPanel(input.target_id, input.plugin_ids || []);
-        summaries.push(`${(input.plugin_ids || []).length} effects → panel (${input.target_id})`);
+        // Effects mode of the ideas panel — Claude picked N plugin/preset
+        // pairs from the manifest; the client A/Bs them on the target
+        // owner in place, one loaded at a time.
+        const plugins = input.plugins || (input.plugin_ids || []).map(id => ({ plugin_id: id }));
+        openEffectIdeasPanel(input.target_id, plugins);
+        summaries.push(`${plugins.length} effects → panel (${input.target_id})`);
       } else if (name === 'set_tempo') {
         song.bpm = input.bpm; summaries.push(`tempo → ${input.bpm} BPM`);
       } else if (name === 'create_channel') {

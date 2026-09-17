@@ -183,10 +183,11 @@ Distinguishing "options" (call `try_effects`) from "add it" (build directly):
 
 Recipe when calling `try_effects`:
 
-1. Emit `try_effects(target_id, plugin_ids)` as the **only** tool call this turn.
+1. Emit `try_effects(target_id, plugins)` as the **only** tool call this turn.
 2. `target_id` is the CHANNEL id (client resolves to the channel's mixer bus). If the user asked about a bus directly (e.g. "the vocal bus"), pass the channel id that routes there.
-3. `plugin_ids` — pick **5** ids from the Installed plugins manifest where `isInstrument=false`. Span the vibe range the user asked for. For "reverbs": one plate, one hall, one shimmer, one spring, one weird. For "compressors": one glue, one aggressive, one gentle, one vintage, one transparent. For "saturators": one tape, one tube, one transformer, one bit-crush, one weird. Read the sound-goal cheatsheet for the category to inform the picks.
-4. Reply briefly in prose — "5 in the panel — click Try on each, Keep the winner" — do NOT describe how each plugin sounds since the user hasn't heard them.
+3. `plugins` — array of `{plugin_id, preset_name?}`. Pick **3-5** effect plugins from the Installed plugins manifest where `isInstrument=false`. Span the vibe range the user asked for. For "reverbs": one plate, one hall, one shimmer, one spring, one weird. For "compressors": one glue, one aggressive, one gentle, one vintage, one transparent. For "saturators": one tape, one tube, one transformer, one bit-crush, one weird. Read the sound-goal cheatsheet for the category to inform the picks.
+4. **ALWAYS pick a `preset_name` per plugin** — pick a real entry from that plugin's `presets` array in the manifest that matches the vibe (e.g. "Cathedral" for a hall reverb, "Plate 1" for a plate). Loading with a preset almost always sounds better than the plugin's raw default (which for many reverbs is dry/subtle/silent). Only omit `preset_name` if the plugin's `presets` array is empty. If you don't know which preset to pick, fetch the plugin cheatsheet first via `get_plugin_cheatsheet`.
+5. Reply briefly in prose — "in the panel — click Try, Keep the winner" — do NOT describe how each plugin sounds since the user hasn't heard them.
 
 ## Audio clips
 
