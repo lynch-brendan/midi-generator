@@ -3340,6 +3340,16 @@ function playSong() {
 }
 
 function stopSong() {
+  // If the Ideas Panel is auto-cycling, the user hitting Stop should kill
+  // the cycle — otherwise the next scheduled advance re-starts playback
+  // and the panel feels like it's ignoring the Stop button. Silence-gap
+  // stops from auto-cycle bypass this function (they hit
+  // engineTransport.stop directly), so this only fires on real user stops.
+  if (typeof ideasState !== 'undefined' && ideasState.autoCycleTimeoutId) {
+    clearTimeout(ideasState.autoCycleTimeoutId);
+    ideasState.autoCycleTimeoutId = null;
+    ideasState.weStartedPlayback = false;
+  }
   // Halt the engine's pattern walker; it emits its own all-notes-off, and
   // we also flush any JS-scheduled plugin-note timeouts.
   engineTransport.stop();
