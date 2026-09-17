@@ -122,7 +122,7 @@ APP_URL = os.environ.get("APP_URL", "http://localhost:8000")
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from core.claude_client import stream_variations, stream_thinking
+from core.claude_client import stream_variations, stream_thinking, generate_variations
 from core.midi_writer import write_midi, write_drum_stems
 from core.audio_renderer import render_midi_to_wav
 from core.expression import apply_expression
