@@ -2211,7 +2211,7 @@
         <textarea id="chat-input" placeholder="Tell Nasty what to make..."></textarea>
         <div id="send-row">
           <button id="send-btn">Send</button>
-          <button id="voice-btn" title="Voice mode — talk freely, say 'pineapple' when you're done to send">🎤 voice</button>
+          <button id="voice-btn" title="Voice mode — say 'pineapple' to start talking, again to send">🎤 voice</button>
           <select id="voice-mic" title="Voice input device" style="display:none;"></select>
           <label class="autoplay-toggle">
             <input type="checkbox" id="autoplay" checked /> auto-play after
@@ -7765,6 +7765,8 @@ async function sendMessage(overrideText, opts) {
         ideas_panel: (ideasState && ideasState.ideas && ideasState.ideas.length) ? {
           kind: ideasState.kind,
           mode: ideasState.mode,
+          currently_playing_index: (ideasState.selectedIdx != null && ideasState.selectedIdx >= 0)
+            ? ideasState.selectedIdx + 1 : null,
           ideas: ideasState.ideas.map((idea, idx) => ({
             index: idx + 1,
             name: idea.name || (`Option ${idx + 1}`),
@@ -8311,7 +8313,8 @@ const voiceInput = (() => {
   const MIN_UTTERANCE_MS = 200;     // ignore blips shorter than this
 
   let enabled = false;
-  let messageBuffer = '';           // accumulated transcript since the last "pineapple" send
+  let listening = false;            // pineapple toggles this: false = paused, true = capturing to buffer
+  let messageBuffer = '';           // accumulated transcript since the last "pineapple" toggle-on
   let stream = null;
   let audioCtx = null;
   let analyser = null;
@@ -8361,34 +8364,53 @@ const voiceInput = (() => {
   function sendBuffer() {
     const toSend = messageBuffer.trim();
     messageBuffer = '';
-    if (!toSend) return;
+    if (!toSend) {
+      setStatus("paused — say 'pineapple' to talk", 'listening');
+      return;
+    }
     setStatus("sending: " + toSend.slice(0, 80), 'listening');
-    beep('ack');
+    beep('done');
     sendMessage(toSend, { fromVoice: true });
     setTimeout(() => {
-      if (enabled && !messageBuffer) {
-        setStatus("keep talking — say 'pineapple' to send", 'listening');
+      if (enabled && !listening && !messageBuffer) {
+        setStatus("paused — say 'pineapple' to talk", 'listening');
       }
     }, 2500);
   }
 
-  // Ingest a Whisper chunk. Split on any "pineapple" occurrences — each
-  // pineapple is a SEND boundary. Text before it flushes the buffer;
-  // text after it starts a new buffer.
+  // Ingest a Whisper chunk. Pineapple is a TOGGLE:
+  //   listening=false → pineapple flips it ON (start capturing to buffer)
+  //   listening=true  → pineapple flips it OFF (send buffer, back to paused)
+  // Any text while paused is discarded (ambient noise gate).
   function accumulate(text) {
     let remaining = text;
     while (remaining && remaining.trim()) {
       const hit = findWake(remaining);
       if (!hit) {
-        messageBuffer = (messageBuffer ? messageBuffer + ' ' : '') + remaining.trim();
+        if (listening) {
+          messageBuffer = (messageBuffer ? messageBuffer + ' ' : '') + remaining.trim();
+        }
         break;
       }
       const before = remaining.slice(0, hit.idx).trim();
-      if (before) messageBuffer = (messageBuffer ? messageBuffer + ' ' : '') + before;
-      sendBuffer();
+      if (listening && before) {
+        messageBuffer = (messageBuffer ? messageBuffer + ' ' : '') + before;
+      }
+      if (listening) {
+        // Second pineapple: SEND + pause
+        sendBuffer();
+        listening = false;
+        setBtn('on');
+      } else {
+        // First pineapple: START listening
+        listening = true;
+        beep('ack');
+        setBtn('armed');
+        setStatus("listening — say 'pineapple' to send", 'armed');
+      }
       remaining = remaining.slice(hit.idx + hit.len).replace(/^[,.\s!?]+/, '');
     }
-    if (messageBuffer && enabled) {
+    if (listening && messageBuffer && enabled) {
       const tail = messageBuffer.length > 80 ? '…' + messageBuffer.slice(-80) : messageBuffer;
       setStatus("buffering: " + tail, 'armed');
     }
@@ -8582,6 +8604,7 @@ const voiceInput = (() => {
 
   function stop() {
     enabled = false;
+    listening = false;
     messageBuffer = '';
     teardownMic();
     setBtn(null);
@@ -8598,7 +8621,7 @@ const voiceInput = (() => {
     teardownMic();
     try {
       await initMic();
-      setStatus("keep talking — say 'pineapple' to send", 'listening');
+      setStatus("paused — say 'pineapple' to talk", 'listening');
     } catch (e) {
       setStatus("mic error: " + (e.message || e), '');
       console.error('[voice] switch failed', e);
@@ -8678,7 +8701,7 @@ const voiceInput = (() => {
     setBtn('on');
     const ok = await start();
     if (!ok) { enabled = false; setBtn(null); return; }
-    setStatus("keep talking — say 'pineapple' to send", 'listening');
+    setStatus("paused — say 'pineapple' to talk", 'listening');
   }
 
   return { toggle, stop, beep, switchMic };

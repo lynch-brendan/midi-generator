@@ -2406,16 +2406,21 @@ def nasty_chat(req: NastyChatRequest):
         items = req.ideas_panel.get("ideas") or []
         if items:
             kind = req.ideas_panel.get("kind", "ideas")
-            lines = "\n".join(
-                f"  {it.get('index')}. {it.get('name', '?')}"
-                + (" (already kept)" if it.get("kept") else "")
-                for it in items
-            )
+            currently = req.ideas_panel.get("currently_playing_index")
+            lines = []
+            for it in items:
+                marker = " ← CURRENTLY PLAYING" if it.get("index") == currently else ""
+                kept = " (already kept)" if it.get("kept") else ""
+                lines.append(f"  {it.get('index')}. {it.get('name', '?')}{marker}{kept}")
             ideas_block = (
                 f"\n⚠️ Ideas Panel is OPEN ({kind}). On-screen options:\n"
-                f"{lines}\n"
-                f"If the user says 'keep the X one' / 'I like number 2' — call keep_idea. "
-                f"If they say 'close it' / 'never mind' / ask something unrelated — call close_ideas_panel first.\n\n"
+                + "\n".join(lines)
+                + "\n\n"
+                + "RULES while the panel is open:\n"
+                + "- 'keep this' / 'I like this' / 'keep it' → keep_idea with the CURRENTLY PLAYING index. Do NOT generate new ideas.\n"
+                + "- 'keep the X one' / 'I like number 2' → keep_idea by name or index.\n"
+                + "- 'keep this and loop it 16 bars' → keep_idea (current) + close_ideas_panel + repeat_clip to fill 16 bars.\n"
+                + "- ANY request that isn't about picking (e.g. 'loop this 16 bars', 'add drums', 'stop', 'play in song mode') → close_ideas_panel FIRST, then do the request. Never re-fire suggest_midi_ideas while the panel is up unless the user explicitly asks for new options.\n\n"
             )
 
     # Match community plugin-knowledge entries against the user's installed
