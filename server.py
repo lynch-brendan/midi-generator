@@ -1635,6 +1635,34 @@ _NASTY_TOOLS = [
         },
     },
     {
+        "name": "play",
+        "description": (
+            "Start transport playback (equivalent to hitting the Play button). "
+            "Plays in whatever mode is currently active (PAT loops the current "
+            "pattern; SONG plays the whole arrangement). Optionally set the "
+            "mode first via set_transport_mode."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "stop",
+        "description": "Stop transport playback (equivalent to hitting the Stop button).",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "set_transport_mode",
+        "description": (
+            "Switch between pattern-loop mode ('pat' — loops the current "
+            "pattern) and song mode ('song' — plays the full arrangement "
+            "in the playlist)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"mode": {"type": "string", "enum": ["pat", "song"]}},
+            "required": ["mode"],
+        },
+    },
+    {
         "name": "create_channel",
         "description": (
             "Create a new channel in the Channel Rack. A channel is one sound "

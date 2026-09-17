@@ -629,6 +629,47 @@
     font-weight: 600; font-size: 11px;
   }
   #send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  #voice-btn {
+    background: #1a1a1a; color: var(--dim); border: 1px solid var(--line);
+    padding: 4px 9px; border-radius: 2px; cursor: pointer;
+    font-weight: 600; font-size: 11px;
+  }
+  #voice-btn.on {
+    background: var(--accent); color: white; border-color: #111;
+    box-shadow: 0 0 6px var(--accent);
+  }
+  #voice-btn.armed { background: #2a1a2a; color: var(--accent); border-color: var(--accent); }
+  #voice-status {
+    font-size: 10px; color: var(--dim); padding: 0 2px 4px; min-height: 12px;
+    font-family: ui-monospace, Menlo, monospace;
+  }
+  #voice-status.listening { color: var(--accent); }
+  #voice-status.armed { color: var(--record); }
+  #voice-mic {
+    background: #1a1a1a; color: var(--text); border: 1px solid var(--line);
+    padding: 3px 6px; border-radius: 2px; font-size: 10px; max-width: 160px;
+    font-family: inherit; cursor: pointer;
+  }
+  #voice-consent {
+    position: fixed; inset: 0; z-index: 9999;
+    background: rgba(0,0,0,0.65); display: none;
+    align-items: center; justify-content: center;
+  }
+  #voice-consent.show { display: flex; }
+  #voice-consent .vc-panel {
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 4px; padding: 20px 22px; max-width: 380px;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+  }
+  #voice-consent h3 { margin: 0 0 10px; font-size: 14px; color: var(--text); }
+  #voice-consent p { font-size: 12px; color: var(--dim); line-height: 1.5; margin: 0 0 16px; }
+  #voice-consent .vc-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  #voice-consent button {
+    padding: 6px 14px; border-radius: 2px; font-size: 11px; font-weight: 600;
+    border: 1px solid #111; cursor: pointer;
+  }
+  #voice-consent .vc-yes { background: linear-gradient(var(--accent), #d94276); color: white; }
+  #voice-consent .vc-no  { background: #1a1a1a; color: var(--dim); border-color: var(--line); }
   .autoplay-toggle { color: var(--dim); font-size: 11px; margin-left: auto; }
   .thinking { color: var(--dim); font-style: italic; font-size: 11px; }
 
@@ -2166,9 +2207,12 @@
       </div>
       <div id="chat-messages"></div>
       <div id="chat-input-wrap">
+        <div id="voice-status"></div>
         <textarea id="chat-input" placeholder="Tell Nasty what to make..."></textarea>
         <div id="send-row">
           <button id="send-btn">Send</button>
+          <button id="voice-btn" title="Voice mode — say 'pineapple' to wake Nasty up">🎤 voice</button>
+          <select id="voice-mic" title="Voice input device" style="display:none;"></select>
           <label class="autoplay-toggle">
             <input type="checkbox" id="autoplay" checked /> auto-play after
           </label>
@@ -2176,6 +2220,18 @@
       </div>
     </div>
 
+  </div>
+</div>
+
+<!-- Voice consent modal — shown once, before we download the ~75MB Whisper model. -->
+<div id="voice-consent">
+  <div class="vc-panel">
+    <h3>Enable voice?</h3>
+    <p>Free. 75&nbsp;MB one-time download.</p>
+    <div class="vc-actions">
+      <button class="vc-no"  id="vc-cancel">No</button>
+      <button class="vc-yes" id="vc-accept">Yes</button>
+    </div>
   </div>
 </div>
 
@@ -4269,6 +4325,28 @@ async function applyToolCalls(calls) {
         summaries.push(`${plugins.length} effects → panel (${input.target_id})`);
       } else if (name === 'set_tempo') {
         song.bpm = input.bpm; summaries.push(`tempo → ${input.bpm} BPM`);
+      } else if (name === 'play') {
+        // Same path as clicking the Play button — includes engine mode set,
+        // pattern/arrangement push, seek honoring, metronome, animation.
+        playSong();
+        summaries.push(`▶ play (${song.transportMode})`);
+      } else if (name === 'stop') {
+        stopSong();
+        summaries.push('■ stop');
+      } else if (name === 'set_transport_mode') {
+        const mode = input.mode === 'song' ? 'song' : 'pat';
+        if (song.transportMode !== mode) {
+          stopSong();
+          song.transportMode = mode;
+          if (engineTransport.available()) engineTransport.setMode(mode);
+          document.querySelectorAll('.patsong .ps-btn').forEach(b => {
+            b.classList.toggle('active', b.dataset.mode === mode);
+          });
+          persist();
+          summaries.push(`mode → ${mode.toUpperCase()}`);
+        } else {
+          summaries.push(`mode already ${mode.toUpperCase()}`);
+        }
       } else if (name === 'create_channel') {
         if (!song.channels.find(c => c.id === input.id)) {
           song.channels.push({
@@ -7550,11 +7628,12 @@ function addChatMessage(role, text, tools) {
   return msg;
 }
 
-async function sendMessage() {
+async function sendMessage(overrideText, opts) {
   const input = document.getElementById('chat-input');
-  const text = input.value.trim();
+  const text = (overrideText != null ? overrideText : input.value).trim();
   if (!text) return;
-  input.value = '';
+  if (overrideText == null) input.value = '';
+  const fromVoice = !!(opts && opts.fromVoice);
   const sendBtn = document.getElementById('send-btn');
   sendBtn.disabled = true;
   addChatMessage('user', text);
@@ -7600,9 +7679,11 @@ async function sendMessage() {
       await waitForEngineDrained();
       playSong();
     }
+    if (fromVoice) voiceInput.beep('done');
   } catch (e) {
     thinking.textContent = 'error: ' + e.message;
     thinking.classList.remove('thinking');
+    if (fromVoice) voiceInput.beep('no');
   } finally { sendBtn.disabled = false; }
 }
 
@@ -8081,13 +8162,405 @@ document.getElementById('pr-active-channel').addEventListener('change', (e) => {
   pianoRollActiveChannelId = e.target.value;
   renderPianoRoll();
 });
-document.getElementById('send-btn').addEventListener('click', sendMessage);
+document.getElementById('send-btn').addEventListener('click', () => sendMessage());
 document.getElementById('chat-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
     e.preventDefault();
     sendMessage();
   }
 });
+
+// ============================================================
+// Voice input — wake-word ("pineapple") gated speech-to-chat
+// ============================================================
+// Runs Whisper (tiny.en) locally in-browser via transformers.js WASM.
+// Zero cloud, zero cost, ~75MB one-time model download cached in
+// IndexedDB. Mic → RMS-based voice-activity detection → MediaRecorder
+// captures each utterance between silences → Whisper transcribes on
+// device → we scan for the wake phrase and route the command.
+const voiceInput = (() => {
+  const WAKE = 'pineapple';         // idle-mode wake word — single distinctive token
+  const CANCEL_MS = 15000;          // how long to wait after a bare wake word (kept extended while you're talking)
+  const SPEECH_THRESH = 7;          // 0-127 amplitude; lower = more sensitive to quiet speech
+  const SILENCE_MS = 900;           // silence before we consider the utterance done
+  const MIN_UTTERANCE_MS = 200;     // ignore blips shorter than this
+
+  let enabled = false;
+  let armed = false;                // wake word heard, next utterance is the command
+  let armedTimer = null;
+  let stream = null;
+  let audioCtx = null;
+  let analyser = null;
+  let vadRaf = null;
+  let recorder = null;
+  let recChunks = [];
+  let recStart = 0;
+  let recording = false;
+  let silenceStart = null;
+  let transcriber = null;
+  let modelLoading = false;
+
+  const btn = () => document.getElementById('voice-btn');
+  const statusEl = () => document.getElementById('voice-status');
+
+  function setStatus(text, cls) {
+    const s = statusEl();
+    if (!s) return;
+    s.textContent = text || '';
+    s.classList.remove('listening', 'armed');
+    if (cls) s.classList.add(cls);
+  }
+
+  function setBtn(state) {
+    const b = btn();
+    if (!b) return;
+    b.classList.remove('on', 'armed');
+    if (state === 'on') b.classList.add('on');
+    if (state === 'armed') b.classList.add('armed');
+  }
+
+  // Whisper tiny.en isn't perfect — "pineapple" comes back as "pine apple",
+  // "pineapples", "pineapp", etc. Match any of these as the wake word.
+  const WAKE_VARIANTS = [
+    'pineapple', 'pine apple', 'pineapples', 'pine apples',
+    'pineapp', 'pine app', 'pineappl'
+  ];
+  function extractCommand(heard) {
+    const h = heard.toLowerCase();
+    let bestIdx = -1, bestLen = 0;
+    for (const w of WAKE_VARIANTS) {
+      const idx = h.indexOf(w);
+      if (idx !== -1 && (bestIdx === -1 || idx < bestIdx || w.length > bestLen)) {
+        bestIdx = idx;
+        bestLen = w.length;
+      }
+    }
+    if (bestIdx === -1) return null;
+    return heard.slice(bestIdx + bestLen).replace(/^[,.\s!?]+/, '').trim();
+  }
+
+  function refreshArmedTimer() {
+    clearTimeout(armedTimer);
+    armedTimer = setTimeout(() => {
+      armed = false;
+      setBtn('on');
+      setStatus("say '" + WAKE + "' to talk", 'listening');
+    }, CANCEL_MS);
+  }
+
+  function armForCommand() {
+    armed = true;
+    setBtn('armed');
+    setStatus("listening for command…", 'armed');
+    refreshArmedTimer();
+  }
+
+  function fireCommand(text) {
+    clearTimeout(armedTimer);
+    armed = false;
+    setBtn('on');
+    setStatus("heard: " + text, 'listening');
+    beep('ack');
+    sendMessage(text, { fromVoice: true });
+    setTimeout(() => {
+      if (enabled) setStatus("say '" + WAKE + "' to talk", 'listening');
+    }, 2500);
+  }
+
+  function handleTranscript(finalText) {
+    if (!enabled) return;
+    if (armed) {
+      const cmd = finalText.trim();
+      if (cmd) fireCommand(cmd);
+      return;
+    }
+    const cmd = extractCommand(finalText);
+    if (cmd === null) return;
+    if (cmd) fireCommand(cmd);
+    else armForCommand();
+  }
+
+  async function loadModel() {
+    if (transcriber) return true;
+    if (modelLoading) return false;
+    modelLoading = true;
+    try {
+      setStatus("downloading voice model (~75mb, one time)…", '');
+      const mod = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2');
+      const { pipeline, env } = mod;
+      env.allowLocalModels = false;
+      env.useBrowserCache = true;
+      transcriber = await pipeline(
+        'automatic-speech-recognition',
+        'Xenova/whisper-tiny.en',
+        { quantized: true, progress_callback: (p) => {
+          if (p.status === 'progress' && p.file && p.progress != null) {
+            setStatus("downloading " + p.file + " — " + Math.round(p.progress) + "%", '');
+          }
+        }}
+      );
+      modelLoading = false;
+      return true;
+    } catch (e) {
+      modelLoading = false;
+      setStatus("model load failed: " + (e.message || e), '');
+      console.error('[voice] model load error', e);
+      return false;
+    }
+  }
+
+  async function transcribeBlob(blob) {
+    if (!transcriber || !blob || blob.size < 1000) return;
+    try {
+      const arrayBuf = await blob.arrayBuffer();
+      // Decode at 16kHz mono — Whisper expects 16kHz Float32 samples.
+      const decodeCtx = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, 16000 * 30, 16000);
+      const decoded = await decodeCtx.decodeAudioData(arrayBuf);
+      const samples = decoded.getChannelData(0);
+      const result = await transcriber(samples);
+      const text = (result.text || '').trim();
+      if (!text) return;
+      console.log('[voice] transcript:', text);
+      // Debug-transparent feedback: briefly show what Whisper heard even
+      // if there's no wake word, so you can tell it's alive.
+      if (enabled && !armed) {
+        setStatus("heard: " + text, 'listening');
+        setTimeout(() => {
+          if (enabled && !armed) setStatus("say '" + WAKE + "' to talk", 'listening');
+        }, 2200);
+      }
+      handleTranscript(text);
+    } catch (e) {
+      console.error('[voice] transcribe error', e);
+    }
+  }
+
+  function startVAD() {
+    const buf = new Uint8Array(analyser.fftSize);
+    const tick = () => {
+      if (!enabled) return;
+      analyser.getByteTimeDomainData(buf);
+      let peak = 0;
+      for (let i = 0; i < buf.length; i++) {
+        const v = Math.abs(buf[i] - 128);
+        if (v > peak) peak = v;
+      }
+      const now = performance.now();
+      if (peak > SPEECH_THRESH) {
+        if (!recording) {
+          recording = true;
+          recStart = now;
+          recChunks = [];
+          try { recorder.start(200); } catch (_) {}
+        }
+        silenceStart = null;
+        // As long as any speech is happening while armed, don't let the
+        // armed window time out mid-utterance.
+        if (armed) refreshArmedTimer();
+      } else if (recording) {
+        if (silenceStart === null) silenceStart = now;
+        if (now - silenceStart > SILENCE_MS) {
+          const dur = now - recStart;
+          recording = false;
+          silenceStart = null;
+          try { recorder.stop(); } catch (_) {}
+          if (dur < MIN_UTTERANCE_MS) recChunks = [];
+        }
+      }
+      vadRaf = requestAnimationFrame(tick);
+    };
+    vadRaf = requestAnimationFrame(tick);
+  }
+
+  function preferredDeviceId() {
+    return localStorage.getItem('nasty_voice_mic_id') || undefined;
+  }
+
+  async function populateMicPicker() {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const inputs = devices.filter(d => d.kind === 'audioinput');
+      const sel = document.getElementById('voice-mic');
+      if (!sel) return;
+      sel.innerHTML = '';
+      const currentPref = preferredDeviceId();
+      // Add "System default" first
+      const dfl = document.createElement('option');
+      dfl.value = '';
+      dfl.textContent = '🎤 System default';
+      sel.appendChild(dfl);
+      for (const d of inputs) {
+        const opt = document.createElement('option');
+        opt.value = d.deviceId;
+        opt.textContent = d.label || ('Mic ' + d.deviceId.slice(0, 6));
+        if (d.deviceId === currentPref) opt.selected = true;
+        sel.appendChild(opt);
+      }
+      sel.style.display = '';
+    } catch (e) { console.error('[voice] enumerate devices failed', e); }
+  }
+
+  async function initMic() {
+    const devId = preferredDeviceId();
+    const audioConstraints = { echoCancellation: true, noiseSuppression: true };
+    if (devId) audioConstraints.deviceId = { exact: devId };
+    stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+    // After permission is granted, device labels become populated — refresh the picker.
+    await populateMicPicker();
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = audioCtx.createMediaStreamSource(stream);
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 512;
+    src.connect(analyser);
+    const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus'
+               : MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm'
+               : '';
+    recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+    recorder.ondataavailable = (e) => { if (e.data && e.data.size) recChunks.push(e.data); };
+    recorder.onstop = async () => {
+      if (!recChunks.length) return;
+      const blob = new Blob(recChunks, { type: recorder.mimeType || 'audio/webm' });
+      recChunks = [];
+      await transcribeBlob(blob);
+    };
+    startVAD();
+  }
+
+  async function start() {
+    try {
+      const modelReady = await loadModel();
+      if (!modelReady) return false;
+      setStatus("requesting mic…", '');
+      await initMic();
+      return true;
+    } catch (e) {
+      setStatus("mic error: " + (e.message || e), '');
+      console.error('[voice] mic init failed', e);
+      return false;
+    }
+  }
+
+  // Tear down the mic pipeline without flipping enabled/UI state — used
+  // when swapping input devices mid-session (keep the button pink, the
+  // picker visible, just re-plumb to the new mic).
+  function teardownMic() {
+    if (vadRaf) cancelAnimationFrame(vadRaf);
+    if (recorder && recorder.state !== 'inactive') { try { recorder.stop(); } catch (_) {} }
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+    if (audioCtx) { try { audioCtx.close(); } catch (_) {} audioCtx = null; }
+    recorder = null;
+    analyser = null;
+    recChunks = [];
+    recording = false;
+    silenceStart = null;
+  }
+
+  function stop() {
+    enabled = false;
+    armed = false;
+    clearTimeout(armedTimer);
+    teardownMic();
+    setBtn(null);
+    setStatus('', '');
+    const sel = document.getElementById('voice-mic');
+    if (sel) sel.style.display = 'none';
+  }
+
+  async function switchMic(deviceId) {
+    if (deviceId) localStorage.setItem('nasty_voice_mic_id', deviceId);
+    else localStorage.removeItem('nasty_voice_mic_id');
+    if (!enabled) return;
+    setStatus("switching mic…", '');
+    teardownMic();
+    try {
+      await initMic();
+      setStatus("say '" + WAKE + "' to talk", 'listening');
+    } catch (e) {
+      setStatus("mic error: " + (e.message || e), '');
+      console.error('[voice] switch failed', e);
+    }
+  }
+
+  // R2D2-style acknowledgment beeps. Dedicated AudioContext (separate from
+  // the mic-input one, which gets closed when voice is off) so we can beep
+  // regardless of voice-mode state.
+  let beepCtx = null;
+  function ensureBeepCtx() {
+    if (!beepCtx) beepCtx = new (window.AudioContext || window.webkitAudioContext)();
+    return beepCtx;
+  }
+  function beep(kind) {
+    try {
+      const ctx = ensureBeepCtx();
+      const now = ctx.currentTime;
+      // A "voice" = one short oscillator sweep with an envelope. R2D2 flavor
+      // comes from stacking 2-3 quick sweeps in the same beep.
+      const voice = (startFreq, endFreq, startAt, durMs, gain = 0.15) => {
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(startFreq, now + startAt);
+        osc.frequency.exponentialRampToValueAtTime(endFreq, now + startAt + durMs / 1000);
+        g.gain.setValueAtTime(0, now + startAt);
+        g.gain.linearRampToValueAtTime(gain, now + startAt + 0.005);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + startAt + durMs / 1000);
+        osc.connect(g).connect(ctx.destination);
+        osc.start(now + startAt);
+        osc.stop(now + startAt + durMs / 1000 + 0.02);
+      };
+      if (kind === 'ack') {
+        // Chirpy rising blip — "I heard you"
+        voice(520, 880, 0.00, 90);
+        voice(720, 1200, 0.09, 70);
+      } else if (kind === 'done') {
+        // Two-tone downward "finished" chirp
+        voice(1100, 900, 0.00, 60);
+        voice(900,  700, 0.07, 60);
+        voice(700,  500, 0.14, 90);
+      } else if (kind === 'no') {
+        // Low descending "didn't get that"
+        voice(400, 220, 0.00, 140, 0.10);
+      }
+    } catch (e) { /* silent — beeps are optional */ }
+  }
+
+  // Voice-consent modal — asked once, before the ~75MB Whisper download.
+  // Consent is persisted in localStorage so it's a one-time thing.
+  function hasConsent() { return localStorage.getItem('nasty_voice_consent') === 'yes'; }
+  function askConsent() {
+    return new Promise((resolve) => {
+      const modal = document.getElementById('voice-consent');
+      if (!modal) return resolve(true); // fail-open if modal missing
+      modal.classList.add('show');
+      const cleanup = () => {
+        modal.classList.remove('show');
+        document.getElementById('vc-accept').removeEventListener('click', onYes);
+        document.getElementById('vc-cancel').removeEventListener('click', onNo);
+      };
+      const onYes = () => { localStorage.setItem('nasty_voice_consent', 'yes'); cleanup(); resolve(true); };
+      const onNo  = () => { cleanup(); resolve(false); };
+      document.getElementById('vc-accept').addEventListener('click', onYes);
+      document.getElementById('vc-cancel').addEventListener('click', onNo);
+    });
+  }
+
+  async function toggle() {
+    if (enabled) { stop(); return; }
+    if (!transcriber && !hasConsent()) {
+      const ok = await askConsent();
+      if (!ok) return;
+    }
+    enabled = true;
+    setBtn('on');
+    const ok = await start();
+    if (!ok) { enabled = false; setBtn(null); return; }
+    setStatus("say '" + WAKE + "' to talk", 'listening');
+  }
+
+  return { toggle, stop, beep, switchMic };
+})();
+document.getElementById('voice-btn').addEventListener('click', () => voiceInput.toggle());
+document.getElementById('voice-mic').addEventListener('change', (e) => voiceInput.switchMic(e.target.value));
 
 // ============================================================
 // FL Shell — menu bar, window toggles, browser, time LCD
