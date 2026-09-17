@@ -2178,10 +2178,6 @@
   </div>
   <div class="ip-controls">
     <div class="ip-prompt-echo" id="ip-prompt-echo"></div>
-    <label class="ip-autoplay">
-      <input type="checkbox" id="ip-autoplay-hover" checked />
-      autoplay on hover
-    </label>
   </div>
   <div class="ip-body" id="ip-body"></div>
 </div>
@@ -4008,10 +4004,9 @@ function renderIdeasPanel() {
     if (parts.length) row.appendChild(meta);
     if (idea.character) row.appendChild(char);
     row.appendChild(actions);
-    row.addEventListener('mouseenter', () => {
-      const cb = document.getElementById('ip-autoplay-hover');
-      if (cb && cb.checked) auditionIdea(i);
-    });
+    // Click a row to switch which idea auditions. Hover intentionally
+    // does nothing — first idea auto-plays on arrival, further switching
+    // is explicit-click only.
     row.addEventListener('click', () => auditionIdea(i));
     body.appendChild(row);
   });
