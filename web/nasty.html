@@ -2263,7 +2263,7 @@
         <textarea id="chat-input" placeholder="Tell Nasty what to make..."></textarea>
         <div id="send-row">
           <button id="send-btn">Send</button>
-          <button id="voice-btn" title="Voice mode — say 'pineapple' to start talking, again to send">🎤 voice</button>
+          <button id="voice-btn" title="Voice mode — hold backtick (`) to talk">🎤 voice</button>
           <select id="voice-mic" title="Voice input device" style="display:none;"></select>
           <label class="autoplay-toggle">
             <input type="checkbox" id="autoplay" checked /> auto-play after
@@ -8406,43 +8406,25 @@ document.getElementById('chat-input').addEventListener('keydown', (e) => {
 });
 
 // ============================================================
-// Voice input — "pineapple" as the SEND signal
+// Voice input — push-to-talk (hold ` to speak)
 // ============================================================
-// Model: mic runs continuously. Each utterance chunk → Whisper (local
-// base.en WASM) → transcript appended to a running message buffer.
-// When the transcript contains "pineapple," everything accumulated so
-// far (minus the word "pineapple") is sent to Claude and the buffer
-// resets. No wake-word gate, no armed timers — you just talk, then
-// say "pineapple" when you're done. Same model as saying "enter"
-// after typing.
+// Model: voice mode arms the mic. Hold the backtick key (`) to
+// record; release to send. Whisper transcribes the clip locally
+// and the text goes straight to Claude as a chat message. No
+// wake word, no VAD, no ambient listening — if your finger's on
+// the key you're talking to Nasty, if it's not you're not. Same
+// mental model as Discord / Zoom PTT.
 const voiceInput = (() => {
-  const WAKE = 'pineapple';
-  // Whisper often mangles "pineapple" — especially in short utterances.
-  // Include every mishearing we've seen plus a broad fallback: any word
-  // that contains "apple" or "pineapp" as a substring.
-  const WAKE_VARIANTS = [
-    'pineapple', 'pine apple', 'pineapples', 'pine apples',
-    'pineapp', 'pine app', 'pineappl', 'pineapples',
-    'pinapple', 'pin apple', 'panapple', 'pineappol',
-    'big apple', 'the apple', 'pine',
-  ];
-  const WAKE_FALLBACK = /\b(apple|pineap|pinap)\w*/i;
-  const SPEECH_THRESH = 7;          // 0-127 amplitude; lower = more sensitive to quiet speech
-  const SILENCE_MS = 900;           // silence before we consider the utterance done
-  const MIN_UTTERANCE_MS = 200;     // ignore blips shorter than this
+  const PTT_KEY = '`';              // hold to talk; release to send
+  const MIN_PTT_MS = 150;           // ignore accidental taps
 
   let enabled = false;
-  let listening = false;            // pineapple toggles this: false = paused, true = capturing to buffer
-  let messageBuffer = '';           // accumulated transcript since the last "pineapple" toggle-on
+  let ptDown = false;
+  let ptStart = 0;
   let stream = null;
   let audioCtx = null;
-  let analyser = null;
-  let vadRaf = null;
   let recorder = null;
   let recChunks = [];
-  let recStart = 0;
-  let recording = false;
-  let silenceStart = null;
   let transcriber = null;
   let modelLoading = false;
 
@@ -8465,101 +8447,36 @@ const voiceInput = (() => {
     if (state === 'armed') b.classList.add('armed');
   }
 
-  // Find "pineapple" (or a Whisper mishearing) in a transcript. Returns
-  // { idx, len } for the FIRST occurrence, or null.
-  function findWake(text) {
-    const h = text.toLowerCase();
-    let bestIdx = -1, bestLen = 0;
-    for (const w of WAKE_VARIANTS) {
-      const idx = h.indexOf(w);
-      if (idx !== -1 && (bestIdx === -1 || idx < bestIdx)) {
-        bestIdx = idx;
-        bestLen = w.length;
-      }
-    }
-    if (bestIdx !== -1) return { idx: bestIdx, len: bestLen };
-    // Fallback regex — any word containing "apple" / "pineap" / "pinap" —
-    // catches the long tail of Whisper mangles.
-    const m = h.match(WAKE_FALLBACK);
-    if (m) return { idx: m.index, len: m[0].length };
-    return null;
+  function idleStatus() {
+    setStatus('hold ` to talk', 'listening');
   }
 
-  function sendBuffer() {
-    const toSend = messageBuffer.trim();
-    messageBuffer = '';
-    if (!toSend) {
-      setStatus("paused — say 'pineapple' to talk", 'listening');
+  function beginPTT() {
+    if (!enabled || ptDown || !recorder) return;
+    if (recorder.state === 'recording') return;
+    ptDown = true;
+    ptStart = performance.now();
+    recChunks = [];
+    try { recorder.start(200); } catch (_) {}
+    beep('ack');
+    setBtn('armed');
+    setStatus('listening…', 'armed');
+  }
+
+  function endPTT() {
+    if (!ptDown) return;
+    ptDown = false;
+    const dur = performance.now() - ptStart;
+    if (recorder && recorder.state === 'recording') {
+      try { recorder.stop(); } catch (_) {}
+    }
+    setBtn('on');
+    if (dur < MIN_PTT_MS) {
+      recChunks = [];
+      idleStatus();
       return;
     }
-    setStatus("sending: " + toSend.slice(0, 80), 'listening');
-    beep('done');
-    sendMessage(toSend, { fromVoice: true });
-    setTimeout(() => {
-      if (enabled && !listening && !messageBuffer) {
-        setStatus("paused — say 'pineapple' to talk", 'listening');
-      }
-    }, 2500);
-  }
-
-  // Ingest a Whisper chunk. Pineapple is a TOGGLE:
-  //   listening=false → pineapple flips it ON (start capturing to buffer)
-  //   listening=true  → pineapple flips it OFF (send buffer, back to paused)
-  // Any text while paused is discarded (ambient noise gate).
-  function accumulate(text) {
-    let remaining = text;
-    while (remaining && remaining.trim()) {
-      const hit = findWake(remaining);
-      if (!hit) {
-        if (listening) {
-          messageBuffer = (messageBuffer ? messageBuffer + ' ' : '') + remaining.trim();
-        }
-        break;
-      }
-      const before = remaining.slice(0, hit.idx).trim();
-      if (listening && before) {
-        messageBuffer = (messageBuffer ? messageBuffer + ' ' : '') + before;
-      }
-      if (listening) {
-        // Second pineapple: SEND + pause
-        sendBuffer();
-        listening = false;
-        setBtn('on');
-      } else {
-        // First pineapple: START listening
-        listening = true;
-        beep('ack');
-        setBtn('armed');
-        setStatus("listening — say 'pineapple' to send", 'armed');
-      }
-      remaining = remaining.slice(hit.idx + hit.len).replace(/^[,.\s!?]+/, '');
-    }
-    if (listening && messageBuffer && enabled) {
-      const tail = messageBuffer.length > 80 ? '…' + messageBuffer.slice(-80) : messageBuffer;
-      setStatus("buffering: " + tail, 'armed');
-    }
-  }
-
-  function handleTranscript(finalText) {
-    if (!enabled) return;
-    if (isRecordingAudio()) {
-      // Mid-take: don't accumulate (that's the take audio). Only stop the
-      // take on "pineapple stop" (both words required so lyrics don't
-      // accidentally end it).
-      const t = finalText.toLowerCase();
-      const hasPineapple = findWake(t) !== null;
-      const hasStop = /\b(stop|end|cut|done|finish|kill|that'?s it|that is it)\b/.test(t);
-      if (hasPineapple && hasStop) {
-        beep('ack');
-        stopAudioRecording();
-        setStatus("take ended", 'listening');
-        setTimeout(() => {
-          if (enabled) setStatus("keep talking — say 'pineapple' to send", 'listening');
-        }, 2500);
-      }
-      return;
-    }
-    accumulate(finalText);
+    setStatus('transcribing…', 'listening');
   }
 
   async function loadModel() {
@@ -8592,7 +8509,10 @@ const voiceInput = (() => {
   }
 
   async function transcribeBlob(blob) {
-    if (!transcriber || !blob || blob.size < 1000) return;
+    if (!transcriber || !blob || blob.size < 1000) {
+      idleStatus();
+      return;
+    }
     try {
       const arrayBuf = await blob.arrayBuffer();
       // Decode at 16kHz mono — Whisper expects 16kHz Float32 samples.
@@ -8601,51 +8521,20 @@ const voiceInput = (() => {
       const samples = decoded.getChannelData(0);
       const result = await transcriber(samples);
       const text = (result.text || '').trim();
-      if (!text) return;
+      if (!text) {
+        idleStatus();
+        return;
+      }
       console.log('[voice] transcript:', text);
-      // Show every transcript persistently — critical for diagnosing wake-word
-      // reliability. Format: [state] "what whisper heard"
-      const stateTag = listening ? '🎙 listening' : '⏸ paused';
-      const disp = text.length > 90 ? text.slice(0, 90) + '…' : text;
-      setStatus(stateTag + ' — heard: ' + disp, listening ? 'armed' : 'listening');
-      handleTranscript(text);
+      beep('done');
+      const disp = text.length > 80 ? text.slice(0, 80) + '…' : text;
+      setStatus('sending: ' + disp, 'listening');
+      sendMessage(text, { fromVoice: true });
+      setTimeout(() => { if (enabled && !ptDown) idleStatus(); }, 2500);
     } catch (e) {
       console.error('[voice] transcribe error', e);
+      idleStatus();
     }
-  }
-
-  function startVAD() {
-    const buf = new Uint8Array(analyser.fftSize);
-    const tick = () => {
-      if (!enabled) return;
-      analyser.getByteTimeDomainData(buf);
-      let peak = 0;
-      for (let i = 0; i < buf.length; i++) {
-        const v = Math.abs(buf[i] - 128);
-        if (v > peak) peak = v;
-      }
-      const now = performance.now();
-      if (peak > SPEECH_THRESH) {
-        if (!recording) {
-          recording = true;
-          recStart = now;
-          recChunks = [];
-          try { recorder.start(200); } catch (_) {}
-        }
-        silenceStart = null;
-      } else if (recording) {
-        if (silenceStart === null) silenceStart = now;
-        if (now - silenceStart > SILENCE_MS) {
-          const dur = now - recStart;
-          recording = false;
-          silenceStart = null;
-          try { recorder.stop(); } catch (_) {}
-          if (dur < MIN_UTTERANCE_MS) recChunks = [];
-        }
-      }
-      vadRaf = requestAnimationFrame(tick);
-    };
-    vadRaf = requestAnimationFrame(tick);
   }
 
   function preferredDeviceId() {
@@ -8678,28 +8567,35 @@ const voiceInput = (() => {
 
   async function initMic() {
     const devId = preferredDeviceId();
-    const audioConstraints = { echoCancellation: true, noiseSuppression: true };
-    if (devId) audioConstraints.deviceId = { exact: devId };
-    stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+    const baseConstraints = { echoCancellation: true, noiseSuppression: true };
+    const audioConstraints = devId ? { ...baseConstraints, deviceId: { exact: devId } } : baseConstraints;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+    } catch (e) {
+      // Saved device is gone (unplugged / renamed) → clear the preference
+      // and fall back to system default so voice mode still comes up.
+      if (devId && (e.name === 'OverconstrainedError' || e.name === 'NotFoundError')) {
+        console.warn('[voice] saved mic unavailable, falling back to default', devId);
+        localStorage.removeItem('nasty_voice_mic_id');
+        stream = await navigator.mediaDevices.getUserMedia({ audio: baseConstraints });
+      } else {
+        throw e;
+      }
+    }
     // After permission is granted, device labels become populated — refresh the picker.
     await populateMicPicker();
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const src = audioCtx.createMediaStreamSource(stream);
-    analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 512;
-    src.connect(analyser);
     const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus'
                : MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm'
                : '';
     recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
     recorder.ondataavailable = (e) => { if (e.data && e.data.size) recChunks.push(e.data); };
     recorder.onstop = async () => {
-      if (!recChunks.length) return;
+      if (!recChunks.length) { idleStatus(); return; }
       const blob = new Blob(recChunks, { type: recorder.mimeType || 'audio/webm' });
       recChunks = [];
       await transcribeBlob(blob);
     };
-    startVAD();
   }
 
   async function start() {
@@ -8720,21 +8616,16 @@ const voiceInput = (() => {
   // when swapping input devices mid-session (keep the button pink, the
   // picker visible, just re-plumb to the new mic).
   function teardownMic() {
-    if (vadRaf) cancelAnimationFrame(vadRaf);
     if (recorder && recorder.state !== 'inactive') { try { recorder.stop(); } catch (_) {} }
     if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
     if (audioCtx) { try { audioCtx.close(); } catch (_) {} audioCtx = null; }
     recorder = null;
-    analyser = null;
     recChunks = [];
-    recording = false;
-    silenceStart = null;
+    ptDown = false;
   }
 
   function stop() {
     enabled = false;
-    listening = false;
-    messageBuffer = '';
     teardownMic();
     setBtn(null);
     setStatus('', '');
@@ -8750,12 +8641,39 @@ const voiceInput = (() => {
     teardownMic();
     try {
       await initMic();
-      setStatus("paused — say 'pineapple' to talk", 'listening');
+      idleStatus();
     } catch (e) {
       setStatus("mic error: " + (e.message || e), '');
       console.error('[voice] switch failed', e);
     }
   }
+
+  // Push-to-talk key bindings. Skipped when focus is in a text
+  // input so you can still type normally (including backticks).
+  function isTypingContext(target) {
+    if (!target) return false;
+    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return true;
+    if (target.isContentEditable) return true;
+    return false;
+  }
+  document.addEventListener('keydown', (e) => {
+    if (!enabled) return;
+    if (e.key !== PTT_KEY) return;
+    if (e.repeat) return;
+    if (isTypingContext(e.target)) return;
+    e.preventDefault();
+    beginPTT();
+  });
+  document.addEventListener('keyup', (e) => {
+    if (!enabled) return;
+    if (e.key !== PTT_KEY) return;
+    if (isTypingContext(e.target)) return;
+    e.preventDefault();
+    endPTT();
+  });
+  // If the window loses focus mid-hold, end the PTT session cleanly
+  // so we don't get stuck armed with no keyup ever firing.
+  window.addEventListener('blur', () => { if (ptDown) endPTT(); });
 
   // R2D2-style acknowledgment beeps. Dedicated AudioContext (separate from
   // the mic-input one, which gets closed when voice is off) so we can beep
@@ -8830,7 +8748,7 @@ const voiceInput = (() => {
     setBtn('on');
     const ok = await start();
     if (!ok) { enabled = false; setBtn(null); return; }
-    setStatus("paused — say 'pineapple' to talk", 'listening');
+    idleStatus();
   }
 
   return { toggle, stop, beep, switchMic };

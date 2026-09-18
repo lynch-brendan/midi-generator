@@ -1671,7 +1671,8 @@ _NASTY_TOOLS = [
             "position. Requires the user to have already routed a mic to a "
             "mixer bus (via the mixer's IN button). If no mic is routed, "
             "the tool will return an error telling the user to do that "
-            "first. The user can end the take by saying 'pineapple stop'."
+            "first. The user can end the take by hitting the stop button "
+            "or asking you to call stop_recording (voice PTT works mid-take)."
         ),
         "input_schema": {"type": "object", "properties": {}},
     },
