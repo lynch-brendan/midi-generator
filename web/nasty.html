@@ -4024,10 +4024,13 @@ async function keepIdea(idx) {
   // Ensure the preview channel is loaded with the picked idea's notes.
   await auditionIdea(idx);
 
-  // Promote preview → permanent (strip _preview markers, rename).
+  // Promote preview → permanent (strip _preview markers).
+  // Channel keeps its instrument-based name ("Bass," "Rhodes," etc.) — the
+  // idea's vibe name belongs to the PATTERN, not the channel. Renaming the
+  // channel here made the rack row show "Chromatic Wanderer" instead of
+  // the instrument, which is what the row is really about.
   const ch = song.channels.find(c => c.id === ideasState.preview.channelId);
   if (ch) {
-    ch.name = idea.name || 'Chords';
     delete ch._preview;
   }
   const pat = song.patterns.find(p => p.id === ideasState.preview.patternId);
