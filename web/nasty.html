@@ -561,29 +561,81 @@
   #pr-header label { font-size: 10px; color: var(--text-dim); }
   #pr-header select { font-size: 10px; }
   #pr-header button { padding: 2px 8px; font-size: 10px; }
-  #pr-body { flex: 1; display: flex; overflow: hidden; min-height: 0; }
+  #pr-body {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 68px 1fr;
+    grid-template-rows: 22px 1fr;
+    overflow: hidden;
+    min-height: 0;
+  }
+  #pr-corner {
+    grid-column: 1; grid-row: 1;
+    background: var(--panel);
+    border-right: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+  #pr-ruler-wrap {
+    grid-column: 2; grid-row: 1;
+    overflow: hidden;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+    position: relative;
+  }
+  #pr-ruler {
+    position: absolute; top: 0; left: 0; height: 100%;
+    color: var(--dim); font-size: 11px;
+    user-select: none;
+  }
+  #pr-ruler .bar-num {
+    position: absolute; top: 3px;
+    font-weight: 600; color: #b0b0b0;
+    padding-left: 6px;
+  }
+  #pr-keys-wrap {
+    grid-column: 1; grid-row: 2;
+    overflow: hidden;
+    background: var(--panel-2);
+    border-right: 1px solid var(--line);
+    position: relative;
+  }
   #pr-keys {
-    width: 55px; flex-shrink: 0; overflow-y: hidden;
-    background: var(--panel-2); border-right: 1px solid var(--line);
+    position: absolute; top: 0; left: 0;
+    width: 100%;
   }
   .pr-key {
-    height: 14px; border-bottom: 1px solid #111;
-    font-size: 9px; color: var(--dim); padding: 0 4px;
+    height: 14px; border-bottom: 1px solid rgba(0,0,0,0.35);
+    font-size: 9px; color: #333; padding: 0 5px;
     display: flex; align-items: center; justify-content: flex-end;
     cursor: pointer; user-select: none;
   }
-  .pr-key.black { background: #1a1a1a; color: #555; }
-  .pr-key.white { background: #e0e0e0; color: #333; }
-  .pr-key:hover { background: var(--accent-2); color: white; }
-  #pr-grid-wrap { flex: 1; overflow: auto; position: relative; }
+  /* FL-style piano keys: white keys fill the row, black keys are inset from
+     the right so the neighbouring white key's shoulder is visible past them.
+     Gradient stop at 60% draws the black key on the left, "white" on the right. */
+  .pr-key.white { background: #d5d5d5; }
+  .pr-key.black {
+    background: linear-gradient(to right, #191919 0%, #191919 60%, #d5d5d5 60%, #d5d5d5 100%);
+    color: transparent;
+  }
+  .pr-key:hover { filter: brightness(1.15); }
+  #pr-grid-wrap {
+    grid-column: 2; grid-row: 2;
+    overflow: auto;
+    position: relative;
+  }
   #pr-grid { position: relative; background-color: #232323; }
   .pr-note {
     position: absolute; height: 12px;
-    border-radius: 1px; cursor: grab;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.4);
+    border-radius: 2px; cursor: grab;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.28), inset 0 -1px 0 rgba(0,0,0,0.28), 0 1px 2px rgba(0,0,0,0.45);
     user-select: none;
   }
-  .pr-note .resize { position: absolute; right: 0; top: 0; bottom: 0; width: 6px; cursor: ew-resize; }
+  .pr-note.selected {
+    outline: 1.5px solid #fff;
+    outline-offset: 1px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), inset 0 -1px 0 rgba(0,0,0,0.25), 0 0 6px rgba(255,255,255,0.35);
+  }
+  .pr-note .resize { position: absolute; right: 0; top: 0; bottom: 0; width: 8px; cursor: ew-resize; }
 
   /* Chat dock — right side, toggleable */
   #chat-dock {
@@ -2253,13 +2305,13 @@
       <div class="pr-title" id="pr-title">Piano Roll</div>
       <div class="pr-info" id="pr-info"></div>
       <div class="spacer"></div>
-      <label>Editing:</label>
-      <select id="pr-active-channel"></select>
       <span style="font-size:11px;color:var(--dim);margin-left:10px" title="Z X C V B N M , . = white keys · S D G H J L ; = black keys · Q W E R T Y U I O = upper octave · [ / ] shift octave">⌨ type Z-M = piano · [/] octave</span>
       <button id="pr-close">Close</button>
     </div>
     <div id="pr-body">
-      <div id="pr-keys"></div>
+      <div id="pr-corner"></div>
+      <div id="pr-ruler-wrap"><div id="pr-ruler"></div></div>
+      <div id="pr-keys-wrap"><div id="pr-keys"></div></div>
       <div id="pr-grid-wrap"><div id="pr-grid"></div></div>
     </div>
   </div>
@@ -2417,7 +2469,7 @@
 const MIN_BARS = 500;
 const BAR_WIDTH = 40;
 const PR_KEY_HEIGHT = 14;
-const PR_BEAT_WIDTH = 60;
+const PR_BEAT_WIDTH = 96; // fixed zoom — pattern scrolls horizontally if it's long
 const PR_PITCH_MIN = 24;
 const PR_PITCH_MAX = 108;
 const STORAGE_KEY = 'nasty.song.fl.v1';
@@ -2446,6 +2498,10 @@ let selectedClipId = null;
 let selectedClipIds = new Set();
 let currentPatternId = null;
 let pianoRollActiveChannelId = null;
+// Piano-roll multi-select — indices into song.patterns[current].notes[].
+// Cleared when the active channel switches (indices stay valid but the
+// notes they point at aren't visible any more, so the selection is stale).
+let prSelectedNoteIdx = new Set();
 
 // Measure the PAT-mode playhead sweep range from the actual DOM cells. Reads
 // step 0's left and the last-loop-cell's right (in #channel-rack content
@@ -7246,6 +7302,35 @@ document.addEventListener('keydown', (e) => {
   }
   if (document.activeElement && ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)) return;
   const isPrOpen = !document.getElementById('piano-roll').classList.contains('hidden');
+  // Piano-roll: Cmd+A selects every note on the current channel; Cmd+↑/↓
+  // shift the selection by an octave (clamped to the roll's pitch range).
+  if (isPrOpen && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a') {
+    e.preventDefault();
+    const p = song.patterns.find(pt => pt.id === currentPatternId);
+    if (!p) return;
+    prSelectedNoteIdx = new Set();
+    for (let i = 0; i < p.notes.length; i++) {
+      if (p.notes[i].channelId === pianoRollActiveChannelId) prSelectedNoteIdx.add(i);
+    }
+    renderPianoRoll();
+    return;
+  }
+  if (isPrOpen && (e.metaKey || e.ctrlKey) && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && prSelectedNoteIdx.size > 0) {
+    e.preventDefault();
+    const p = song.patterns.find(pt => pt.id === currentPatternId);
+    if (!p) return;
+    const delta = e.key === 'ArrowUp' ? 12 : -12;
+    for (const idx of prSelectedNoteIdx) {
+      if (idx >= 0 && idx < p.notes.length && p.notes[idx].channelId === pianoRollActiveChannelId) {
+        p.notes[idx].pitch = clamp(p.notes[idx].pitch + delta, PR_PITCH_MIN, PR_PITCH_MAX);
+      }
+    }
+    hotSwapCurrentPatternIfPlaying();
+    renderPianoRoll();
+    persist();
+    render();
+    return;
+  }
   // Prefer the multi-select set so marquee-selected clips get affected too.
   // Single-click paths keep the set in sync (size == 1), so this covers both.
   const activeIds = selectedClipIds.size > 0
@@ -7303,25 +7388,7 @@ function openPianoRoll(patternId) {
   const p = song.patterns.find(pt => pt.id === patternId);
   if (!p) return;
   currentPatternId = patternId;
-  // FL-like: opening the piano roll focuses whichever channel is currently
-  // armed in the rack. Falls back to the previous focus, then the first
-  // channel. That way clicking a row → F7 opens THAT channel's notes.
-  const armed = song.channels.find(c => c.armed);
-  if (armed) {
-    pianoRollActiveChannelId = armed.id;
-  } else if (!pianoRollActiveChannelId || !song.channels.find(c => c.id === pianoRollActiveChannelId)) {
-    pianoRollActiveChannelId = song.channels[0]?.id || null;
-  }
   document.getElementById('pr-title').textContent = p.name;
-  document.getElementById('pr-info').textContent = `${p.notes.length} notes · ${p.lengthBars} bars`;
-  const sel = document.getElementById('pr-active-channel');
-  sel.innerHTML = '';
-  for (const c of song.channels) {
-    const opt = document.createElement('option');
-    opt.value = c.id; opt.textContent = c.name;
-    if (c.id === pianoRollActiveChannelId) opt.selected = true;
-    sel.appendChild(opt);
-  }
   document.getElementById('piano-roll').classList.remove('hidden');
   renderPianoRoll();
 }
@@ -7334,9 +7401,21 @@ function renderPianoRoll() {
   const p = song.patterns.find(pt => pt.id === currentPatternId);
   if (!p) { closePianoRoll(); return; }
   recomputePatternLength(p); // keep grid width fit-to-notes
-  // FL-style: one channel per piano roll view. Only show notes for the
-  // active channel — the "Editing:" dropdown switches between them.
+  // FL-style: one channel per piano roll view — the currently-armed
+  // channel in the rack IS the piano roll view. Arming a different channel
+  // switches the view. No dropdown, no override.
+  const armed = song.channels.find(c => c.armed);
+  if (armed) pianoRollActiveChannelId = armed.id;
+  else if (!pianoRollActiveChannelId || !song.channels.find(c => c.id === pianoRollActiveChannelId)) {
+    pianoRollActiveChannelId = song.channels[0]?.id || null;
+  }
   const activeId = pianoRollActiveChannelId;
+  // Selection is per-channel — switching arm wipes it so we never leave
+  // ghost-selected notes pointing at a channel that isn't visible.
+  if (renderPianoRoll._lastChannel !== activeId) {
+    prSelectedNoteIdx = new Set();
+    renderPianoRoll._lastChannel = activeId;
+  }
   const activeChObj = song.channels.find(c => c.id === activeId);
   const visibleNotes = p.notes.filter(n => n.channelId === activeId);
   const activeName = activeChObj ? activeChObj.name : '—';
@@ -7345,7 +7424,13 @@ function renderPianoRoll() {
   const keysEl = document.getElementById('pr-keys');
   const gridWrap = document.getElementById('pr-grid-wrap');
   const grid = document.getElementById('pr-grid');
-  const totalBeats = p.lengthBars * 4;
+  const patternBeats = p.lengthBars * 4;
+  const patternWidth = patternBeats * PR_BEAT_WIDTH;
+  // Draw the grid well past the current pattern length so the roll doesn't
+  // end in a gray wall — user can scroll ahead, and dragging a note there
+  // grows the pattern via recomputePatternLength.
+  const renderedBars = Math.max(p.lengthBars, 32);
+  const totalBeats = renderedBars * 4;
   const totalWidth = totalBeats * PR_BEAT_WIDTH;
   const totalPitches = PR_PITCH_MAX - PR_PITCH_MIN + 1;
   const totalHeight = totalPitches * PR_KEY_HEIGHT;
@@ -7359,19 +7444,51 @@ function renderPianoRoll() {
     const isBlack = [1,3,6,8,10].includes(pc);
     key.className = 'pr-key ' + (isBlack ? 'black' : 'white');
     const octave = Math.floor(pitch / 12) - 1;
-    const names = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-    key.textContent = pc === 0 ? `${names[pc]}${octave}` : names[pc];
+    // FL-style: only label the C keys — the black/white pattern tells the
+    // reader everything else. Cleaner than a wall of note names.
+    key.textContent = pc === 0 ? `C${octave}` : '';
     key.addEventListener('mousedown', () => { if (activeCh) previewNote(activeCh, pitch); });
     keysEl.appendChild(key);
   }
 
   grid.style.width = totalWidth + 'px';
   grid.style.height = totalHeight + 'px';
-  grid.style.backgroundImage = `linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255,255,255,0.06) 1px, transparent 1px)`;
-  grid.style.backgroundSize = `${PR_BEAT_WIDTH}px ${PR_KEY_HEIGHT * 12}px`;
+  // Four grid layers, top-to-bottom priority: bar (every 4 beats, strong),
+  // beat (every beat, medium), 16th (every quarter beat, faint),
+  // semitone (every pitch row, very faint).
+  grid.style.backgroundImage = `linear-gradient(to right, rgba(255,255,255,0.22) 1px, transparent 1px),
+    linear-gradient(to right, rgba(255,255,255,0.09) 1px, transparent 1px),
+    linear-gradient(to right, rgba(255,255,255,0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,255,255,0.04) 1px, transparent 1px)`;
+  grid.style.backgroundSize = `${PR_BEAT_WIDTH * 4}px 100%, ${PR_BEAT_WIDTH}px 100%, ${PR_BEAT_WIDTH / 4}px 100%, 100% ${PR_KEY_HEIGHT}px`;
+
+  // Ruler at the top of the grid — bar numbers for every rendered bar,
+  // including the ones past the current pattern length (so scrolling ahead
+  // still labels them).
+  const ruler = document.getElementById('pr-ruler');
+  ruler.innerHTML = '';
+  ruler.style.width = totalWidth + 'px';
+  for (let bar = 0; bar < renderedBars; bar++) {
+    const num = document.createElement('div');
+    num.className = 'bar-num';
+    num.style.left = (bar * PR_BEAT_WIDTH * 4) + 'px';
+    num.textContent = (bar + 1);
+    // Dim the bar numbers that are past the current pattern end.
+    if (bar >= p.lengthBars) num.style.opacity = '0.35';
+    ruler.appendChild(num);
+  }
   grid.innerHTML = '';
-  gridWrap.onscroll = () => { keysEl.style.transform = `translateY(${-gridWrap.scrollTop}px)`; };
+  // Vertical marker at the pattern-end boundary — reader can see where the
+  // loop resets. Doesn't block clicks (pointer-events off).
+  if (p.lengthBars < renderedBars) {
+    const endMarker = document.createElement('div');
+    endMarker.style.cssText = `position:absolute; left:${patternWidth}px; top:0; bottom:0; width:2px; background:rgba(255,255,255,0.28); pointer-events:none; z-index:2;`;
+    grid.appendChild(endMarker);
+  }
+  gridWrap.onscroll = () => {
+    keysEl.style.transform = `translateY(${-gridWrap.scrollTop}px)`;
+    document.getElementById('pr-ruler').style.transform = `translateX(${-gridWrap.scrollLeft}px)`;
+  };
   if (p.notes.length && !gridWrap.dataset.centered) {
     const avg = p.notes.reduce((s,n)=>s+n.pitch,0)/p.notes.length;
     const target = (PR_PITCH_MAX - avg) * PR_KEY_HEIGHT - gridWrap.clientHeight/2;
@@ -7387,7 +7504,7 @@ function renderPianoRoll() {
     const note = p.notes[i];
     if (note.channelId !== activeId) continue;
     const el = document.createElement('div');
-    el.className = 'pr-note';
+    el.className = 'pr-note' + (prSelectedNoteIdx.has(i) ? ' selected' : '');
     el.style.left = (note.startBeat * PR_BEAT_WIDTH) + 'px';
     el.style.width = Math.max(4, note.durationBeats * PR_BEAT_WIDTH - 1) + 'px';
     el.style.top = ((PR_PITCH_MAX - note.pitch) * PR_KEY_HEIGHT) + 'px';
@@ -7450,7 +7567,7 @@ function onPrGridMouseDown(e) {
   const p = song.patterns.find(pt => pt.id === currentPatternId);
   if (!p) return;
   const activeCh = song.channels.find(c => c.id === pianoRollActiveChannelId);
-  if (!activeCh) { alert('Select a channel first (Draw on: dropdown top-right)'); return; }
+  if (!activeCh) { alert('Arm a channel in the Channel Rack first (click a row).'); return; }
   const rect = e.currentTarget.getBoundingClientRect();
   const x = e.clientX - rect.left;
   const y = e.clientY - rect.top;
@@ -8280,10 +8397,6 @@ document.getElementById('piano-roll').addEventListener('mousedown', (e) => {
   if (e.target === e.currentTarget) closePianoRoll();
 });
 document.getElementById('piano-roll-panel').addEventListener('contextmenu', (e) => e.preventDefault());
-document.getElementById('pr-active-channel').addEventListener('change', (e) => {
-  pianoRollActiveChannelId = e.target.value;
-  renderPianoRoll();
-});
 document.getElementById('send-btn').addEventListener('click', () => sendMessage());
 document.getElementById('chat-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -8861,7 +8974,7 @@ document.getElementById('tb-add-pattern').addEventListener('click', () => runCmd
 
 // F-keys + Space
 document.addEventListener('keydown', (e) => {
-  const inField = /input|textarea|select/i.test(e.target.tagName) && !e.target.closest('#pr-active-channel');
+  const inField = /input|textarea|select/i.test(e.target.tagName);
   // F-keys work regardless
   if (e.key === 'F5') { e.preventDefault(); return runCmd('toggle-playlist'); }
   if (e.key === 'F6') { e.preventDefault(); return runCmd('toggle-rack'); }
