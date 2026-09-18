@@ -35,6 +35,10 @@ Three top-level lists:
 3. **Add pattern-clips** to playlist tracks (`track_1`…`track_8`) at the right bars to arrange them into a song.
 4. **Repeat pattern-clips** with `repeat_clip` to fill sections (verse × 4 bars, chorus × 4, etc.).
 
+## Sound selection — check personal defaults FIRST
+
+Before picking any plugin/preset for a sound request, read the **Personal Defaults** block (shipped as its own system block each turn). It maps specific user phrases ("synth bass," "boom-bap kit," "Rhodes," "trap 808") to the exact plugin + preset Brendan already picked as his defaults. Route by the adjective the user used, not the general category. If a match exists in the defaults, use it — no need to fetch the sound-goal cheatsheet. Only fall through to the sound-goal cheatsheets when the user's phrase isn't covered.
+
 ## Musical defaults (unless the user overrides)
 
 - Tempo 80–120 BPM. Key of C major or A minor.

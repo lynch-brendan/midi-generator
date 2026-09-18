@@ -1297,6 +1297,7 @@ async def posthog_proxy(path: str, request: Request):
 import anthropic as _nasty_anthropic
 
 _NASTY_SYSTEM_PROMPT = (Path(__file__).parent / "prompts" / "nasty_system.md").read_text()
+_NASTY_PERSONAL_DEFAULTS = (Path(__file__).parent / "prompts" / "personal_defaults.md").read_text()
 
 
 # Load the community plugin-knowledge registry. Each markdown file is one
@@ -2517,6 +2518,14 @@ def nasty_chat(req: NastyChatRequest):
     # avoids that rewrite for real music-making sessions with think time.
     system_blocks = [
         {"type": "text", "text": _NASTY_SYSTEM_PROMPT},
+        # Personal defaults: descriptor → preferred plugin+preset map. Read
+        # first when the user asks for a sound. Cached separately so edits to
+        # this file don't invalidate the plugin_block cache, and vice versa.
+        {
+            "type": "text",
+            "text": _NASTY_PERSONAL_DEFAULTS,
+            "cache_control": {"type": "ephemeral", "ttl": "1h"},
+        },
         {
             "type": "text",
             "text": plugin_block + knowledge_block,
