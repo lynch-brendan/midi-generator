@@ -4457,14 +4457,17 @@ async function applyToolCalls(calls) {
         if (!kit) {
           summaries.push(`× drum kit "${input.name}" not found (${kits.length} kits scanned)`);
         } else {
-          // Piece → (channelId, GM pitch preference order for sample lookup).
-          // Falls back through the alternate pitch when the primary isn't
-          // mapped in this kit — e.g. some kits only have snare at 40, not 38.
+          // Piece → (channelId, GM pitch preference order for sample lookup,
+          // rootNote to store on the channel). rootNote MUST match the GM
+          // pitch the pattern triggers this drum at — vintage kit wavs are
+          // recorded at their natural pitch, so leaving rootNote at 60 (the
+          // built-in Kick.wav default) pitches note-36 kicks down 2 octaves
+          // and makes every swapped kit sound subterranean.
           const pieces = [
-            { chId: 'ch_kick',  pitches: [36, 35] },
-            { chId: 'ch_snare', pitches: [38, 40] },
-            { chId: 'ch_hh',    pitches: [42, 44, 46] },
-            { chId: 'ch_clap',  pitches: [39, 38] },
+            { chId: 'ch_kick',  pitches: [36, 35],     rootNote: 36 },
+            { chId: 'ch_snare', pitches: [38, 40],     rootNote: 38 },
+            { chId: 'ch_hh',    pitches: [42, 44, 46], rootNote: 42 },
+            { chId: 'ch_clap',  pitches: [39, 38],     rootNote: 39 },
           ];
           let loaded = 0;
           for (const p of pieces) {
@@ -4476,15 +4479,18 @@ async function applyToolCalls(calls) {
             }
             if (!samplePath) continue;
             // Store the ABSOLUTE path in drumSample. hydratePluginChannels
-            // detects a leading '/' and skips the drumsBase prefix.
+            // detects a leading '/' and skips the drumsBase prefix. Also
+            // persist the piece-specific rootNote so a reload sends the same
+            // add_drum_channel and audio comes back at the right pitch.
             ch.drumSample = samplePath;
+            ch.drumRootNote = p.rootNote;
             ch.pluginId = 'drum:' + samplePath;
             // Push the swap to the engine right now so it's audible on the
             // next audio buffer — no need to wait for a full re-hydrate.
             if (window.nasty && window.nasty.engine) {
               window.nasty.engine.send({
                 cmd: 'add_drum_channel', channelId: ch.id,
-                samplePath, rootNote: ch.drumRootNote ?? 60,
+                samplePath, rootNote: p.rootNote,
               });
             }
             loaded++;

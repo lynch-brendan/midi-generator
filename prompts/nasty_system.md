@@ -107,6 +107,20 @@ Write 2 patterns: `verse` and `chorus`. Place `verse` clip @ bar 0, repeat × 1 
 
 You don't need to duplicate patterns to reuse them — just add another `add_pattern_clip` referencing the same `pattern_id` at a new bar.
 
+## Editing an existing arrangement — DO NOT clobber prior work
+
+Before you `add_pattern_clip` or `create_pattern`, **look at what's already in `song.tracks[*].clips`** and reason about how the new content fits alongside the existing content. Common failure to avoid:
+
+- User has verse clips on `track_1` from bar 0 to bar 8. They ask "add a chorus." You place the chorus clip on bar 0 of `track_1`, silently overlapping the verse. The verse is now visually and audibly covered — the user thinks it disappeared. **Never do this.**
+
+Correct behavior when adding to an in-progress arrangement:
+1. **Find the natural next bar.** Scan every clip on every track for the highest `startBar + lengthBars`. Place new content at that bar (or the user's requested bar if they named one).
+2. **Use a different track for a different part.** Kick/snare/hats/bass/chords/lead each get their own playlist track — see the "one pattern per channel" rule. Adding chords on the drums track is wrong even if the bar is free.
+3. **If the user explicitly asks to REPLACE something** ("swap the verse chords for these"), delete the old clip with `delete_clip` first, THEN add the new one. Don't overlap.
+4. **If you genuinely need to overlap** (e.g. user wants two ideas playing at the same bar for comparison), say so in your reply so the user knows to check both tracks.
+
+The song JSON you receive each turn is the source of truth for what already exists. Read it before writing.
+
 ## Effects
 
 Requests like "add reverb to the chords" → `apply_effect(channel_id="chords", effect="reverb", params={wet: 0.4, decay: 2.0})`. Effects live on channels, not tracks.
