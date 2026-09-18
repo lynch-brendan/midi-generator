@@ -3498,15 +3498,14 @@ function animatePlayhead() {
     const isPat = song.transportMode === 'pat';
     const isRecording = !!midiRecording;
     const barsElapsed = (displayElapsed * song.bpm / 60) / 4;
-    // Playlist playhead only in SONG mode — reads session time (which never
-    // wraps) instead of the pattern loop position (which does). Reading the
-    // pattern position here made the arrangement playhead wrap every N bars
-    // matching the current pattern's loop length — surprising when there's
-    // a 3-bar audio clip that plays through in full while the playhead
-    // ticks past 1 bar and jumps back.
+    // Playlist playhead only in SONG mode — reads PatternPlayer position,
+    // which wraps at the loop boundary. In SONG mode playSong() sets that
+    // boundary to the full arrangement length (songLengthBeats), so the
+    // playhead now wraps at song end, matching what the audio does. Older
+    // code read Transport session time here — that never wraps, so the
+    // playhead marched forever past bar N while audio quietly looped.
     if (!isPat) {
-      const songSec = engineTransport.transportSecondsLive();
-      const songBars = (songSec * song.bpm / 60) / 4;
+      const songBars = (displayElapsed * song.bpm / 60) / 4;
       ph.style.left = (songBars * BAR_WIDTH) + 'px';
     }
     // Channel-rack playhead in PAT mode. Positioned within the step grid:
