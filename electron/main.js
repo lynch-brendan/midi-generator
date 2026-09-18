@@ -1131,6 +1131,48 @@ function scanDrumKits() {
 // where each kit is { name, files: { 36: absPath, 38: absPath, ... } }.
 ipcMain.handle('nasty-list-drum-kits', () => scanDrumKits());
 
+// Read enough of a WAV file's RIFF header to answer "how long is this?"
+// without decoding the audio. Handles standard PCM WAV — the only format
+// the bundled drum kits ship as. Returns null if the file isn't a
+// well-formed WAV so callers can fall back to a default clip length.
+ipcMain.handle('nasty-probe-wav', async (_evt, filePath) => {
+  try {
+    const fd = fs.openSync(filePath, 'r');
+    const head = Buffer.alloc(44);
+    fs.readSync(fd, head, 0, 44, 0);
+    fs.closeSync(fd);
+    if (head.slice(0, 4).toString('ascii') !== 'RIFF') return null;
+    if (head.slice(8, 12).toString('ascii') !== 'WAVE') return null;
+    const numChannels   = head.readUInt16LE(22);
+    const sampleRate    = head.readUInt32LE(24);
+    const bitsPerSample = head.readUInt16LE(34);
+    // Data chunk may not be at offset 36 for files with extended fmt chunks —
+    // walk chunks until we find "data". Cheap because we only read headers.
+    const stat = fs.statSync(filePath);
+    let dataSize = 0;
+    let offset = 12;
+    const scan = Buffer.alloc(8);
+    const fd2 = fs.openSync(filePath, 'r');
+    while (offset < stat.size - 8) {
+      fs.readSync(fd2, scan, 0, 8, offset);
+      const chunkId   = scan.slice(0, 4).toString('ascii');
+      const chunkSize = scan.readUInt32LE(4);
+      if (chunkId === 'data') { dataSize = chunkSize; break; }
+      offset += 8 + chunkSize;
+    }
+    fs.closeSync(fd2);
+    if (!dataSize || !sampleRate || !numChannels || !bitsPerSample) return null;
+    const bytesPerSample = bitsPerSample / 8;
+    const lengthSamples = Math.floor(dataSize / (numChannels * bytesPerSample));
+    return {
+      sampleRate, numChannels, bitsPerSample, lengthSamples,
+      durationSec: lengthSamples / sampleRate,
+    };
+  } catch (e) {
+    return null;
+  }
+});
+
 function findNastyHtml() {
   // Dev: web/nasty.html is one level up from electron/
   const devPath = path.join(__dirname, '..', 'web', 'nasty.html');

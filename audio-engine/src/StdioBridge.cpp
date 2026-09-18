@@ -591,11 +591,16 @@ juce::var StdioBridge::handleCommand(const juce::var& msg) {
         juce::String path;
         juce::int64 samples = 0;
         auto err = host.stopRecording(path, samples);
+        // "not recording" is a benign noop, not an error — JS defensively
+        // sends stop_recording on every Stop click as cleanup. Reply with a
+        // silent recording_stopped (empty path) instead of surfacing as an
+        // engine error the frontend has to filter.
+        const bool isNoop = (err == "not recording");
         auto* o = new juce::DynamicObject();
-        o->setProperty("event",   err.isEmpty() ? juce::var("recording_stopped") : juce::var("error"));
+        o->setProperty("event",   (err.isEmpty() || isNoop) ? juce::var("recording_stopped") : juce::var("error"));
         o->setProperty("path",    juce::var(path));
         o->setProperty("samples", juce::var((double) samples));
-        if (err.isNotEmpty()) o->setProperty("error", err);
+        if (err.isNotEmpty() && !isNoop) o->setProperty("error", err);
         return juce::var(o);
     }
 

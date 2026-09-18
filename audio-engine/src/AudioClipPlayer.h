@@ -10,6 +10,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <atomic>
 #include "Transport.h"
+#include "PatternPlayer.h"
 
 namespace nasty {
 
@@ -28,6 +29,10 @@ public:
     void setClipTiming(juce::int64 songStartSample, juce::int64 lengthSamples);
 
     void setTransport(const Transport* t) noexcept { transport = t; }
+    // Wire the PatternPlayer so the clip re-triggers on every loop wrap.
+    // Without it the clip uses Transport's monotonic sample, plays through
+    // its window once, and stays silent for the rest of the session.
+    void setPatternPlayer(const PatternPlayer* p) noexcept { patternPlayer = p; }
 
     const juce::String getName() const override    { return "NastyAudioClip"; }
     void prepareToPlay(double, int) override        {}
@@ -54,6 +59,7 @@ private:
     std::atomic<juce::int64> clipStart{0};
     std::atomic<juce::int64> clipLength{0};
     const Transport* transport = nullptr;
+    const PatternPlayer* patternPlayer = nullptr;
 };
 
 } // namespace nasty

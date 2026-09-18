@@ -2089,6 +2089,11 @@ juce::String PluginHost::addAudioClip(const juce::String& clipId,
         return "couldn't read WAV: " + path;
     }
     player->setTransport(&transport);
+    // PatternPlayer position wraps at loopLength — hand it over so the clip
+    // re-fires every loop iteration in both PAT and SONG modes. Without
+    // this, the clip's window is only crossed once during Transport's
+    // monotonic forward walk and subsequent loops stay silent.
+    player->setPatternPlayer(&patternPlayer);
     player->setClipTiming(songStartSample, lengthSamples);
 
     // Add to graph BEFORE taking the lock — no map mutation yet.

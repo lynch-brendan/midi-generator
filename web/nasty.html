@@ -293,11 +293,25 @@
   .track-row {
     height: 44px; border-bottom: 1px solid #1a1a1a;
     position: relative;
-    background:
-      repeating-linear-gradient(90deg, transparent 0, transparent 159px, #2f2f2f 159px, #2f2f2f 160px),
-      repeating-linear-gradient(90deg, transparent 0, transparent 39px, #262626 39px, #262626 40px);
     cursor: crosshair;
   }
+  /* Grid overlay — absolute-positioned divs, one per gridline. Same
+     `n * BAR_WIDTH` math as the ruler ticks so alignment is guaranteed.
+     Sits below clips (z-index 0) and above the track-row bg (which is
+     just the crosshair cursor + row shading now). */
+  #timeline-grid {
+    position: absolute; left: 0; top: 22px; bottom: 0;
+    pointer-events: none; z-index: 0;
+  }
+  #timeline-grid .gl {
+    position: absolute; top: 0; bottom: 0; width: 1px;
+  }
+  /* Colors picked as translucent black so they show up on either row shade
+     (workspace #3d4954 or even-row #414d59) without needing per-theme tuning. */
+  #timeline-grid .gl.beat   { background: rgba(0,0,0,0.20); }
+  #timeline-grid .gl.bar    { background: rgba(0,0,0,0.45); }
+  #timeline-grid .gl.phrase { background: rgba(0,0,0,0.65); }
+  .clip { z-index: 1; }
   .clip {
     position: absolute; top: 2px; bottom: 2px;
     background: linear-gradient(180deg, var(--accent), #d94276);
@@ -1388,12 +1402,10 @@
   .track-row {
     height: 36px;
     border-bottom: 1px solid #2f353c;
-    background:
-      repeating-linear-gradient(90deg,
-        transparent 0, transparent 159px, rgba(0,0,0,0.25) 159px, rgba(0,0,0,0.25) 160px),
-      repeating-linear-gradient(90deg,
-        transparent 0, transparent 39px, rgba(255,255,255,0.03) 39px, rgba(255,255,255,0.03) 40px),
-      linear-gradient(var(--workspace), var(--workspace));
+    background-color: var(--workspace);
+    /* Grid lines are drawn once by #timeline-grid — do NOT re-add a
+       hardcoded repeating gradient here. Any 40/160px pattern here would
+       stay put while --bar-w scales, which was the "grid drift" symptom. */
   }
   .track-row:nth-child(even) { background-color: #414d59; }
   #playhead { top: 22px; background: #ff8040; box-shadow: 0 0 6px rgba(255,128,64,0.6); }
@@ -2066,6 +2078,8 @@
         <div class="mi" data-cmd="add-channel"><span>Channel…</span></div>
         <div class="mi" data-cmd="add-pattern"><span>Pattern…</span></div>
         <div class="mi" data-cmd="add-insert"><span>Mixer Insert</span></div>
+        <div class="msep"></div>
+        <div class="mi" data-cmd="free-plugins"><span>Free plugins…</span></div>
       </div>
     </div>
     <div class="menu-item" data-menu="patterns">PATTERNS
@@ -2163,8 +2177,10 @@
       <label>Snap:</label>
       <select id="tb-snap">
         <option value="1">1 bar</option>
-        <option value="0.25" selected>1/4 step</option>
+        <option value="0.25">1/4 step</option>
         <option value="0.125">1/8</option>
+        <option value="0.0625">1/16</option>
+        <option value="0.03125" selected>1/32 step</option>
         <option value="0">none</option>
       </select>
     </div>
@@ -2195,11 +2211,8 @@
       <div class="bh">
         Browser
         <div class="bh-tabs">
-          <div class="bt on" data-btab="instruments">Inst</div>
-          <div class="bt" data-btab="gm" title="128 built-in instruments — piano, strings, brass, drums, everything">Sounds</div>
+          <div class="bt on" data-btab="sounds" title="Bundled drum kits — vintage machines, MPCs, boutique kits. Double-click to load onto Kick/Snare/HiHat/Clap.">Sounds</div>
           <div class="bt" data-btab="plugins" title="VST/AU plugins — bundled synths + your system plugins">Plugins</div>
-          <div class="bt" data-btab="free" title="Additional free synths — install with one click">Free</div>
-          <div class="bt" data-btab="patterns">Pat</div>
         </div>
       </div>
       <div id="browser-tree"></div>
@@ -2405,6 +2418,16 @@
   </div>
 </div>
 
+<div id="free-plugins-modal" class="modal hidden">
+  <div class="modal-panel" style="max-width:520px">
+    <h3>Free plugins</h3>
+    <div id="free-plugins-list"></div>
+    <div class="row" style="justify-content:flex-end">
+      <button id="free-plugins-close">Close</button>
+    </div>
+  </div>
+</div>
+
 <div id="engine-crash-modal" class="modal hidden" style="z-index:9000">
   <div class="modal-panel" style="max-width:440px">
     <h3 style="font-size:14px">The audio engine crashed</h3>
@@ -2467,7 +2490,17 @@
 // State (FL model)
 // ============================================================
 const MIN_BARS = 500;
-const BAR_WIDTH = 40;
+let BAR_WIDTH = 40;
+const BAR_WIDTH_MIN = 8;
+const BAR_WIDTH_MAX = 1000;
+// BAR_WIDTH must be a multiple of 4 so beat_width = BAR_WIDTH/4 lands on
+// whole pixels — without that, CSS-background beat lines (drawn at
+// fractional offsets, antialiased) drift out of alignment with pixel-
+// snapped tick labels + clip edges after even a couple of bars.
+function quantizeBarWidth(w) {
+  const q = Math.max(BAR_WIDTH_MIN, Math.min(BAR_WIDTH_MAX, Math.round(w / 4) * 4));
+  return q;
+}
 const PR_KEY_HEIGHT = 14;
 const PR_BEAT_WIDTH = 96; // fixed zoom — pattern scrolls horizontally if it's long
 const PR_PITCH_MIN = 24;
@@ -2981,13 +3014,15 @@ function ensureDefaults() {
     });
     currentPatternId = 'pat_1';
   }
-  if (!song.tracks.length) {
-    for (let i = 1; i <= 8; i++) {
-      song.tracks.push({
-        id: 'track_' + i, name: 'Track ' + i,
-        muted: false, solo: false, clips: []
-      });
-    }
+  // Always have at least 50 arrangement tracks so the playlist fills the
+  // viewport out of the box — FL-style "lots of empty lanes waiting for you"
+  // rather than a stubby 8-lane block that ends mid-screen.
+  const TARGET_TRACKS = 50;
+  for (let i = song.tracks.length + 1; i <= TARGET_TRACKS; i++) {
+    song.tracks.push({
+      id: 'track_' + i, name: 'Track ' + i,
+      muted: false, solo: false, clips: []
+    });
   }
   if (!currentPatternId && song.patterns.length) currentPatternId = song.patterns[0].id;
 }
@@ -3129,6 +3164,9 @@ const engineTransport = {
   seekPattern(sample) {
     this.send({ cmd: 'pattern_seek', sample });
     this.patternPosition = sample;
+  },
+  setTempo(bpm) {
+    this.send({ cmd: 'transport_set_tempo', bpm });
   },
   setMetronomeEnabled(v) {
     this.send({ cmd: 'metronome_set_enabled', enabled: !!v });
@@ -3320,6 +3358,42 @@ function tracksToPlay() {
 // picker, piano-roll dropdown), swap the engine's pattern in place — no
 // stop, no reseek. Matches FL: clicking Pattern 2 while Pattern 1 loops
 // switches to Pattern 2 on the next loop iteration.
+// Change tempo live. Notes are scheduled in SAMPLE positions baked at
+// song.bpm (see beatsToSamples), so without a re-push playback keeps rolling
+// at the old tempo until Stop/Play. This updates song.bpm, tells the engine
+// (for tempo-syncing plugins), and — if playing — re-pushes the pattern or
+// arrangement at the new sample scale and seeks proportionally so the
+// current musical beat is preserved instead of teleporting.
+function applyBpmChange(newBpm) {
+  const v = Math.round(Number(newBpm));
+  if (!Number.isFinite(v) || v < 30 || v > 300) return;
+  const oldBpm = song.bpm || 120;
+  if (v === oldBpm) return;
+  song.bpm = v;
+  const bpmInput = document.getElementById('bpm-input');
+  if (bpmInput && parseInt(bpmInput.value) !== v) bpmInput.value = v;
+  persist();
+  if (!engineTransport.available()) return;
+  engineTransport.setTempo(v);
+  if (!engineTransport.isPlaying) return;
+
+  const scale = oldBpm / v;
+  const newPatternSample  = Math.round(engineTransport.patternPosition * scale);
+  const newTransportSample = Math.round(engineTransport.currentSample   * scale);
+  if (song.transportMode === 'pat') {
+    const pat = song.patterns.find(p => p.id === currentPatternId);
+    if (pat) {
+      engineTransport.pushPattern(pat);
+      engineTransport.setLoopBeats(pat.lengthBars * 4);
+    }
+  } else {
+    engineTransport.pushSongArrangement();
+    engineTransport.setLoopBeats(engineTransport.songLengthBeats());
+  }
+  engineTransport.seek(newTransportSample);
+  engineTransport.seekPattern(newPatternSample);
+}
+
 function hotSwapCurrentPatternIfPlaying() {
   if (!animationFrame) return;                     // not playing
   if (song.transportMode !== 'pat') return;
@@ -4382,7 +4456,7 @@ async function applyToolCalls(calls) {
         openEffectIdeasPanel(input.target_id, plugins);
         summaries.push(`${plugins.length} effects → panel (${input.target_id})`);
       } else if (name === 'set_tempo') {
-        song.bpm = input.bpm; summaries.push(`tempo → ${input.bpm} BPM`);
+        applyBpmChange(input.bpm); summaries.push(`tempo → ${input.bpm} BPM`);
       } else if (name === 'play') {
         // Same path as clicking the Play button — includes engine mode set,
         // pattern/arrangement push, seek honoring, metronome, animation.
@@ -4445,9 +4519,6 @@ async function applyToolCalls(calls) {
           summaries.push(`mode already ${mode.toUpperCase()}`);
         }
       } else if (name === 'load_drum_kit') {
-        // Swap the samples on ch_kick / ch_snare / ch_hh / ch_clap to the
-        // chosen vintage kit. Kit files are resolved locally by main.js via
-        // the auto-mapped GM pitch layout (36 kick, 38 snare, 42 chh, 39 clap).
         // Fuzzy match on kit name so "808" hits "Roland TR-808" etc.
         const requested = (input.name || '').trim().toLowerCase();
         const kits = drumKitsData?.kits || [];
@@ -4457,44 +4528,7 @@ async function applyToolCalls(calls) {
         if (!kit) {
           summaries.push(`× drum kit "${input.name}" not found (${kits.length} kits scanned)`);
         } else {
-          // Piece → (channelId, GM pitch preference order for sample lookup,
-          // rootNote to store on the channel). rootNote MUST match the GM
-          // pitch the pattern triggers this drum at — vintage kit wavs are
-          // recorded at their natural pitch, so leaving rootNote at 60 (the
-          // built-in Kick.wav default) pitches note-36 kicks down 2 octaves
-          // and makes every swapped kit sound subterranean.
-          const pieces = [
-            { chId: 'ch_kick',  pitches: [36, 35],     rootNote: 36 },
-            { chId: 'ch_snare', pitches: [38, 40],     rootNote: 38 },
-            { chId: 'ch_hh',    pitches: [42, 44, 46], rootNote: 42 },
-            { chId: 'ch_clap',  pitches: [39, 38],     rootNote: 39 },
-          ];
-          let loaded = 0;
-          for (const p of pieces) {
-            const ch = song.channels.find(c => c.id === p.chId);
-            if (!ch) continue;
-            let samplePath = null;
-            for (const pitch of p.pitches) {
-              if (kit.files[pitch]) { samplePath = kit.files[pitch]; break; }
-            }
-            if (!samplePath) continue;
-            // Store the ABSOLUTE path in drumSample. hydratePluginChannels
-            // detects a leading '/' and skips the drumsBase prefix. Also
-            // persist the piece-specific rootNote so a reload sends the same
-            // add_drum_channel and audio comes back at the right pitch.
-            ch.drumSample = samplePath;
-            ch.drumRootNote = p.rootNote;
-            ch.pluginId = 'drum:' + samplePath;
-            // Push the swap to the engine right now so it's audible on the
-            // next audio buffer — no need to wait for a full re-hydrate.
-            if (window.nasty && window.nasty.engine) {
-              window.nasty.engine.send({
-                cmd: 'add_drum_channel', channelId: ch.id,
-                samplePath, rootNote: p.rootNote,
-              });
-            }
-            loaded++;
-          }
+          const loaded = loadDrumKit(kit);
           summaries.push(`🥁 loaded "${kit.name}" (${loaded}/4 pieces)`);
         }
       } else if (name === 'create_channel') {
@@ -4832,10 +4866,100 @@ function render() {
   persist();
 }
 
+// Waveform peaks cache. Per absolute path: a Float32Array of alternating
+// min/max samples across N buckets, computed once per file via Web Audio's
+// decodeAudioData. Redraws are cheap (canvas fillRects); decodes are async.
+const _peaksCache = new Map();
+const _peaksInFlight = new Map();
+let _wfAudioCtx = null;
+const WAVEFORM_BUCKETS = 1024;
+
+async function loadPeaks(absPath) {
+  if (_peaksCache.has(absPath)) return _peaksCache.get(absPath);
+  if (_peaksInFlight.has(absPath)) return _peaksInFlight.get(absPath);
+  const p = (async () => {
+    try {
+      if (!(window.nasty && window.nasty.fs && window.nasty.fs.readAsBase64)) return null;
+      const b64 = await window.nasty.fs.readAsBase64(absPath);
+      if (!b64) return null;
+      const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+      _wfAudioCtx = _wfAudioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      const decoded = await _wfAudioCtx.decodeAudioData(bytes.buffer);
+      const nb = WAVEFORM_BUCKETS;
+      const peaks = new Float32Array(nb * 2);
+      const step = Math.max(1, Math.floor(decoded.length / nb));
+      // Merge channels to mono for the display — most drum samples are mono
+      // or near-mono anyway, and dual-lane peaks double the drawing cost.
+      const chs = decoded.numberOfChannels;
+      for (let i = 0; i < nb; i++) {
+        const start = i * step;
+        const end   = Math.min(decoded.length, start + step);
+        let mn = 0, mx = 0;
+        for (let c = 0; c < chs; c++) {
+          const data = decoded.getChannelData(c);
+          for (let j = start; j < end; j++) {
+            const v = data[j];
+            if (v < mn) mn = v;
+            if (v > mx) mx = v;
+          }
+        }
+        peaks[i * 2]     = mn;
+        peaks[i * 2 + 1] = mx;
+      }
+      _peaksCache.set(absPath, peaks);
+      return peaks;
+    } catch (e) {
+      console.warn('[nasty] waveform decode failed', absPath, e);
+      return null;
+    }
+  })();
+  _peaksInFlight.set(absPath, p);
+  p.finally(() => _peaksInFlight.delete(absPath));
+  return p;
+}
+
+function drawPeaks(canvas, peaks) {
+  const ctx = canvas.getContext('2d');
+  const wPx = canvas.width;
+  const hPx = canvas.height;
+  ctx.clearRect(0, 0, wPx, hPx);
+  if (!peaks || !peaks.length) return;
+  const nb = peaks.length / 2;
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  const mid = hPx / 2;
+  for (let x = 0; x < wPx; x++) {
+    const bucket = Math.min(nb - 1, Math.floor(x / wPx * nb));
+    const mn = peaks[bucket * 2];
+    const mx = peaks[bucket * 2 + 1];
+    const yTop    = mid - mx * mid;
+    const yBottom = mid - mn * mid;
+    ctx.fillRect(x, yTop, 1, Math.max(1, yBottom - yTop));
+  }
+}
+
+function scheduleWaveformDraw(clipEl, clip) {
+  const canvas = clipEl.querySelector('canvas.wave');
+  if (!canvas) return;
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  const cssW = clipEl.clientWidth || parseFloat(clipEl.style.width) || 40;
+  const cssH = clipEl.clientHeight || 40;
+  canvas.width  = Math.max(2, Math.round(cssW * dpr));
+  canvas.height = Math.max(2, Math.round(cssH * dpr));
+  canvas.style.width  = cssW + 'px';
+  canvas.style.height = cssH + 'px';
+  const cached = _peaksCache.get(clip.path);
+  if (cached) {
+    drawPeaks(canvas, cached);
+  } else {
+    loadPeaks(clip.path).then(p => { if (p) drawPeaks(canvas, p); });
+  }
+}
+
 function renderPlaylist() {
   const timeline = document.getElementById('timeline');
   const playhead = document.getElementById('playhead');
-  timeline.querySelectorAll('.track-row, .ruler').forEach(r => r.remove());
+  timeline.querySelectorAll('.track-row, .ruler, #timeline-grid').forEach(r => r.remove());
+  document.documentElement.style.setProperty('--bar-w', BAR_WIDTH + 'px');
   const totalWidth = song.bars * BAR_WIDTH;
 
   const ruler = document.createElement('div');
@@ -4845,7 +4969,8 @@ function renderPlaylist() {
   for (let b = 0; b < song.bars; b++) {
     const tick = document.createElement('div');
     tick.className = 'tick';
-    tick.style.left = (b * BAR_WIDTH) + 'px';
+    tick.style.left  = (b * BAR_WIDTH) + 'px';
+    tick.style.width = BAR_WIDTH + 'px';
     tick.textContent = b + 1;
     ruler.appendChild(tick);
   }
@@ -4888,6 +5013,14 @@ function renderPlaylist() {
   });
   timeline.insertBefore(ruler, timeline.firstChild);
 
+  // Grid overlay — insert after the ruler so track-rows and clips render
+  // above/around it (via z-index on .clip).
+  const grid = document.createElement('div');
+  grid.id = 'timeline-grid';
+  grid.style.width = totalWidth + 'px';
+  buildTimelineGridLines(grid);
+  timeline.appendChild(grid);
+
   const patternById = new Map(song.patterns.map(p => [p.id, p]));
   for (const track of song.tracks) {
     const row = document.createElement('div');
@@ -4902,7 +5035,7 @@ function renderPlaylist() {
       el.className = 'clip' + (clip.type === 'audio' ? ' audio' : '');
       if (clip.id === selectedClipId || selectedClipIds.has(clip.id)) el.classList.add('selected');
       el.style.left = (clip.startBar * BAR_WIDTH) + 'px';
-      el.style.width = (clip.lengthBars * BAR_WIDTH - 2) + 'px';
+      el.style.width = (clip.lengthBars * BAR_WIDTH) + 'px';
       if (clip.type === 'pattern') {
         const p = patternById.get(clip.patternId);
         if (p) {
@@ -4913,8 +5046,19 @@ function renderPlaylist() {
           el.textContent = '(missing pattern)'; el.style.background = '#444';
         }
       } else {
-        el.textContent = '🎤';
-        el.title = `audio ${clip.lengthBars} bars`;
+        // Audio clip: draw the waveform as a canvas backdrop + small filename
+        // label overlayed. Peaks decode async and paint when ready.
+        const wave = document.createElement('canvas');
+        wave.className = 'wave';
+        wave.style.cssText = 'position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none; opacity:0.9;';
+        el.appendChild(wave);
+        const label = document.createElement('div');
+        label.textContent = clip.name || (clip.path || '').split('/').pop() || 'audio';
+        label.style.cssText = 'position:relative; z-index:1; pointer-events:none; text-shadow: 0 1px 1px rgba(0,0,0,0.5);';
+        el.appendChild(label);
+        el.title = `${label.textContent} · ${clip.lengthBars.toFixed(2)} bars`;
+        // Defer paint until the row is in the DOM so clientWidth is honest.
+        requestAnimationFrame(() => scheduleWaveformDraw(el, clip));
       }
       el.dataset.clipId = clip.id;
       el.dataset.trackId = track.id;
@@ -4937,6 +5081,13 @@ function renderPlaylist() {
   const spacer = document.createElement('div');
   spacer.className = 'header-spacer';
   th.appendChild(spacer);
+  // Inner container that gets translated by the timeline-scroll listener so
+  // the track labels stay lined up with the clip lanes when you scroll the
+  // arrangement vertically. Spacer stays pinned at the top under the ruler.
+  const inner = document.createElement('div');
+  inner.className = 'track-headers-inner';
+  inner.id = 'track-headers-inner';
+  th.appendChild(inner);
   for (const track of song.tracks) {
     const h = document.createElement('div');
     h.className = 'track-header';
@@ -4948,9 +5099,128 @@ function renderPlaylist() {
       </div>
     `;
     h.querySelectorAll('.btns button').forEach(b => b.addEventListener('click', onTrackHeaderBtn));
-    th.appendChild(h);
+    inner.appendChild(h);
+  }
+  // Re-apply any stashed scroll offset so a re-render mid-scroll doesn't
+  // snap the headers back to the top.
+  const scroller = document.getElementById('timeline-scroll');
+  if (scroller && inner) {
+    inner.style.transform = `translateY(${-scroller.scrollTop}px)`;
   }
 }
+
+// Populate the timeline grid with vertical line divs — one per beat, with
+// bar and phrase (4-bar) boundaries drawn as heavier lines by class. Uses
+// the same n*BAR_WIDTH math as the ruler ticks so alignment is exact.
+function buildTimelineGridLines(grid) {
+  const totalBeats = song.bars * 4;
+  const beatW = BAR_WIDTH / 4;
+  const frag = document.createDocumentFragment();
+  for (let i = 0; i <= totalBeats; i++) {
+    const line = document.createElement('div');
+    line.className = 'gl';
+    if (i % 16 === 0)      line.classList.add('phrase');
+    else if (i % 4 === 0)  line.classList.add('bar');
+    else                    line.classList.add('beat');
+    line.style.left = (i * beatW) + 'px';
+    frag.appendChild(line);
+  }
+  grid.innerHTML = '';
+  grid.appendChild(frag);
+}
+
+// Snap dropdown → bars per snap increment (0 = no snap).
+function currentSnapBars() {
+  const el = document.getElementById('tb-snap');
+  const v = el ? parseFloat(el.value) : 0.25;
+  return isFinite(v) ? v : 0.25;
+}
+function snapBar(rawBar) {
+  const s = currentSnapBars();
+  if (s <= 0) return Math.max(0, rawBar);
+  return Math.max(0, Math.round(rawBar / s) * s);
+}
+
+// Fast, incremental layout update — used by the zoom wheel so 50 tracks +
+// clips don't force a full renderPlaylist() on every wheel tick. Only
+// touches the size/position of existing DOM; anything new (clips added,
+// tracks added) still needs a real render.
+function applyZoomLayout() {
+  document.documentElement.style.setProperty('--bar-w', BAR_WIDTH + 'px');
+  const totalWidth = song.bars * BAR_WIDTH;
+  const timeline = document.getElementById('timeline');
+  if (!timeline) return;
+  const ruler = timeline.querySelector('.ruler');
+  if (ruler) ruler.style.width = totalWidth + 'px';
+  ruler?.querySelectorAll('.tick').forEach((t, i) => {
+    t.style.left  = (i * BAR_WIDTH) + 'px';
+    t.style.width = BAR_WIDTH + 'px';
+  });
+  const grid = document.getElementById('timeline-grid');
+  if (grid) {
+    grid.style.width = totalWidth + 'px';
+    const beatW = BAR_WIDTH / 4;
+    grid.querySelectorAll('.gl').forEach((line, i) => {
+      line.style.left = (i * beatW) + 'px';
+    });
+  }
+  timeline.querySelectorAll('.track-row').forEach(row => {
+    row.style.width = totalWidth + 'px';
+    const trackId = row.dataset.trackId;
+    const track = song.tracks.find(t => t.id === trackId);
+    if (!track) return;
+    row.querySelectorAll('.clip').forEach(el => {
+      const clipId = el.dataset.clipId;
+      const clip = track.clips.find(c => c.id === clipId);
+      if (!clip) return;
+      el.style.left  = (clip.startBar * BAR_WIDTH) + 'px';
+      el.style.width = Math.max(2, clip.lengthBars * BAR_WIDTH) + 'px';
+      // Repaint waveform for audio clips — canvas widths need to track
+      // the new pixel size or peaks stretch/squish.
+      if (clip.type === 'audio') scheduleWaveformDraw(el, clip);
+    });
+  });
+}
+
+// Arrangement zoom — Cmd/Ctrl+scroll over the timeline changes BAR_WIDTH.
+// Uses the CSS variable + incremental DOM update path so scrolling stays
+// smooth even with lots of tracks. Anchors the zoom around the bar under
+// the cursor so what you're looking at stays put.
+(function wireArrangementZoom() {
+  const scroller = document.getElementById('timeline-scroll');
+  if (!scroller) return;
+  // Mirror vertical scroll to the track-headers so track labels stay glued
+  // to their lanes when the arrangement scrolls down.
+  scroller.addEventListener('scroll', () => {
+    const inner = document.getElementById('track-headers-inner');
+    if (inner) inner.style.transform = `translateY(${-scroller.scrollTop}px)`;
+  }, { passive: true });
+  scroller.addEventListener('wheel', (e) => {
+    // Zoom on trackpad pinch (Chromium emits wheel + ctrlKey for pinch
+    // regardless of physical Ctrl) or Cmd+wheel for mouse users.
+    if (!(e.metaKey || e.ctrlKey)) return;
+    e.preventDefault();
+    const rect = scroller.getBoundingClientRect();
+    const cursorInScroll = (e.clientX - rect.left) + scroller.scrollLeft;
+    const barUnderCursor = cursorInScroll / BAR_WIDTH;
+    // Aggressive exponent so a single pinch gesture noticeably resizes the
+    // arrangement — trackpad gestures otherwise felt sluggish. Cap per-event
+    // step so a single spike doesn't skip past several zoom "notches."
+    const step = Math.max(-60, Math.min(60, e.deltaY));
+    const factor = Math.pow(1.18, -step / 40);
+    const raw = BAR_WIDTH * factor;
+    // Nudge past the current quantized value in the intended direction —
+    // otherwise tiny wheel deltas can round back to the same BAR_WIDTH
+    // forever, feeling like zoom is broken. `raw > BAR_WIDTH` = zoom in →
+    // round up; zoom out → round down.
+    const bumped = raw > BAR_WIDTH ? raw + 2 : raw - 2;
+    const newWidth = quantizeBarWidth(bumped);
+    if (newWidth === BAR_WIDTH) return;
+    BAR_WIDTH = newWidth;
+    applyZoomLayout();
+    scroller.scrollLeft = Math.max(0, barUnderCursor * BAR_WIDTH - (e.clientX - rect.left));
+  }, { passive: false });
+})();
 
 // Auto-grow a pattern's length to the smallest whole bar that fits every
 // note. Minimum 1 bar. Called after any note mutation so the pattern
@@ -7056,6 +7326,17 @@ function onLaneMouseDown(e) {
   startArrangementMarquee(e, { fallbackTrack: track, fallbackRow: row });
 }
 
+// Look up the currently-selected clip if it's an audio clip. Powers the
+// "click empty lane to paint another copy of the just-dropped sample" flow.
+function findSelectedAudioClip() {
+  if (!selectedClipId) return null;
+  for (const t of song.tracks) {
+    const c = t.clips.find(c => c.id === selectedClipId);
+    if (c && c.type === 'audio') return c;
+  }
+  return null;
+}
+
 // Marquee (rubber-band) selection on the arrangement. Draws a semi-transparent
 // box inside #timeline, then on release adds every clip whose DOM rect
 // intersects the marquee to selectedClipIds. If the drag never crossed the
@@ -7102,15 +7383,23 @@ function startArrangementMarquee(e, { fallbackTrack, fallbackRow }) {
     document.removeEventListener('mousemove', onMove);
     document.removeEventListener('mouseup', onUp);
     if (!dragged) {
-      // Plain click on empty lane → original create-clip behavior. Match the
-      // math from the pre-refactor handler so column-under-cursor still lines
-      // up regardless of horizontal scroll.
+      // Plain click on empty lane. Two modes based on what's currently
+      // selected:
+      //   * audio clip selected → paint another copy of that same sample at
+      //     the click bar (drop-then-click-to-repeat workflow).
+      //   * anything else (or nothing) → drop a pattern clip using the
+      //     currently-armed pattern.
+      const rowRect = fallbackRow.getBoundingClientRect();
+      const x = up.clientX - rowRect.left;
+      const startBar = snapBar(x / BAR_WIDTH);
+      const activeAudio = findSelectedAudioClip();
+      if (activeAudio) {
+        addAudioClipOnTrack(fallbackTrack, activeAudio.path, startBar, activeAudio.lengthSamples);
+        return;
+      }
       if (!currentPatternId) return;
       const pat = song.patterns.find(p => p.id === currentPatternId);
       if (!pat) return;
-      const rowRect = fallbackRow.getBoundingClientRect();
-      const x = up.clientX - rowRect.left;
-      const startBar = Math.max(0, Math.floor(x / BAR_WIDTH));
       const clip = {
         id: 'clip_' + Date.now().toString(36),
         type: 'pattern', patternId: pat.id,
@@ -7145,20 +7434,34 @@ function startArrangementMarquee(e, { fallbackTrack, fallbackRow }) {
 
 function onLaneDragOver(e) {
   const types = e.dataTransfer && e.dataTransfer.types;
-  if (types && types.includes('application/x-nasty-pattern')) e.preventDefault();
+  if (!types) return;
+  if (types.includes('application/x-nasty-pattern')
+      || types.includes('application/x-nasty-audio-file')) {
+    e.preventDefault();
+  }
 }
 function onLaneDrop(e) {
-  const patId = e.dataTransfer.getData('application/x-nasty-pattern');
-  if (!patId) return;
-  e.preventDefault();
   const row = e.currentTarget;
   const trackId = row.dataset.trackId;
   const track = song.tracks.find(t => t.id === trackId);
-  const pat = song.patterns.find(p => p.id === patId);
-  if (!track || !pat) return;
+  if (!track) return;
   const rect = row.getBoundingClientRect();
   const x = e.clientX - rect.left;
-  const startBar = Math.max(0, Math.floor(x / BAR_WIDTH));
+  const startBar = snapBar(x / BAR_WIDTH);
+
+  const audioPath = e.dataTransfer.getData('application/x-nasty-audio-file')
+                 || e.dataTransfer.getData('text/plain');
+  if (audioPath && /\.(wav|aiff?|flac|mp3|ogg)$/i.test(audioPath)) {
+    e.preventDefault();
+    console.log('[nasty] lane drop audio', audioPath, 'startBar', startBar);
+    dropAudioFileOnTrack(track, audioPath, startBar);
+    return;
+  }
+  const patId = e.dataTransfer.getData('application/x-nasty-pattern');
+  if (!patId) return;
+  e.preventDefault();
+  const pat = song.patterns.find(p => p.id === patId);
+  if (!pat) return;
   const clip = {
     id: 'clip_' + Date.now().toString(36),
     type: 'pattern', patternId: pat.id,
@@ -7170,6 +7473,87 @@ function onLaneDrop(e) {
   autoExpandBars();
   render();
   syncSongArrangement();
+}
+
+// Drop a sample file (currently WAV) from the Sounds browser onto an
+// arrangement track. Probes the file for its real length so the clip has an
+// honest visual width, then hands it to the engine routed to master. Also
+// materializes the sample as a channel-rack drum channel so the user can
+// trigger it via MIDI + so subsequent clicks on the arrangement can "paint"
+// more copies of the same sample (see onLaneMouseDown → click fallback).
+async function dropAudioFileOnTrack(track, absPath, startBar) {
+  const sr = engineTransport.sampleRate || 48000;
+  const spb = samplesPerBar();
+  let lengthSamples = Math.round(spb);        // fallback: 1 bar
+  if (window.nasty && window.nasty.probeWav) {
+    try {
+      const info = await window.nasty.probeWav(absPath);
+      if (info && info.lengthSamples > 0) {
+        const durSec = info.lengthSamples / info.sampleRate;
+        lengthSamples = Math.round(durSec * sr);
+      }
+    } catch (_) { /* keep fallback */ }
+  }
+  ensureSampleChannel(absPath);
+  addAudioClipOnTrack(track, absPath, startBar, lengthSamples);
+}
+
+// Materialize a dropped sample as a persistent drum-style channel in the
+// rack (idempotent — same absPath resolves to the same channel id, so
+// dropping the same file twice doesn't spawn duplicate channels).
+function ensureSampleChannel(absPath) {
+  const pluginId = 'drum:' + absPath;
+  let ch = song.channels.find(c => c.pluginId === pluginId);
+  if (ch) return ch;
+  const fileName = absPath.split('/').pop().replace(/\.[^.]+$/, '');
+  const id = 'ch_smp_' + Math.random().toString(36).slice(2, 8);
+  ch = {
+    id, name: fileName,
+    instrument: 'plugin', pluginId,
+    drumSample: absPath, drumRootNote: 60,
+    volume: 1.0, effects: [],
+    muted: false, solo: false, armed: false,
+    color: PALETTE[song.channels.length % PALETTE.length],
+    insertId: 'master',
+  };
+  song.channels.push(ch);
+  hydratePluginChannels();
+  return ch;
+}
+
+// Add an audio clip on a track at startBar with a known length. Shared by
+// drag-drop and the "paint mode" click path so both routes produce
+// engine-identical clips.
+function addAudioClipOnTrack(track, absPath, startBar, lengthSamples) {
+  const spb = samplesPerBar();
+  const fileName = absPath.split('/').pop();
+  const clip = {
+    id: 'aclip_' + Math.random().toString(36).slice(2, 8),
+    type: 'audio',
+    path: absPath,
+    busId: 'master_bus',
+    startSample: Math.round(startBar * spb),
+    lengthSamples,
+    startBar,
+    lengthBars: Math.max(1 / 16, lengthSamples / spb),
+    color: '#33c58a',
+    name: fileName,
+  };
+  track.clips.push(clip);
+  selectedClipId = clip.id;
+  selectedClipIds = new Set([clip.id]);
+  if (window.nasty && window.nasty.engine) {
+    window.nasty.engine.send({
+      cmd: 'add_audio_clip',
+      clipId: clip.id, path: clip.path, busId: clip.busId,
+      songStartSample: clip.startSample,
+      lengthSamples: clip.lengthSamples,
+    });
+  }
+  autoExpandBars();
+  render();
+  persist();
+  return clip;
 }
 
 function onClipMouseDown(e) {
@@ -7269,7 +7653,7 @@ function onClipMouseMove(e) {
   const track = song.tracks.find(t => t.id === clipDrag.trackId);
   const clip = track && track.clips.find(c => c.id === clipDrag.clipId);
   if (!clip) return;
-  const newBar = Math.max(0, Math.round(clipDrag.origBar + dx / BAR_WIDTH));
+  const newBar = snapBar(clipDrag.origBar + dx / BAR_WIDTH);
 
   let targetTrackId = clipDrag.trackId;
   const el = document.elementFromPoint(e.clientX, e.clientY);
@@ -7310,6 +7694,22 @@ function onClipMouseUp(e) {
     selectedClipIds = new Set([copy.id]);
     autoExpandBars();
     render();
+  } else if (clipDrag.moved && clip && clip.type === 'audio') {
+    // Audio clips aren't in the SONG-arrangement re-push path — their
+    // position lives in the engine's audioClips map, not in the per-channel
+    // arrangement. Push the new songStartSample directly so the next Play
+    // starts the sample where the user dropped it, not where it was.
+    const spb = samplesPerBar();
+    clip.startSample = Math.round(clip.startBar * spb);
+    if (window.nasty && window.nasty.engine) {
+      window.nasty.engine.send({
+        cmd: 'set_audio_clip_position',
+        clipId: clip.id,
+        songStartSample: clip.startSample,
+        lengthSamples: clip.lengthSamples,
+      });
+    }
+    persist();
   } else if (!clipDrag.moved && clip && clip.type === 'pattern') {
     // Single click = select only (already set in mousedown). Double click
     // = "I'm working on this pattern now": make it current, open the rack,
@@ -7395,6 +7795,35 @@ document.addEventListener('keydown', (e) => {
   const activeIds = selectedClipIds.size > 0
     ? selectedClipIds
     : (selectedClipId ? new Set([selectedClipId]) : new Set());
+  // Option/Alt + Arrow — fine-nudge selected clips in 1/128-bar increments,
+  // finer than any Snap dropdown option. Great for locking a sample to a
+  // percussive attack that snap keeps rounding away from.
+  if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight') && activeIds.size > 0 && !isPrOpen) {
+    e.preventDefault();
+    const delta = (e.key === 'ArrowRight' ? 1 : -1) / 128;
+    const spb = samplesPerBar();
+    for (const t of song.tracks) {
+      for (const c of t.clips) {
+        if (!activeIds.has(c.id)) continue;
+        c.startBar = Math.max(0, c.startBar + delta);
+        if (c.type === 'audio') {
+          c.startSample = Math.round(c.startBar * spb);
+          if (window.nasty && window.nasty.engine) {
+            window.nasty.engine.send({
+              cmd: 'set_audio_clip_position',
+              clipId: c.id,
+              songStartSample: c.startSample,
+              lengthSamples: c.lengthSamples,
+            });
+          }
+        }
+      }
+    }
+    render();
+    syncSongArrangement();
+    persist();
+    return;
+  }
   if ((e.key === 'Delete' || e.key === 'Backspace') && activeIds.size > 0 && !isPrOpen) {
     // Audio clips need to tell the engine to unhook their playback node too —
     // otherwise the deleted take keeps playing on the next transport start.
@@ -8394,8 +8823,7 @@ document.getElementById('clear-btn').addEventListener('click', () => {
   render();
 });
 document.getElementById('bpm-input').addEventListener('change', (e) => {
-  const v = parseInt(e.target.value);
-  if (v >= 30 && v <= 300) { song.bpm = v; persist(); }
+  applyBpmChange(parseInt(e.target.value));
 });
 document.getElementById('add-channel-btn').addEventListener('click', (e) => {
   openInstPicker(e.currentTarget);
@@ -8882,6 +9310,7 @@ function runCmd(cmd) {
     case 'clear':              return document.getElementById('clear-btn').click();
     case 'add-channel':        return document.getElementById('add-channel-btn').click();
     case 'add-pattern':        return document.getElementById('add-pattern-btn').click();
+    case 'free-plugins':       return openFreePluginsModal();
     case 'midi-rec':           return startMidiRecording();
     case 'toggle-playlist':    return toggleWindow('playlist');
     case 'toggle-rack':        return toggleWindow('rack');
@@ -9021,7 +9450,11 @@ document.getElementById('tb-snap').addEventListener('change', (e) => {
 });
 
 // Browser dock — tabs + rendering
-let browserTab = 'instruments';
+let browserTab = 'sounds';
+// Kit-folder open state persists across renderBrowser() re-runs so a drop
+// (which triggers a full render) doesn't collapse the folder you were
+// dragging out of. Keyed by kit.name — kits don't have stable ids.
+const _soundsOpenFolders = new Set();
 document.querySelectorAll('#browser-dock .bh-tabs .bt').forEach(bt => {
   bt.addEventListener('click', () => {
     document.querySelectorAll('#browser-dock .bh-tabs .bt').forEach(b => b.classList.remove('on'));
@@ -9035,69 +9468,7 @@ function renderBrowser() {
   const tree = document.getElementById('browser-tree');
   if (!tree) return;
   tree.innerHTML = '';
-  if (browserTab === 'instruments') {
-    const instFolders = [
-      { name: 'Drums', instruments: [
-        { name: 'Kick',     sample: 'Kick.wav'  },
-        { name: 'Snare',    sample: 'Snare.wav' },
-        { name: 'Clap',     sample: 'Clap.wav'  },
-        { name: 'Hi-Hat',   sample: 'HiHat.wav' },
-        { name: 'Open Hat', sample: 'HiHat.wav' },
-      ]},
-    ];
-    instFolders.forEach(f => {
-      const fEl = document.createElement('div');
-      fEl.className = 'br-folder open';
-      fEl.textContent = f.name;
-      tree.appendChild(fEl);
-      const wrap = document.createElement('div');
-      wrap.className = 'br-children';
-      f.instruments.forEach(inst => {
-        const itEl = document.createElement('div');
-        itEl.className = 'br-item draggable';
-        itEl.textContent = inst.name;
-        itEl.title = `Double-click to add "${inst.name}" as a channel`;
-        itEl.addEventListener('dblclick', () => {
-          const id = 'ch_drum_' + Date.now().toString(36);
-          for (const c of song.channels) c.armed = false;
-          song.channels.push({
-            id, name: inst.name,
-            instrument: 'plugin', pluginId: 'drum:' + inst.sample,
-            drumSample: inst.sample, drumRootNote: 60,
-            volume: 1.0, effects: [],
-            muted: false, solo: false, armed: true,
-            color: PALETTE[song.channels.length % PALETTE.length],
-            insertId: 'master',
-          });
-          hydratePluginChannels();
-          render();
-        });
-        wrap.appendChild(itEl);
-      });
-      tree.appendChild(wrap);
-      fEl.addEventListener('click', () => fEl.classList.toggle('open'));
-    });
-  } else if (browserTab === 'patterns') {
-    const fEl = document.createElement('div');
-    fEl.className = 'br-folder open';
-    fEl.textContent = 'Patterns in project';
-    tree.appendChild(fEl);
-    const wrap = document.createElement('div');
-    wrap.className = 'br-children';
-    song.patterns.forEach(p => {
-      const it = document.createElement('div');
-      it.className = 'br-item';
-      it.innerHTML = `<span class="br-swatch" style="background:${p.color}"></span> ${p.name}`;
-      it.addEventListener('click', () => {
-        currentPatternId = p.id;
-        hotSwapCurrentPatternIfPlaying();
-        render();
-      });
-      wrap.appendChild(it);
-    });
-    tree.appendChild(wrap);
-    fEl.addEventListener('click', () => fEl.classList.toggle('open'));
-  } else if (browserTab === 'plugins') {
+  if (browserTab === 'plugins') {
     if (!window.nasty || !window.nasty.isDesktop) {
       tree.innerHTML = '<div style="padding:12px;color:var(--dim);font-size:11px;line-height:1.5">' +
         'VST/AU plugins only work in the desktop app. ' +
@@ -9105,9 +9476,39 @@ function renderBrowser() {
         '</div>';
       return;
     }
+    // Rescan bar builder — reused in both the error and the normal states
+    // so a failed scan isn't a dead end (user can retry after fixing the
+    // underlying issue instead of having to relaunch the whole app).
+    const buildRescanBar = () => {
+      const bar = document.createElement('div');
+      bar.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--border);font-size:11px;';
+      const btn = document.createElement('button');
+      btn.textContent = engineRescanning ? 'Rescanning…' : '↻ Rescan plugins';
+      btn.disabled = engineRescanning;
+      btn.style.cssText = 'background:var(--panel-hi);color:var(--fg);border:1px solid var(--border);border-radius:3px;padding:3px 8px;font-size:11px;cursor:' + (engineRescanning ? 'default' : 'pointer') + ';';
+      btn.title = 'Re-scan your VST/AU folders — use after installing a new plugin';
+      btn.addEventListener('click', () => {
+        if (engineRescanning) return;
+        engineRescanning = true;
+        enginePluginsError = null;
+        window.nasty.engine.send({ cmd: 'rescan_plugins' });
+        renderBrowser();
+      });
+      bar.appendChild(btn);
+      if (engineRescanning && engineScanning) {
+        const status = document.createElement('span');
+        status.style.cssText = 'color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+        status.textContent = engineScanning;
+        bar.appendChild(status);
+      }
+      return bar;
+    };
     if (enginePluginsError) {
-      tree.innerHTML = '<div style="padding:12px;color:var(--record);font-size:11px">' +
-        escapeHtml(enginePluginsError) + '</div>';
+      tree.appendChild(buildRescanBar());
+      const err = document.createElement('div');
+      err.style.cssText = 'padding:12px;color:var(--record);font-size:11px';
+      err.textContent = enginePluginsError;
+      tree.appendChild(err);
       return;
     }
     if (!enginePluginsList) {
@@ -9116,28 +9517,7 @@ function renderBrowser() {
         '</div>';
       return;
     }
-    // Rescan button — for when you install a new plugin without relaunching.
-    const rescanBar = document.createElement('div');
-    rescanBar.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--border);font-size:11px;';
-    const btn = document.createElement('button');
-    btn.textContent = engineRescanning ? 'Rescanning…' : '↻ Rescan plugins';
-    btn.disabled = engineRescanning;
-    btn.style.cssText = 'background:var(--panel-hi);color:var(--fg);border:1px solid var(--border);border-radius:3px;padding:3px 8px;font-size:11px;cursor:' + (engineRescanning ? 'default' : 'pointer') + ';';
-    btn.title = 'Re-scan your VST/AU folders — use after installing a new plugin';
-    btn.addEventListener('click', () => {
-      if (engineRescanning) return;
-      engineRescanning = true;
-      window.nasty.engine.send({ cmd: 'rescan_plugins' });
-      renderBrowser();
-    });
-    rescanBar.appendChild(btn);
-    if (engineRescanning && engineScanning) {
-      const status = document.createElement('span');
-      status.style.cssText = 'color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
-      status.textContent = engineScanning;
-      rescanBar.appendChild(status);
-    }
-    tree.appendChild(rescanBar);
+    tree.appendChild(buildRescanBar());
     // Group plugins by category
     const groups = {};
     for (const p of enginePluginsList) {
@@ -9177,167 +9557,138 @@ function renderBrowser() {
       tree.appendChild(wrap);
       fEl.addEventListener('click', () => fEl.classList.toggle('open'));
     });
-  } else if (browserTab === 'gm') {
+  } else if (browserTab === 'sounds') {
     if (!window.nasty || !window.nasty.isDesktop) {
       tree.innerHTML = '<div style="padding:12px;color:var(--dim);font-size:11px;line-height:1.5">' +
-        'Built-in instruments require the desktop app.</div>';
+        'Drum kits are bundled with the desktop app.</div>';
       return;
     }
-    // Standard General MIDI 128, grouped by family. Double-click adds a
-    // channel using Nasty\'s built-in FluidSynth + bundled SoundFont.
-    const GM_GROUPS = [
-      ['Piano', 0, ['Grand Piano', 'Bright Piano', 'Electric Grand', 'Honky-Tonk', 'Electric Piano 1', 'Electric Piano 2', 'Harpsichord', 'Clavinet']],
-      ['Chromatic Percussion', 8, ['Celesta', 'Glockenspiel', 'Music Box', 'Vibraphone', 'Marimba', 'Xylophone', 'Tubular Bells', 'Dulcimer']],
-      ['Organ', 16, ['Drawbar Organ', 'Percussive Organ', 'Rock Organ', 'Church Organ', 'Reed Organ', 'Accordion', 'Harmonica', 'Tango Accordion']],
-      ['Guitar', 24, ['Acoustic Guitar (Nylon)', 'Acoustic Guitar (Steel)', 'Electric Guitar (Jazz)', 'Electric Guitar (Clean)', 'Electric Guitar (Muted)', 'Overdriven Guitar', 'Distortion Guitar', 'Guitar Harmonics']],
-      ['Bass', 32, ['Acoustic Bass', 'Electric Bass (Finger)', 'Electric Bass (Pick)', 'Fretless Bass', 'Slap Bass 1', 'Slap Bass 2', 'Synth Bass 1', 'Synth Bass 2']],
-      ['Strings', 40, ['Violin', 'Viola', 'Cello', 'Contrabass', 'Tremolo Strings', 'Pizzicato Strings', 'Orchestral Harp', 'Timpani']],
-      ['Ensemble', 48, ['String Ensemble 1', 'String Ensemble 2', 'Synth Strings 1', 'Synth Strings 2', 'Choir Aahs', 'Voice Oohs', 'Synth Voice', 'Orchestra Hit']],
-      ['Brass', 56, ['Trumpet', 'Trombone', 'Tuba', 'Muted Trumpet', 'French Horn', 'Brass Section', 'Synth Brass 1', 'Synth Brass 2']],
-      ['Reed', 64, ['Soprano Sax', 'Alto Sax', 'Tenor Sax', 'Baritone Sax', 'Oboe', 'English Horn', 'Bassoon', 'Clarinet']],
-      ['Pipe', 72, ['Piccolo', 'Flute', 'Recorder', 'Pan Flute', 'Blown Bottle', 'Shakuhachi', 'Whistle', 'Ocarina']],
-      ['Synth Lead', 80, ['Lead 1 (Square)', 'Lead 2 (Sawtooth)', 'Lead 3 (Calliope)', 'Lead 4 (Chiff)', 'Lead 5 (Charang)', 'Lead 6 (Voice)', 'Lead 7 (Fifths)', 'Lead 8 (Bass+Lead)']],
-      ['Synth Pad', 88, ['Pad 1 (New Age)', 'Pad 2 (Warm)', 'Pad 3 (Polysynth)', 'Pad 4 (Choir)', 'Pad 5 (Bowed)', 'Pad 6 (Metallic)', 'Pad 7 (Halo)', 'Pad 8 (Sweep)']],
-      ['Synth Effects', 96, ['FX 1 (Rain)', 'FX 2 (Soundtrack)', 'FX 3 (Crystal)', 'FX 4 (Atmosphere)', 'FX 5 (Brightness)', 'FX 6 (Goblins)', 'FX 7 (Echoes)', 'FX 8 (Sci-Fi)']],
-      ['Ethnic', 104, ['Sitar', 'Banjo', 'Shamisen', 'Koto', 'Kalimba', 'Bagpipe', 'Fiddle', 'Shanai']],
-      ['Percussive', 112, ['Tinkle Bell', 'Agogo', 'Steel Drums', 'Woodblock', 'Taiko Drum', 'Melodic Tom', 'Synth Drum', 'Reverse Cymbal']],
-      ['Sound Effects', 120, ['Guitar Fret Noise', 'Breath Noise', 'Seashore', 'Bird Tweet', 'Telephone Ring', 'Helicopter', 'Applause', 'Gunshot']],
-      ['Drums', 128, ['Standard Drum Kit']],
-    ];
-    const parts = ['<div style="padding:10px 12px 6px;color:var(--dim);font-size:11px;line-height:1.4">' +
-      '128 built-in sounds via bundled SoundFont. Double-click any to add a channel — instant, no plugin browsing.' +
-      '</div>'];
-    for (const [group, base, names] of GM_GROUPS) {
-      parts.push('<div class="br-folder open" style="padding:6px 12px;font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:0.5px">' +
-        escapeHtml(group) + '</div>');
-      for (let i = 0; i < names.length; i++) {
-        const program = base + i;
-        parts.push('<div class="br-item draggable gm-item" ' +
-          'data-name="' + escapeHtml(names[i]) + '" ' +
-          'data-program="' + program + '" ' +
-          'style="padding:5px 20px;cursor:pointer;font-size:12px;color:var(--text);border-bottom:1px solid rgba(255,255,255,0.03)">' +
-          escapeHtml(names[i]) + '</div>');
+    const kits = drumKitsData?.kits || [];
+    if (!drumKitsData) {
+      tree.innerHTML = '<div style="padding:12px;color:var(--dim);font-size:11px">Loading kits…</div>';
+      return;
+    }
+    if (!kits.length) {
+      tree.innerHTML = '<div style="padding:12px;color:var(--dim);font-size:11px">No drum kits found.</div>';
+      return;
+    }
+    const header = document.createElement('div');
+    header.style.cssText = 'padding:10px 12px 6px;color:var(--dim);font-size:11px;line-height:1.4';
+    header.textContent = `${kits.length} kits · click a folder to open · drag a sample onto a track.`;
+    tree.appendChild(header);
+    const sorted = kits.slice().sort((a, b) => a.name.localeCompare(b.name));
+    for (const kit of sorted) {
+      const fEl = document.createElement('div');
+      fEl.className = 'br-folder';
+      if (_soundsOpenFolders.has(kit.name)) fEl.classList.add('open');
+      fEl.textContent = kit.name;
+      fEl.title = `${kit.name} — double-click to load onto Kick/Snare/HiHat/Clap. Or open and drag individual samples.`;
+      fEl.style.cursor = 'pointer';
+      tree.appendChild(fEl);
+      const wrap = document.createElement('div');
+      wrap.className = 'br-children';
+      const files = Object.entries(kit.files || {}).sort((a, b) => a[0] - b[0]);
+      for (const [pitch, absPath] of files) {
+        const fileName = absPath.split('/').pop();
+        const it = document.createElement('div');
+        it.className = 'br-item draggable';
+        it.textContent = fileName;
+        it.title = 'Drag onto a track to drop as an audio clip.';
+        it.style.cssText = 'padding:4px 20px;cursor:grab;font-size:11px;color:var(--text);border-bottom:1px solid rgba(255,255,255,0.03)';
+        it.setAttribute('draggable', 'true');
+        it.addEventListener('dragstart', (e) => {
+          e.stopPropagation();
+          e.dataTransfer.setData('application/x-nasty-audio-file', absPath);
+          e.dataTransfer.setData('text/plain', absPath);
+          e.dataTransfer.effectAllowed = 'copy';
+        });
+        // Click to preview + stopPropagation so previewing doesn't bubble
+        // to fEl's toggle handler and collapse the folder on every click.
+        it.addEventListener('click', (e) => {
+          e.stopPropagation();
+          previewSample(absPath);
+        });
+        wrap.appendChild(it);
       }
-    }
-    tree.innerHTML = parts.join('');
-    tree.querySelectorAll('.gm-item').forEach(el => {
-      el.addEventListener('dblclick', () => {
-        addGmChannel(parseInt(el.getAttribute('data-program'), 10), el.getAttribute('data-name'));
+      tree.appendChild(wrap);
+      fEl.addEventListener('click', () => {
+        const open = fEl.classList.toggle('open');
+        if (open) _soundsOpenFolders.add(kit.name);
+        else      _soundsOpenFolders.delete(kit.name);
       });
-    });
-  } else if (browserTab === 'presets') {
-    if (!window.nasty || !window.nasty.isDesktop) {
-      tree.innerHTML = '<div style="padding:12px;color:var(--dim);font-size:11px;line-height:1.5">' +
-        'Bundled instruments only work in the desktop app.' +
-        '</div>';
-      return;
-    }
-    const PRESETS = [
-      { name: 'Grand Piano',     folder: 'grand-piano',  file: 'SalamanderGrandPiano-V3+20200602.sfz',
-        desc: 'Salamander concert grand — the classic free piano.' },
-      { name: 'Maestro Piano',   folder: 'maestro-piano', file: 'Maestro Concert Grand.sfz',
-        desc: 'Alternative concert grand by Mats Helgesson.' },
-      { name: 'Rhodes EP',       folder: 'rhodes-ep',    file: 'jRhodes3c-looped-flac-sfz/_jRhodes-stereo-looped.sfz',
-        desc: 'Fender Rhodes electric piano — classic warm keys.' },
-      { name: 'Electric Guitar', folder: 'guitar',       file: 'Programs/electric_release.sfz',
-        desc: 'Shiny electric guitar with release samples.' },
-      { name: 'Synth Strings',   folder: 'strings',      file: 'Programs/ironface_distorted.sfz',
-        desc: 'String Cyborgs — modeled + processed strings.' },
-      { name: 'Upright Bass',    folder: 'double-bass',  file: 'd_smolken_rubner_bass_pizz.sfz',
-        desc: 'Sampled upright bass, pizzicato.' },
-      { name: 'Cello',           folder: 'cello',        file: 'Programs/vc_arco_four_map.sfz',
-        desc: 'Bigcat sampled cello — bowed articulation.' },
-      { name: 'Tuba',            folder: 'tuba',         file: 'Programs/1-solo-legato.sfz',
-        desc: 'Solo tuba with legato transitions.' },
-      { name: 'Saxophone',       folder: 'sax',          file: 'Programs/alto_map_wind_noise.sfz',
-        desc: 'Alto sax with breath noise for realism.' },
-      { name: 'Pluck Synth',     folder: 'synth-pluck',  file: 'cowsynth_shifty_pluck.sfz',
-        desc: 'Karoryfer plucky synth — bright + punchy.' },
-      { name: 'Drum Kit',        folder: 'drums',        file: 'DrumGizmo/MuldjordKit/Stereo/DrumGizmo MuldjordKit.sfz',
-        desc: 'Muldjord acoustic drum kit — full stereo mix.' },
-    ];
-    const parts = [];
-    parts.push('<div style="padding:10px 12px 8px;color:var(--dim);font-size:11px;line-height:1.4">' +
-      'Double-click to add. Sfizz opens — pick the highlighted file to load the sound.' +
-      '</div>');
-    for (const p of PRESETS) {
-      parts.push(
-        '<div class="br-item draggable preset-item" ' +
-        'data-name="' + escapeHtml(p.name) + '" ' +
-        'data-folder="' + escapeHtml(p.folder) + '" ' +
-        'data-file="' + escapeHtml(p.file) + '" ' +
-        'style="padding:8px 12px;border-bottom:1px solid rgba(255,255,255,0.06);cursor:pointer">' +
-          '<div style="font-size:12px;font-weight:600;color:var(--text)">' + escapeHtml(p.name) + '</div>' +
-          '<div style="font-size:10px;color:var(--dim);margin-top:2px">' + escapeHtml(p.desc) + '</div>' +
-        '</div>'
-      );
-    }
-    tree.innerHTML = parts.join('');
-    tree.querySelectorAll('.preset-item').forEach(el => {
-      el.addEventListener('dblclick', () => {
-        const name = el.getAttribute('data-name');
-        const folder = el.getAttribute('data-folder');
-        const file = el.getAttribute('data-file');
-        addSfizzPresetChannel(name, folder, file);
+      fEl.addEventListener('dblclick', () => {
+        const loaded = loadDrumKit(kit);
+        persist();
+        render();
+        console.log(`[nasty] loaded kit "${kit.name}" (${loaded}/4 pieces)`);
       });
-    });
-  } else if (browserTab === 'free') {
-    if (!window.nasty || !window.nasty.isDesktop) {
-      tree.innerHTML = '<div style="padding:12px;color:var(--dim);font-size:11px;line-height:1.5">' +
-        'Free synths are for the desktop app — the web build can only run built-in sounds.' +
-        '</div>';
-      return;
     }
-    const RECOMMENDED = [
-      { name: 'Surge XT',  desc: 'Versatile hybrid synth — subtractive, wavetable, FM.',
-        url: 'https://surge-synthesizer.github.io/',
-        match: (n) => /surge\s*xt/i.test(n) },
-      { name: 'Vitalium',  desc: 'Powerful wavetable synth — free fork of Vital.',
-        url: 'https://github.com/DISTRHO/DISTRHO-Ports/releases',
-        match: (n) => /vitalium/i.test(n) },
-      { name: 'Sfizz',     desc: 'Sampler that loads free SFZ instrument libraries.',
-        url: 'https://sfz.tools/sfizz/',
-        match: (n) => /sfizz/i.test(n) },
-      { name: 'Dexed',     desc: 'FM synth — Yamaha DX7 emulation with the original patches.',
-        url: 'https://asb2m10.github.io/dexed/',
-        match: (n) => /dexed/i.test(n) },
-      { name: 'OB-Xd',     desc: 'Classic analog polysynth — Oberheim OB-X emulation.',
-        url: 'https://www.discodsp.com/obxd/',
-        match: (n) => /ob[-\s]?xd/i.test(n) },
-      { name: 'TAL-NoiseMaker', desc: 'Warm virtual analog — great presets, tiny download.',
-        url: 'https://tal-software.com/products/tal-noisemaker',
-        match: (n) => /tal[-\s]?noisemaker/i.test(n) },
-    ];
-    const installed = new Set();
-    if (enginePluginsList) {
-      for (const p of enginePluginsList) {
-        for (const r of RECOMMENDED) if (r.match(p.name)) installed.add(r.name);
-      }
-    }
-    const parts = [];
-    parts.push('<div style="padding:10px 12px 8px;color:var(--dim);font-size:11px;line-height:1.4">' +
-      'One-click install — opens the official page in your browser. ' +
-      'After install, restart Nasty and it appears under Plugins.' +
-      '</div>');
-    for (const r of RECOMMENDED) {
-      const isInstalled = installed.has(r.name);
-      parts.push(
-        '<div style="padding:8px 12px;border-bottom:1px solid rgba(255,255,255,0.06)">' +
-          '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">' +
-            '<div style="font-size:12px;font-weight:600;color:var(--text)">' + escapeHtml(r.name) + '</div>' +
-            (isInstalled
-              ? '<div style="font-size:10px;color:#6c6">Installed ✓</div>'
-              : '<a href="' + escapeHtml(r.url) + '" target="_blank" ' +
-                'style="font-size:10px;padding:2px 8px;border:1px solid #888;border-radius:3px;' +
-                'text-decoration:none;color:var(--text);cursor:pointer">Install</a>') +
-          '</div>' +
-          '<div style="font-size:10px;color:var(--dim);margin-top:3px">' + escapeHtml(r.desc) + '</div>' +
-        '</div>'
-      );
-    }
-    tree.innerHTML = parts.join('');
   }
 }
+
+// Free-plugin recommendations. Lives outside the Browser dock — a rare/
+// one-time install action, not something you daily-browse for — accessed
+// via the ADD menu → Free plugins…
+const FREE_PLUGIN_RECOMMENDED = [
+  { name: 'Surge XT',  desc: 'Versatile hybrid synth — subtractive, wavetable, FM.',
+    url: 'https://surge-synthesizer.github.io/',
+    match: (n) => /surge\s*xt/i.test(n) },
+  { name: 'Vitalium',  desc: 'Powerful wavetable synth — free fork of Vital.',
+    url: 'https://github.com/DISTRHO/DISTRHO-Ports/releases',
+    match: (n) => /vitalium/i.test(n) },
+  { name: 'Sfizz',     desc: 'Sampler that loads free SFZ instrument libraries.',
+    url: 'https://sfz.tools/sfizz/',
+    match: (n) => /sfizz/i.test(n) },
+  { name: 'Dexed',     desc: 'FM synth — Yamaha DX7 emulation with the original patches.',
+    url: 'https://asb2m10.github.io/dexed/',
+    match: (n) => /dexed/i.test(n) },
+  { name: 'OB-Xd',     desc: 'Classic analog polysynth — Oberheim OB-X emulation.',
+    url: 'https://www.discodsp.com/obxd/',
+    match: (n) => /ob[-\s]?xd/i.test(n) },
+  { name: 'TAL-NoiseMaker', desc: 'Warm virtual analog — great presets, tiny download.',
+    url: 'https://tal-software.com/products/tal-noisemaker',
+    match: (n) => /tal[-\s]?noisemaker/i.test(n) },
+];
+
+function openFreePluginsModal() {
+  const list = document.getElementById('free-plugins-list');
+  if (!list) return;
+  const installed = new Set();
+  if (enginePluginsList) {
+    for (const p of enginePluginsList) {
+      for (const r of FREE_PLUGIN_RECOMMENDED) if (r.match(p.name)) installed.add(r.name);
+    }
+  }
+  const parts = [];
+  parts.push('<div style="padding:0 0 8px;color:var(--dim);font-size:11px;line-height:1.4">' +
+    'One-click install — opens the official page in your browser. ' +
+    'After install, restart Nasty and it appears under Plugins.' +
+    '</div>');
+  for (const r of FREE_PLUGIN_RECOMMENDED) {
+    const isInstalled = installed.has(r.name);
+    parts.push(
+      '<div style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.06)">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">' +
+          '<div style="font-size:12px;font-weight:600;color:var(--text)">' + escapeHtml(r.name) + '</div>' +
+          (isInstalled
+            ? '<div style="font-size:10px;color:#6c6">Installed ✓</div>'
+            : '<a href="' + escapeHtml(r.url) + '" target="_blank" ' +
+              'style="font-size:10px;padding:2px 8px;border:1px solid #888;border-radius:3px;' +
+              'text-decoration:none;color:var(--text);cursor:pointer">Install</a>') +
+        '</div>' +
+        '<div style="font-size:10px;color:var(--dim);margin-top:3px">' + escapeHtml(r.desc) + '</div>' +
+      '</div>'
+    );
+  }
+  list.innerHTML = parts.join('');
+  document.getElementById('free-plugins-modal').classList.remove('hidden');
+}
+document.getElementById('free-plugins-close')?.addEventListener('click', () => {
+  document.getElementById('free-plugins-modal').classList.add('hidden');
+});
+document.getElementById('free-plugins-modal')?.addEventListener('click', (e) => {
+  if (e.target.id === 'free-plugins-modal') e.currentTarget.classList.add('hidden');
+});
 
 // State for the plugins tab, populated by engine events
 let enginePluginsList = null;
@@ -9353,9 +9704,71 @@ async function fetchDrumKits() {
   try {
     drumKitsData = await window.nasty.listDrumKits();
     console.log('[nasty] drum kits:', drumKitsData?.kits?.length || 0, 'available');
+    // If the Sounds tab is already open, it rendered a "Loading kits…"
+    // placeholder before the scan finished — refresh it now so the user
+    // doesn't have to click away and back to see the kit list.
+    if (browserTab === 'sounds' && typeof renderBrowser === 'function') renderBrowser();
   } catch (e) {
     console.warn('[nasty] drum kit scan failed', e);
   }
+}
+
+// One-shot audition of a sample from the Sounds browser. Uses HTML5 Audio
+// with a data-URL so it plays through the OS mixer independently of the
+// audio engine (works before Play, doesn't require the engine to be up).
+// Clicking a new sample cancels any in-flight preview.
+let _previewAudio = null;
+async function previewSample(absPath) {
+  try {
+    if (_previewAudio) { try { _previewAudio.pause(); } catch (_) {} }
+    if (!(window.nasty && window.nasty.fs && window.nasty.fs.readAsBase64)) return;
+    const b64 = await window.nasty.fs.readAsBase64(absPath);
+    if (!b64) return;
+    _previewAudio = new Audio('data:audio/wav;base64,' + b64);
+    _previewAudio.volume = 0.85;
+    _previewAudio.play().catch(err => console.warn('[nasty] preview play failed', err));
+  } catch (e) {
+    console.warn('[nasty] preview failed', e);
+  }
+}
+
+// Swap the samples on the four standard drum channels (ch_kick / ch_snare /
+// ch_hh / ch_clap) to the chosen vintage kit. Shared between the AI's
+// `load_drum_kit` tool and the Browser "Kits" tab double-click.
+// Returns the number of pieces actually loaded (0-4). rootNote MUST match
+// the GM pitch the pattern triggers this drum at — kit wavs are recorded at
+// their natural pitch, so leaving rootNote at 60 (default Kick.wav pitch)
+// pitches note-36 kicks two octaves down and makes every swapped kit sound
+// subterranean.
+function loadDrumKit(kit) {
+  if (!kit) return 0;
+  const pieces = [
+    { chId: 'ch_kick',  pitches: [36, 35],     rootNote: 36 },
+    { chId: 'ch_snare', pitches: [38, 40],     rootNote: 38 },
+    { chId: 'ch_hh',    pitches: [42, 44, 46], rootNote: 42 },
+    { chId: 'ch_clap',  pitches: [39, 38],     rootNote: 39 },
+  ];
+  let loaded = 0;
+  for (const p of pieces) {
+    const ch = song.channels.find(c => c.id === p.chId);
+    if (!ch) continue;
+    let samplePath = null;
+    for (const pitch of p.pitches) {
+      if (kit.files[pitch]) { samplePath = kit.files[pitch]; break; }
+    }
+    if (!samplePath) continue;
+    ch.drumSample = samplePath;
+    ch.drumRootNote = p.rootNote;
+    ch.pluginId = 'drum:' + samplePath;
+    if (window.nasty && window.nasty.engine) {
+      window.nasty.engine.send({
+        cmd: 'add_drum_channel', channelId: ch.id,
+        samplePath, rootNote: p.rootNote,
+      });
+    }
+    loaded++;
+  }
+  return loaded;
 }
 
 // Plugin ids the user has chosen to NOT rehydrate after a crash. Populated
@@ -10869,8 +11282,10 @@ if (window.nasty && window.nasty.engine) {
         maybeWriteAfterSnapshots();
       }
     } else if (msg.event === 'error') {
-      enginePluginsError = msg.error || 'engine error';
-      if (browserTab === 'plugins') renderBrowser();
+      // Generic engine errors are NOT plugin errors — some are recording,
+      // audio-clip, bus-create, etc. Log for triage. The plugins tab only
+      // reflects real plugin-scan failures (see enginePluginsError set-sites).
+      console.warn('[nasty] engine error:', msg.error || msg);
     }
   });
   // Ask for plugin list on startup (engine will respond after scan finishes)

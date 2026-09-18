@@ -31,8 +31,18 @@ void AudioClipPlayer::processBlock(juce::AudioBuffer<float>& buf,
     buf.clear();
     if (transport == nullptr || sampleBuffer.getNumSamples() == 0) return;
     if (!transport->getIsPlaying()) return;
+    // Skip during count-in — Transport reports a negative buffer start until
+    // the count-in resolves. Without this the clip would fire on tick 0
+    // before the metronome finishes counting in.
+    if (transport->getBufferStartSample() < 0) return;
 
-    const juce::int64 bufStart = transport->getCurrentSample();
+    // Prefer PatternPlayer's wrapped position when it's wired — it wraps at
+    // the loop boundary so the clip re-fires every loop iteration. Fall
+    // back to Transport's monotonic sample for legacy setups without a
+    // PatternPlayer (single-shot playback until source end).
+    const juce::int64 bufStart = (patternPlayer != nullptr)
+        ? patternPlayer->getBufferStartPosition()
+        : transport->getCurrentSample();
     const int numSamples = buf.getNumSamples();
     const juce::int64 cs = clipStart.load(std::memory_order_relaxed);
     const juce::int64 cl = clipLength.load(std::memory_order_relaxed);
