@@ -1733,6 +1733,27 @@ _NASTY_TOOLS = [
         "input_schema": {"type": "object", "properties": {}},
     },
     {
+        "name": "load_drum_kit",
+        "description": (
+            "Swap the samples on the four built-in drum channels (ch_kick, "
+            "ch_snare, ch_hh, ch_clap) to a vintage drum-machine kit. Pick "
+            "`name` from the drum-kits list shipped in the system context. "
+            "Fuzzy substring match — 'TR-808' hits 'Roland TR-808', 'MPC' "
+            "hits 'Akai MPC-2000'. Use this instead of creating new drum "
+            "channels — the four channels already exist; you're just changing "
+            "their sound. Guidance for kit selection (trap → TR-808, boom-bap "
+            "→ MPC60, 80s pop → Linn LM1, house → Roland f30, lo-fi → RZ-1, "
+            "cinematic → Fairlight IIx) lives in the personal defaults file."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+            },
+            "required": ["name"],
+        },
+    },
+    {
         "name": "create_channel",
         "description": (
             "Create a new channel in the Channel Rack. A channel is one sound "
@@ -2239,6 +2260,7 @@ class NastyChatRequest(BaseModel):
     history: list = []
     plugins: list = []  # engine-scanned VST3/AU manifest
     ideas_panel: dict | None = None  # populated when the Ideas Panel is on-screen
+    drum_kits: list = []  # vintage drum-machine kits scanned locally by main.js
 
 
 class NastyMidiIdeasRequest(BaseModel):
@@ -2401,6 +2423,33 @@ def nasty_chat(req: NastyChatRequest):
         f"```json\n{json.dumps(slim_plugins, indent=2)}\n```\n\n"
     )
 
+    # Drum kits available on this machine. Just names + which pieces each kit
+    # has (kick/snare/hats/clap) — no absolute paths, since Claude picks by
+    # name and the desktop client resolves to files locally. Keeps the payload
+    # under ~10KB even for a 200-kit library.
+    drum_kits = req.drum_kits or []
+    if drum_kits:
+        # One line per kit — kit name + short piece coverage summary. Under
+        # 10 KB for 200 kits, cache-friendly. Full mapping stays client-side.
+        kit_lines = []
+        for k in drum_kits:
+            if not isinstance(k, dict):
+                continue
+            name = k.get("name", "?")
+            has = k.get("has") or {}
+            pieces = [p for p in ("kick", "snare", "chh", "ohh", "clap") if has.get(p)]
+            kit_lines.append(f"- **{name}** — {', '.join(pieces) or 'incomplete'}")
+        drum_kits_block = (
+            f"Vintage drum-machine kits available on this machine "
+            f"({len(kit_lines)} kits). Call `load_drum_kit(name)` to swap the "
+            f"samples on ch_kick / ch_snare / ch_hh / ch_clap. Fuzzy match — "
+            f"'808' hits 'Roland TR-808', 'MPC' hits 'Akai MPC-2000', etc.\n\n"
+            + "\n".join(kit_lines)
+            + "\n\n"
+        )
+    else:
+        drum_kits_block = ""
+
     # When the Ideas Panel is on-screen, tell Claude what's in it so it can
     # honor requests like "keep the morning light one" or "close the panel."
     ideas_block = ""
@@ -2528,7 +2577,7 @@ def nasty_chat(req: NastyChatRequest):
         },
         {
             "type": "text",
-            "text": plugin_block + knowledge_block,
+            "text": plugin_block + drum_kits_block + knowledge_block,
             "cache_control": {"type": "ephemeral", "ttl": "1h"},
         },
     ]

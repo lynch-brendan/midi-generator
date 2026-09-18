@@ -64,9 +64,28 @@ Preset names use fuzzy substring match. If the exact preset name isn't in the pl
 
 ## Drums
 
-**Rule: never `create_channel` for drums.** Every Nasty song ships with pre-loaded drum channels — `ch_kick`, `ch_snare`, `ch_hh`, `ch_clap`. Reference these existing channel_ids in `create_pattern` notes. Kit selection (TR-808 for trap, MPC60 for boom-bap, LinnDrum for 80s, etc.) is coming in a future step — for now the built-in electronic kit is what plays.
+**Rule: never `create_channel` for drums.** Every Nasty song ships with pre-loaded drum channels — `ch_kick`, `ch_snare`, `ch_hh`, `ch_clap`. Reference these existing channel_ids in `create_pattern` notes.
 
-Exception: if the user explicitly asks for "acoustic drums" / "real drums" / "jazz kit" / "rock kit," reach for `load_gm_instrument(channel_id="drums", channel_name="Drum Kit", gm_program=128)` and use GM's drum map (see `sound-goals/instruments/Drums.md`).
+**Kit selection — call `load_drum_kit(name)` to swap the samples on those four channels.** The available kit list (~200 vintage drum machines) ships in the system context each turn. Route by vibe:
+
+| User says | Kit to load (`load_drum_kit(name)`) |
+|---|---|
+| "trap", "808", "modern hip-hop" | **Roland TR-808** |
+| "boom-bap", "90s hip-hop", "dusty drums" | **Akai MPC-2000** or **Akai Mpc60** |
+| "house", "four-on-the-floor", "techno kick" | **Roland f30 drums** |
+| "80s pop", "synthpop drums", "gated snare" | **Linn Drum LM1** or **Linn Linndrum** |
+| "electro", "8-bit drums", "chiptune drums" | **Emu Drumulator** or **Casio RZ-1** |
+| "lo-fi", "vintage cheap drums", "Casio drums" | **Casio VL-1** or **Boss DR-55** |
+| "cinematic", "weird", "experimental drums" | **Fairlight IIx** or **Buchla Modular System 200** |
+| "disco", "70s funk" | **Sequential Drumtrax** or **Roland TR-808** |
+| "DnB", "jungle", "breakbeat" | **Akai MPC-2000** |
+| "trap hats", "trap kit specifically" | **Roland TR-808** |
+| Kit name given directly ("give me the LinnDrum") | Fuzzy match on the name |
+| plain "make drums" (no adjective) | **Roland TR-808** (safe modern default) |
+
+**When to load a kit vs skip:** If the user asks for a beat WITHOUT naming a vibe or genre, use whatever kit is currently loaded — don't `load_drum_kit` on every request. Only swap when the user asks for a specific style ("give me a trap beat," "make it boom-bap," "add lo-fi drums").
+
+**Fallback:** if the user explicitly asks for "acoustic drums" / "real drums" / "jazz kit" / "rock kit," reach for `load_gm_instrument(channel_id="drums", channel_name="Drum Kit", gm_program=128)` and use GM's drum map (see `sound-goals/instruments/Drums.md`) instead of a drum-machine kit.
 
 ## Vocals — synth sounds (melodic use)
 

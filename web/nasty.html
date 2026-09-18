@@ -4444,6 +4444,53 @@ async function applyToolCalls(calls) {
         } else {
           summaries.push(`mode already ${mode.toUpperCase()}`);
         }
+      } else if (name === 'load_drum_kit') {
+        // Swap the samples on ch_kick / ch_snare / ch_hh / ch_clap to the
+        // chosen vintage kit. Kit files are resolved locally by main.js via
+        // the auto-mapped GM pitch layout (36 kick, 38 snare, 42 chh, 39 clap).
+        // Fuzzy match on kit name so "808" hits "Roland TR-808" etc.
+        const requested = (input.name || '').trim().toLowerCase();
+        const kits = drumKitsData?.kits || [];
+        const kit = kits.find(k => k.name.toLowerCase() === requested)
+                 || kits.find(k => k.name.toLowerCase().includes(requested))
+                 || kits.find(k => requested.includes(k.name.toLowerCase()));
+        if (!kit) {
+          summaries.push(`× drum kit "${input.name}" not found (${kits.length} kits scanned)`);
+        } else {
+          // Piece → (channelId, GM pitch preference order for sample lookup).
+          // Falls back through the alternate pitch when the primary isn't
+          // mapped in this kit — e.g. some kits only have snare at 40, not 38.
+          const pieces = [
+            { chId: 'ch_kick',  pitches: [36, 35] },
+            { chId: 'ch_snare', pitches: [38, 40] },
+            { chId: 'ch_hh',    pitches: [42, 44, 46] },
+            { chId: 'ch_clap',  pitches: [39, 38] },
+          ];
+          let loaded = 0;
+          for (const p of pieces) {
+            const ch = song.channels.find(c => c.id === p.chId);
+            if (!ch) continue;
+            let samplePath = null;
+            for (const pitch of p.pitches) {
+              if (kit.files[pitch]) { samplePath = kit.files[pitch]; break; }
+            }
+            if (!samplePath) continue;
+            // Store the ABSOLUTE path in drumSample. hydratePluginChannels
+            // detects a leading '/' and skips the drumsBase prefix.
+            ch.drumSample = samplePath;
+            ch.pluginId = 'drum:' + samplePath;
+            // Push the swap to the engine right now so it's audible on the
+            // next audio buffer — no need to wait for a full re-hydrate.
+            if (window.nasty && window.nasty.engine) {
+              window.nasty.engine.send({
+                cmd: 'add_drum_channel', channelId: ch.id,
+                samplePath, rootNote: ch.drumRootNote ?? 60,
+              });
+            }
+            loaded++;
+          }
+          summaries.push(`🥁 loaded "${kit.name}" (${loaded}/4 pieces)`);
+        }
       } else if (name === 'create_channel') {
         if (!song.channels.find(c => c.id === input.id)) {
           song.channels.push({
@@ -6789,6 +6836,10 @@ function showEngineCrashModal(msg) {
   }
   modal.classList.remove('hidden');
 }
+// Kick off the drum-kit scan as soon as the renderer boots. Independent
+// of the engine — it just reads a folder — so no need to wait on plugin_list.
+document.addEventListener('DOMContentLoaded', () => { fetchDrumKits(); });
+
 document.addEventListener('DOMContentLoaded', () => {
   const saveBtn    = document.getElementById('engine-crash-save');
   const restartBtn = document.getElementById('engine-crash-restart');
@@ -7879,6 +7930,20 @@ async function sendMessage(overrideText, opts) {
         // remembers from training data. Coerce null → [] so the server sees
         // "empty" instead of "missing" (scan not done vs. no plugins).
         plugins: Array.isArray(enginePluginsList) ? enginePluginsList : [],
+        // Slim list of drum kits available on this machine — one entry per
+        // kit (name + which pieces it has), no absolute paths. Claude picks
+        // by name via load_drum_kit; the front-end resolves to file paths
+        // locally, so nothing user-specific leaks server-side.
+        drum_kits: (drumKitsData?.kits || []).map(k => ({
+          name: k.name,
+          has: {
+            kick: !!k.files[36],
+            snare: !!k.files[38],
+            clap: !!k.files[39],
+            chh: !!k.files[42],
+            ohh: !!k.files[46],
+          },
+        })),
         // If the Ideas Panel is on-screen, ship the list of options so
         // Claude can honor "keep the morning light one" / "close it."
         ideas_panel: (ideasState && ideasState.ideas && ideasState.ideas.length) ? {
@@ -9271,6 +9336,22 @@ function renderBrowser() {
 // State for the plugins tab, populated by engine events
 let enginePluginsList = null;
 
+// Drum kits scanned by main.js from bundled-instruments/drum-kits (or the
+// dev repo copy of Drum kits/). Shape: { root, kits: [{name, files: {36: absPath, ...}}] }.
+// Fetched once at startup; used to (a) show Claude the available kit
+// vocabulary and (b) resolve a kit name to its per-piece file paths when
+// load_drum_kit is called.
+let drumKitsData = null;
+async function fetchDrumKits() {
+  if (!(window.nasty && window.nasty.listDrumKits)) return;
+  try {
+    drumKitsData = await window.nasty.listDrumKits();
+    console.log('[nasty] drum kits:', drumKitsData?.kits?.length || 0, 'available');
+  } catch (e) {
+    console.warn('[nasty] drum kit scan failed', e);
+  }
+}
+
 // Plugin ids the user has chosen to NOT rehydrate after a crash. Populated
 // via the "Don't reload this plugin on restart" checkbox in the engine-crash
 // modal. Session-only: closing Nasty clears the set, so the next launch tries
@@ -9506,9 +9587,13 @@ async function hydratePluginChannels() {
     if (typeof c.pluginId === 'string' && c.pluginId.startsWith('drum:')) {
       const sample = c.drumSample || c.pluginId.slice(5);
       const rootNote = c.drumRootNote ?? 60;
+      // Drum-kit swap paths are stored absolute (leading '/'), built-in
+      // bundled samples are stored as bare filenames ("Kick.wav") and
+      // resolved via drumsBase. Detect and choose per-channel.
+      const samplePath = sample.startsWith('/') ? sample : (drumsBase + sample);
       window.nasty.engine.send({
         cmd: 'add_drum_channel', channelId: c.id,
-        samplePath: drumsBase + sample, rootNote,
+        samplePath, rootNote,
       });
       continue;
     }

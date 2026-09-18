@@ -1016,6 +1016,121 @@ ipcMain.handle('nasty-sf2-path', () => {
   return dir ? path.join(dir, 'GeneralUser.sf2') : '';
 });
 
+// Locate the drum-kits root. Prefers the bundled/packaged location (so it
+// works after `npm run dist:mac`), then falls back to Brendan's repo copy
+// during dev before the kits get moved into audio-engine/bundled-instruments/.
+function findDrumKitsDir() {
+  const bundledDev  = path.join(__dirname, '..', 'audio-engine', 'bundled-instruments', 'drum-kits');
+  const bundledProd = path.join(process.resourcesPath || '', 'bundled-instruments', 'drum-kits');
+  const repoDev     = path.join(__dirname, '..', 'Drum kits');
+  for (const p of [bundledDev, bundledProd, repoDev]) {
+    if (p && fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
+// Port of core/drum_kits.py `auto_map_kit` — keyword-detect kick/snare/hats/
+// clap/toms/cymbals in a kit's WAV filenames, return { midiPitch: absPath }.
+// Same GM pitch layout as the Python side so Muse and Nasty agree.
+function autoMapKit(kitDir) {
+  let files;
+  try {
+    files = fs.readdirSync(kitDir)
+      .filter(f => f.toLowerCase().endsWith('.wav'))
+      .sort();
+  } catch (_) {
+    return {};
+  }
+  const firstMatch = (...keywords) => files.find(f => {
+    const lower = f.toLowerCase();
+    return keywords.some(kw => lower.includes(kw));
+  }) || null;
+
+  // Kick: prefer specific labeling, fall through to broad terms. "bass"
+  // alone as final fallback catches Linn LM1 style ("bass1.wav") — safe in
+  // a drum-kit folder since bassoons don't ship there.
+  const kick = firstMatch('kick_hard', 'kick_med')
+            || firstMatch('kick', 'bd', 'bass drum', 'bassdrum', 'bsdrum', 'kick1', 'kick_1', 'bass drum')
+            || firstMatch('bass');
+  const snare = firstMatch('snare_hard', 'snare_med')
+             || firstMatch('snare', 'sd ', 'snr', 'sn1', 'sn_1', '_sn.', '_sn_', '-sn-', '-sn.', 'esnare');
+  const rim   = firstMatch('rim', 'rimshot', 'sidestick', 'side_stick', 'side-stick');
+  const clap  = firstMatch('clap', 'clp');
+  // Closed hi-hat: many kits use "HH Cl", "HiHat Closed", "hat_c", etc.
+  // Add the space variants and the raw substring "closed" that Fricke etc use.
+  let chh = firstMatch('closed hat', 'closed_hat', 'closed-hat', 'hihat closed',
+                        'hat_c', 'hat-c', 'hat c', 'hh_c', 'hh-c', 'hh c',
+                        'hh cl', 'hh_cl', 'hh-cl', 'hihat_c', 'hihat-c', 'hihat c',
+                        'hi-hat_c', 'hi-hat-c', 'hi-hat c',
+                        'chh', 'clsd', 'closed', 'hat_closed', 'hat-closed');
+  if (!chh) chh = files.find(f => {
+    const lower = f.toLowerCase();
+    return (lower.includes('hat') || lower.includes('hh') || lower.includes('hihat'))
+        && !lower.includes('open') && !lower.includes('oh ') && !lower.includes('op ')
+        && !lower.includes(' op') && !lower.includes('_op');
+  }) || null;
+  let ohh = firstMatch('open hat', 'open_hat', 'open-hat', 'hihat open',
+                        'hat_o', 'hat-o', 'hat o', 'hh_o', 'hh-o', 'hh o',
+                        'hh op', 'hh_op', 'hh-op', 'hihat_o', 'hihat-o', 'hihat o',
+                        'hi-hat_o', 'hi-hat-o', 'hi-hat o',
+                        'ohh', 'opn', 'openhat', 'open');
+  if (!ohh) ohh = files.find(f => {
+    const lower = f.toLowerCase();
+    return (lower.includes('hat') || lower.includes('hh')) && (lower.includes('open') || lower.includes('oh'));
+  }) || null;
+  const crash = firstMatch('crash', 'cy', 'cymbal');
+  const ride  = firstMatch('ride');
+
+  const abs = f => (f ? path.join(kitDir, f) : null);
+  const mapping = {};
+  if (kick)  { mapping[36] = abs(kick);  mapping[35] = abs(kick); }
+  if (snare) { mapping[38] = abs(snare); mapping[40] = abs(snare); }
+  if (rim)   { mapping[37] = abs(rim); }
+  if (clap)  { mapping[39] = abs(clap); }
+  if (chh)   { mapping[42] = abs(chh); mapping[44] = abs(chh); }
+  if (ohh)   { mapping[46] = abs(ohh); }
+  if (crash) { mapping[49] = abs(crash); }
+  if (ride)  { mapping[51] = abs(ride); }
+  return mapping;
+}
+
+// Scan every kit folder once at startup. 200 kits x ~8 wavs each is a fast
+// synchronous stat pass — < 200ms locally. Cache in-memory; the folder is
+// bundle-immutable so no rescan needed.
+let _drumKitsCache = null;
+function scanDrumKits() {
+  if (_drumKitsCache) return _drumKitsCache;
+  const root = findDrumKitsDir();
+  if (!root) return { root: null, kits: [] };
+  let names;
+  try {
+    names = fs.readdirSync(root, { withFileTypes: true })
+      .filter(d => d.isDirectory())
+      .map(d => d.name)
+      .sort();
+  } catch (_) {
+    return { root, kits: [] };
+  }
+  const kits = [];
+  for (const name of names) {
+    const kitDir = path.join(root, name);
+    const files = autoMapKit(kitDir);
+    // Only include kits that at LEAST have a kick or snare — otherwise the
+    // AI can't do anything with them. Filters out the odd "Vermona Drum"
+    // folder that's tagged funny.
+    if (files[36] || files[38]) {
+      kits.push({ name, files });
+    }
+  }
+  _drumKitsCache = { root, kits };
+  console.log('[nasty] scanned', kits.length, 'drum kits from', root);
+  return _drumKitsCache;
+}
+
+// Renderer calls this at startup to get the kit list. Returns { root, kits }
+// where each kit is { name, files: { 36: absPath, 38: absPath, ... } }.
+ipcMain.handle('nasty-list-drum-kits', () => scanDrumKits());
+
 function findNastyHtml() {
   // Dev: web/nasty.html is one level up from electron/
   const devPath = path.join(__dirname, '..', 'web', 'nasty.html');
