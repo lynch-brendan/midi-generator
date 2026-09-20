@@ -9,7 +9,13 @@ soundfonts/
 Drum kits/
 *.asd
 
-# Bundled plugin binaries (Surge XT, Dexed, drum samples etc.) — too big for git.
-# These are copied into place at build time or checked in via Git LFS if needed.
-audio-engine/bundled-instruments/
+# Bundled plugin binaries (Surge XT, Dexed, drum-kit library etc.) — too big
+# for git. These are copied into place at build time or checked in via Git LFS
+# if needed. `*` (not `/`) so re-include patterns below can rescue subpaths.
+audio-engine/bundled-instruments/*
+# Exception: the four core drum samples are tiny (~145 KB total) and are the
+# fallback drum kit shipped in every .dmg — keep them in git so builds are
+# reproducible across machines.
+!audio-engine/bundled-instruments/drums/
+!audio-engine/bundled-instruments/drums/*.wav
 *.zip
