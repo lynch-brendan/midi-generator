@@ -2150,6 +2150,40 @@ _NASTY_TOOLS = [
         },
     },
     {
+        "name": "list_flex_presets",
+        "description": (
+            "List presets from the user's FLEX preset library. Use when the "
+            "user asks what sounds they have in FLEX ('what bass sounds do "
+            "I have?', 'show me lo-fi patches', 'what's in the retrowave "
+            "pack?'). The FLEX preset index (pack names + counts) ships in "
+            "the system context; this tool returns the actual preset names. "
+            "Filter by exact `pack` name, or a `query` substring that "
+            "matches either the pack name or a preset name (case-insensitive). "
+            "`limit` caps results — default 40, max 200. Returns a plain-text "
+            "list grouped by pack. FLEX is loadable via `load_plugin` like "
+            "any other VST3."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "pack": {
+                    "type": "string",
+                    "description": "Exact pack name (from the index) to list. Optional.",
+                },
+                "query": {
+                    "type": "string",
+                    "description": "Substring to filter preset OR pack names by. Optional.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 200,
+                    "description": "Max presets to return. Default 40.",
+                },
+            },
+        },
+    },
+    {
         "name": "suggest_midi_ideas",
         "description": (
             "Open the Ideas Panel with a few MIDI ideas (chord progression, "
@@ -2261,6 +2295,7 @@ class NastyChatRequest(BaseModel):
     plugins: list = []  # engine-scanned VST3/AU manifest
     ideas_panel: dict | None = None  # populated when the Ideas Panel is on-screen
     drum_kits: list = []  # vintage drum-machine kits scanned locally by main.js
+    flex_presets: list = []  # FLEX preset library: [{pack, presets: [name, ...]}] from main.js
 
 
 class NastyMidiIdeasRequest(BaseModel):
@@ -2450,6 +2485,40 @@ def nasty_chat(req: NastyChatRequest):
     else:
         drum_kits_block = ""
 
+    # FLEX preset library summary. Ship pack-name + count in the always-on
+    # context (small — ~1 line per pack). The full preset-name lists live
+    # in req.flex_presets and get returned on demand via the
+    # list_flex_presets tool, so context stays cost-neutral even with
+    # 6000+ presets installed.
+    flex_presets = req.flex_presets or []
+    if flex_presets:
+        total_presets = sum(len(p.get("presets") or []) for p in flex_presets if isinstance(p, dict))
+        # Sort by count desc so the biggest packs show first — Claude gets
+        # a sense of scale + variety in one glance.
+        flex_lines = []
+        for p in sorted(flex_presets, key=lambda x: -len(x.get("presets") or []) if isinstance(x, dict) else 0):
+            if not isinstance(p, dict):
+                continue
+            pack = p.get("pack", "?")
+            count = len(p.get("presets") or [])
+            if count <= 0:
+                continue
+            flex_lines.append(f"- **{pack}** — {count} presets")
+        flex_presets_block = (
+            f"FLEX preset library on this machine — {total_presets} presets "
+            f"across {len(flex_lines)} packs. Call `list_flex_presets` to "
+            f"see actual preset names for a specific pack, filter by keyword, "
+            f"or search across the whole library. When the user says 'load "
+            f"me some bass sounds from FLEX,' `list_flex_presets(query='bass')` "
+            f"or by pack `list_flex_presets(pack='Essential Bass Guitars')` "
+            f"is the way in. FLEX is a plugin like any other — load it via "
+            f"`load_plugin` first, then use its presets by name.\n\n"
+            + "\n".join(flex_lines)
+            + "\n\n"
+        )
+    else:
+        flex_presets_block = ""
+
     # When the Ideas Panel is on-screen, tell Claude what's in it so it can
     # honor requests like "keep the morning light one" or "close the panel."
     ideas_block = ""
@@ -2577,7 +2646,7 @@ def nasty_chat(req: NastyChatRequest):
         },
         {
             "type": "text",
-            "text": plugin_block + drum_kits_block + knowledge_block,
+            "text": plugin_block + drum_kits_block + flex_presets_block + knowledge_block,
             "cache_control": {"type": "ephemeral", "ttl": "1h"},
         },
     ]
@@ -2671,6 +2740,58 @@ def nasty_chat(req: NastyChatRequest):
                         f"No cheatsheet found for '{inp.get('name','')}'. "
                         "Only ask for names shown in the index."
                     )
+            elif block.name == "list_flex_presets":
+                # Filter the FLEX preset library shipped in this request.
+                # No server-side cache — the client always has fresh data,
+                # and this way multi-machine users don't cross-contaminate.
+                requested_pack = (inp.get("pack") or "").strip().lower()
+                query = (inp.get("query") or "").strip().lower()
+                limit = int(inp.get("limit") or 40)
+                if limit < 1: limit = 1
+                if limit > 200: limit = 200
+                library = req.flex_presets or []
+                matches_by_pack: dict[str, list[str]] = {}
+                total_matches = 0
+                for pack_entry in library:
+                    if not isinstance(pack_entry, dict): continue
+                    pack_name = pack_entry.get("pack", "")
+                    presets = pack_entry.get("presets") or []
+                    if requested_pack and requested_pack != pack_name.lower():
+                        continue
+                    if query and query in pack_name.lower():
+                        # Whole pack matches — include all its presets.
+                        matches_by_pack[pack_name] = list(presets)
+                        total_matches += len(presets)
+                        continue
+                    if query:
+                        hits = [p for p in presets if query in p.lower()]
+                        if hits:
+                            matches_by_pack[pack_name] = hits
+                            total_matches += len(hits)
+                    else:
+                        # No query, specific pack requested (or nothing) — dump this pack's presets.
+                        matches_by_pack[pack_name] = list(presets)
+                        total_matches += len(presets)
+                if not matches_by_pack:
+                    result_text = (
+                        f"No FLEX presets matched (pack={inp.get('pack','')!r}, "
+                        f"query={inp.get('query','')!r}). Check the FLEX pack "
+                        f"list in the system context — pack names must match exactly."
+                    )
+                else:
+                    lines = [f"FLEX preset matches ({total_matches} total, showing up to {limit}):"]
+                    shown = 0
+                    for pack_name, presets in matches_by_pack.items():
+                        if shown >= limit: break
+                        remaining = limit - shown
+                        subset = presets[:remaining]
+                        lines.append(f"\n**{pack_name}** ({len(presets)} match{'es' if len(presets) != 1 else ''}):")
+                        for name in subset:
+                            lines.append(f"  - {name}")
+                        shown += len(subset)
+                    if total_matches > limit:
+                        lines.append(f"\n… {total_matches - limit} more matches truncated. Narrow the query or set `limit` higher (max 200).")
+                    result_text = "\n".join(lines)
             elif block.name in ("add_track", "add_clip") and "id" in inp:
                 result_text = f"applied; id={inp['id']}"
             elif block.name == "suggest_midi_ideas":

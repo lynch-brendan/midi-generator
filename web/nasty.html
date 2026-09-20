@@ -7127,7 +7127,7 @@ function showEngineCrashModal(msg) {
 }
 // Kick off the drum-kit scan as soon as the renderer boots. Independent
 // of the engine — it just reads a folder — so no need to wait on plugin_list.
-document.addEventListener('DOMContentLoaded', () => { fetchDrumKits(); });
+document.addEventListener('DOMContentLoaded', () => { fetchDrumKits(); fetchFlexPresets(); });
 
 document.addEventListener('DOMContentLoaded', () => {
   const saveBtn    = document.getElementById('engine-crash-save');
@@ -8392,6 +8392,13 @@ async function sendMessage(overrideText, opts) {
             ohh: !!k.files[46],
           },
         })),
+        // Full FLEX preset library: [{pack, presets: [name, ...]}].
+        // Server extracts a small pack-name+count SUMMARY into Claude's
+        // always-on context (cheap) and holds the full names available
+        // to the list_flex_presets tool (fetched on demand only). Full
+        // list never enters Claude context unless a tool call asks for
+        // it, so 6000+ presets stay cost-neutral per turn.
+        flex_presets: flexPresetsData?.packs || [],
         // If the Ideas Panel is on-screen, ship the list of options so
         // Claude can honor "keep the morning light one" / "close it."
         ideas_panel: (ideasState && ideasState.ideas && ideasState.ideas.length) ? {
@@ -9723,6 +9730,25 @@ async function fetchDrumKits() {
     if (browserTab === 'sounds' && typeof renderBrowser === 'function') renderBrowser();
   } catch (e) {
     console.warn('[nasty] drum kit scan failed', e);
+  }
+}
+
+// FLEX preset library scan — the user's ~/Documents/Image-Line/FLEX/Packs/
+// walked into { root, packs: [{pack, presets: [name, ...]}], totalPresets }.
+// Fetched once at startup so Claude can answer "what bass sounds do I have
+// in FLEX?" against the ACTUAL library. Shipped as pack-name + count
+// SUMMARY in the always-on chat context (small); Claude fetches the full
+// preset list for a specific pack on demand via the list_flex_presets tool.
+let flexPresetsData = null;
+async function fetchFlexPresets() {
+  if (!(window.nasty && window.nasty.listFlexPresets)) return;
+  try {
+    flexPresetsData = await window.nasty.listFlexPresets();
+    console.log('[nasty] flex presets:',
+      flexPresetsData?.totalPresets || 0, 'across',
+      flexPresetsData?.packs?.length || 0, 'packs');
+  } catch (e) {
+    console.warn('[nasty] flex preset scan failed', e);
   }
 }
 
