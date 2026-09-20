@@ -1131,6 +1131,28 @@ function scanDrumKits() {
 // where each kit is { name, files: { 36: absPath, 38: absPath, ... } }.
 ipcMain.handle('nasty-list-drum-kits', () => scanDrumKits());
 
+// FLEX preset library scanner. Walks the user's
+// ~/Documents/Image-Line/FLEX/Packs/*.preset files and returns a slim
+// index Claude can reason about ("what bass sounds do I have in FLEX?").
+// Cache after first scan — the folder is stable within a session; a
+// rescan requires an app restart, same policy as the drum-kits scan.
+let _flexPresetsCache = null;
+function scanFlexPresetsCached() {
+  if (_flexPresetsCache) return _flexPresetsCache;
+  try {
+    const { scanFlexPresets } = require(path.join(__dirname, '..', 'scripts', 'scan_flex_presets.js'));
+    _flexPresetsCache = scanFlexPresets();
+    console.log('[nasty] scanned', _flexPresetsCache.totalPresets,
+      'FLEX presets across', _flexPresetsCache.packs.length,
+      'packs from', _flexPresetsCache.root || '(none)');
+  } catch (e) {
+    console.log('[nasty] flex preset scan failed:', e && e.message);
+    _flexPresetsCache = { root: null, packs: [], totalPresets: 0 };
+  }
+  return _flexPresetsCache;
+}
+ipcMain.handle('nasty-list-flex-presets', () => scanFlexPresetsCached());
+
 // Read enough of a WAV file's RIFF header to answer "how long is this?"
 // without decoding the audio. Handles standard PCM WAV — the only format
 // the bundled drum kits ship as. Returns null if the file isn't a
