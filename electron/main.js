@@ -1153,6 +1153,80 @@ function scanFlexPresetsCached() {
 }
 ipcMain.handle('nasty-list-flex-presets', () => scanFlexPresetsCached());
 
+// -----------------------------------------------------------------------
+// Preset vault — user-captured plugin state snapshots keyed by name.
+//
+// Any loaded plugin's state (a base64 blob from the engine's
+// snapshot_plugin_states path) can be saved here with a friendly name.
+// Re-loading later spins up a fresh plugin instance with that exact state
+// restored via load_plugin's base64State param. Key use case: FL Studio
+// AU carrying a specific FLEX/Sytrus/Harmor preset the user browsed to
+// once — captured once, one-click reload forever.
+//
+// On-disk source of truth so this survives localStorage clears and can
+// be shipped between machines. In-memory dict for O(1) reads. Writes
+// touch both.
+// -----------------------------------------------------------------------
+function vaultFilePath() {
+  const supportDir = path.join(app.getPath('userData'), '..', 'nasty-engine');
+  try { fs.mkdirSync(supportDir, { recursive: true }); } catch (_) {}
+  return path.join(supportDir, 'preset-vault.json');
+}
+
+let _presetVault = null;
+function loadPresetVault() {
+  if (_presetVault) return _presetVault;
+  try {
+    const raw = fs.readFileSync(vaultFilePath(), 'utf8');
+    const parsed = JSON.parse(raw);
+    _presetVault = (parsed && typeof parsed === 'object') ? parsed : {};
+  } catch (_) {
+    _presetVault = {};
+  }
+  return _presetVault;
+}
+
+function writePresetVault() {
+  try {
+    fs.writeFileSync(vaultFilePath(), JSON.stringify(_presetVault || {}, null, 2), 'utf8');
+  } catch (e) {
+    console.warn('[nasty] preset vault write failed:', e && e.message);
+  }
+}
+
+// Return the full vault as a plain object: { name → entry }. Entries are
+// { pluginId, pluginName, state (base64), capturedAt, notes? }.
+ipcMain.handle('nasty-vault-list', () => loadPresetVault());
+
+// Save (or overwrite) one entry. Renderer sends {name, pluginId,
+// pluginName, state, notes?}; we stamp capturedAt.
+ipcMain.handle('nasty-vault-save', (_evt, entry) => {
+  const vault = loadPresetVault();
+  const name = (entry && typeof entry.name === 'string') ? entry.name.trim() : '';
+  const state = (entry && typeof entry.state === 'string') ? entry.state : '';
+  if (!name || !state) return { ok: false, error: 'name and state are required' };
+  vault[name] = {
+    pluginId:   entry.pluginId || '',
+    pluginName: entry.pluginName || '',
+    state,
+    notes:      (typeof entry.notes === 'string') ? entry.notes : '',
+    capturedAt: Date.now(),
+  };
+  writePresetVault();
+  return { ok: true, name };
+});
+
+// Delete an entry by name.
+ipcMain.handle('nasty-vault-delete', (_evt, name) => {
+  const vault = loadPresetVault();
+  if (name in vault) {
+    delete vault[name];
+    writePresetVault();
+    return { ok: true };
+  }
+  return { ok: false, error: 'not found' };
+});
+
 // Read enough of a WAV file's RIFF header to answer "how long is this?"
 // without decoding the audio. Handles standard PCM WAV — the only format
 // the bundled drum kits ship as. Returns null if the file isn't a

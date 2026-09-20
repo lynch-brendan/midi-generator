@@ -48,6 +48,16 @@ contextBridge.exposeInMainWorld('nasty', {
   // Cached in main after the first call. Empty result if FLEX isn't installed.
   listFlexPresets: () => ipcRenderer.invoke('nasty-list-flex-presets'),
 
+  // Preset vault — user-captured plugin state snapshots keyed by name.
+  // list()   → { name → { pluginId, pluginName, state, capturedAt, notes? } }
+  // save()   → persist one entry (renderer provides { name, pluginId, pluginName, state, notes? })
+  // delete() → remove by name
+  vault: {
+    list:   () => ipcRenderer.invoke('nasty-vault-list'),
+    save:   (entry) => ipcRenderer.invoke('nasty-vault-save', entry),
+    delete: (name)  => ipcRenderer.invoke('nasty-vault-delete', name),
+  },
+
   // Read a WAV file's header to learn duration/sampleRate/channels without
   // decoding audio. Used by the Sounds tab drag-to-arrangement flow so the
   // dropped clip has a real visual length. Returns null on non-WAV or error.

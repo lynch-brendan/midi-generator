@@ -2150,6 +2150,51 @@ _NASTY_TOOLS = [
         },
     },
     {
+        "name": "save_current_preset",
+        "description": (
+            "Capture the current plugin state on a channel and file it in "
+            "the user's preset vault under `preset_name`. Use when the user "
+            "has browsed to a specific sound inside a plugin's own browser "
+            "(e.g. FL Studio AU → FLEX → 'Hard 808s → 808 Aggy', Serato → "
+            "a loaded sample, Serum → a wavetable) and wants to save it so "
+            "they can re-load it by name later without repeating the "
+            "browse. After capture, `load_captured_preset(preset_name)` "
+            "spins up a fresh channel with the exact same plugin + state. "
+            "Channel resolves in this priority: explicit `channel_id` → "
+            "currently-armed channel → most-recently-added plugin channel. "
+            "`notes` (optional) shows in the vault index so the user can "
+            "remember what a preset sounds like."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "preset_name": {"type": "string"},
+                "channel_id": {"type": "string"},
+                "notes": {"type": "string"},
+            },
+            "required": ["preset_name"],
+        },
+    },
+    {
+        "name": "load_captured_preset",
+        "description": (
+            "Spin up a fresh channel with a plugin loaded from the user's "
+            "preset vault — the plugin state at capture time is restored, "
+            "so if the user captured FL Studio AU with '808 Aggy' selected "
+            "inside FLEX, this loads a channel that already sounds like "
+            "808 Aggy without any further browsing. Use `preset_name` "
+            "exactly as it appears in the vault index shipped in the "
+            "system context (case-insensitive match)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "preset_name": {"type": "string"},
+            },
+            "required": ["preset_name"],
+        },
+    },
+    {
         "name": "list_flex_presets",
         "description": (
             "List presets from the user's FLEX preset library. Use when the "
@@ -2296,6 +2341,7 @@ class NastyChatRequest(BaseModel):
     ideas_panel: dict | None = None  # populated when the Ideas Panel is on-screen
     drum_kits: list = []  # vintage drum-machine kits scanned locally by main.js
     flex_presets: list = []  # FLEX preset library: [{pack, presets: [name, ...]}] from main.js
+    preset_vault: list = []  # user-captured plugin state snapshots: [{name, pluginName, pluginId, notes, capturedAt}]
 
 
 class NastyMidiIdeasRequest(BaseModel):
@@ -2519,6 +2565,47 @@ def nasty_chat(req: NastyChatRequest):
     else:
         flex_presets_block = ""
 
+    # Preset vault — user-captured plugin state snapshots (name + plugin
+    # + notes only; the state blob stays client-side and is only touched
+    # when load_captured_preset fires). This is the ANSWER to "load me
+    # 808 Aggy" style asks: whatever the user browsed to inside a plugin
+    # (FL Studio AU → FLEX preset X; Serato → sample Y; Serum → wavetable
+    # Z) once got captured here, and can be re-loaded on any channel
+    # forever after with the exact same sound.
+    vault = req.preset_vault or []
+    if vault:
+        vault_lines = []
+        for e in vault:
+            if not isinstance(e, dict): continue
+            nm = e.get("name", "?")
+            plug = e.get("pluginName") or e.get("pluginId") or "unknown plugin"
+            notes = (e.get("notes") or "").strip()
+            tail = f" — {notes}" if notes else ""
+            vault_lines.append(f"- **{nm}** ({plug}){tail}")
+        preset_vault_block = (
+            f"Captured preset vault — {len(vault_lines)} plugin state "
+            f"snapshots the user has saved on THIS machine. Call "
+            f"`load_captured_preset(preset_name)` to spin up a fresh "
+            f"channel with the exact state (plugin + inner-preset + "
+            f"knob positions) restored. When the user says 'load 808 "
+            f"Aggy' or 'give me that Rhodes I captured yesterday,' "
+            f"match against this list. To CAPTURE a new one, tell the "
+            f"user to browse to the preset inside the loaded plugin, "
+            f"then call `save_current_preset(preset_name, channel_id?, "
+            f"notes?)`.\n\n"
+            + "\n".join(vault_lines)
+            + "\n\n"
+        )
+    else:
+        preset_vault_block = (
+            "Captured preset vault is empty. When the user opens a "
+            "plugin (e.g. FL Studio AU → FLEX), browses to a preset "
+            "they like, and asks to save it, call "
+            "`save_current_preset(preset_name)` — the plugin's current "
+            "state gets captured and can be re-loaded on any future "
+            "channel by name via `load_captured_preset`.\n\n"
+        )
+
     # When the Ideas Panel is on-screen, tell Claude what's in it so it can
     # honor requests like "keep the morning light one" or "close the panel."
     ideas_block = ""
@@ -2646,7 +2733,7 @@ def nasty_chat(req: NastyChatRequest):
         },
         {
             "type": "text",
-            "text": plugin_block + drum_kits_block + flex_presets_block + knowledge_block,
+            "text": plugin_block + drum_kits_block + flex_presets_block + preset_vault_block + knowledge_block,
             "cache_control": {"type": "ephemeral", "ttl": "1h"},
         },
     ]

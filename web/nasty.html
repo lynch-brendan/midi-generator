@@ -4496,6 +4496,73 @@ async function applyToolCalls(calls) {
       } else if (name === 'close_ideas_panel') {
         closeIdeasPanel();
         summaries.push('◇ ideas panel closed');
+      } else if (name === 'save_current_preset') {
+        // Capture the current plugin state on a channel and file it in the
+        // vault under `preset_name`. Channel resolves in this priority:
+        // explicit channel_id → the currently-armed channel → the last
+        // plugin channel in the rack.
+        const presetName = (input.preset_name || '').trim();
+        if (!presetName) { summaries.push('× save_current_preset: preset_name required'); }
+        else {
+          let ch = null;
+          if (input.channel_id) ch = song.channels.find(c => c.id === input.channel_id);
+          if (!ch) ch = song.channels.find(c => c.armed && c.instrument === 'plugin');
+          if (!ch) ch = [...song.channels].reverse().find(c => c.instrument === 'plugin');
+          if (!ch) { summaries.push('× save_current_preset: no plugin channel to capture'); }
+          else {
+            try {
+              const state = await captureChannelStateOnce(ch.id, 3000);
+              const plug = enginePluginsList?.find(p => p.id === ch.pluginId);
+              const res = await window.nasty.vault.save({
+                name:       presetName,
+                pluginId:   ch.pluginId,
+                pluginName: plug?.name || ch.name || '',
+                state,
+                notes:      input.notes || '',
+              });
+              if (res?.ok) {
+                presetVaultData[presetName] = {
+                  pluginId:   ch.pluginId,
+                  pluginName: plug?.name || ch.name || '',
+                  state,
+                  notes:      input.notes || '',
+                  capturedAt: Date.now(),
+                };
+                summaries.push(`★ captured "${presetName}" from ${plug?.name || 'plugin'} on ${ch.name}`);
+              } else {
+                summaries.push(`× save_current_preset failed: ${res?.error || 'unknown'}`);
+              }
+            } catch (e) {
+              summaries.push(`× save_current_preset: ${e.message || e}`);
+            }
+          }
+        }
+      } else if (name === 'load_captured_preset') {
+        // Spin up a fresh channel with a plugin loaded from a vault entry.
+        // Resolves the preset by exact name (case-insensitive) — Claude
+        // should read the vault index in system context and pass the
+        // matching name here.
+        const wanted = (input.preset_name || '').trim().toLowerCase();
+        if (!wanted) { summaries.push('× load_captured_preset: preset_name required'); }
+        else {
+          const foundKey = Object.keys(presetVaultData).find(k => k.toLowerCase() === wanted);
+          const entry = foundKey ? presetVaultData[foundKey] : null;
+          if (!entry) { summaries.push(`× load_captured_preset: "${input.preset_name}" not in vault`); }
+          else if (!entry.pluginId) { summaries.push(`× load_captured_preset: "${foundKey}" has no pluginId`); }
+          else {
+            try {
+              await addChannelFromInstrument({
+                id: 'ch_plugin_' + Date.now().toString(36),
+                name: foundKey,
+                pluginId: entry.pluginId,
+                base64State: entry.state || '',
+              });
+              summaries.push(`▸ loaded "${foundKey}" (${entry.pluginName || 'plugin'}) as new channel`);
+            } catch (e) {
+              summaries.push(`× load_captured_preset failed: ${e.message || e}`);
+            }
+          }
+        }
       } else if (name === 'save_song') {
         saveToFile();
         summaries.push('💾 saved (check browser downloads)');
@@ -7127,7 +7194,7 @@ function showEngineCrashModal(msg) {
 }
 // Kick off the drum-kit scan as soon as the renderer boots. Independent
 // of the engine — it just reads a folder — so no need to wait on plugin_list.
-document.addEventListener('DOMContentLoaded', () => { fetchDrumKits(); fetchFlexPresets(); });
+document.addEventListener('DOMContentLoaded', () => { fetchDrumKits(); fetchFlexPresets(); fetchPresetVault(); });
 
 document.addEventListener('DOMContentLoaded', () => {
   const saveBtn    = document.getElementById('engine-crash-save');
@@ -8399,6 +8466,17 @@ async function sendMessage(overrideText, opts) {
         // list never enters Claude context unless a tool call asks for
         // it, so 6000+ presets stay cost-neutral per turn.
         flex_presets: flexPresetsData?.packs || [],
+        // Preset vault index — user-captured plugin state snapshots.
+        // Ship metadata only (name, pluginName, capturedAt, notes) — the
+        // heavy base64 state blob stays on the client. Claude uses this
+        // to answer "what have I captured?" and to fire load_captured_preset.
+        preset_vault: Object.entries(presetVaultData || {}).map(([name, e]) => ({
+          name,
+          pluginName: (e && e.pluginName) || '',
+          pluginId:   (e && e.pluginId)   || '',
+          notes:      (e && e.notes)      || '',
+          capturedAt: (e && e.capturedAt) || 0,
+        })),
         // If the Ideas Panel is on-screen, ship the list of options so
         // Claude can honor "keep the morning light one" / "close it."
         ideas_panel: (ideasState && ideasState.ideas && ideasState.ideas.length) ? {
@@ -9731,6 +9809,55 @@ async function fetchDrumKits() {
   } catch (e) {
     console.warn('[nasty] drum kit scan failed', e);
   }
+}
+
+// Preset vault — user-captured plugin state snapshots keyed by name.
+// Loaded from disk at startup so Claude can see what's already been
+// captured. Shape: { name → { pluginId, pluginName, state, capturedAt, notes? } }.
+// The state blob (base64) is heavy; we ONLY ship name+pluginName+notes+
+// capturedAt to the server for indexing. Actual state blobs stay client-
+// side and are only touched when we load one.
+let presetVaultData = {};
+async function fetchPresetVault() {
+  if (!(window.nasty && window.nasty.vault && window.nasty.vault.list)) return;
+  try {
+    presetVaultData = await window.nasty.vault.list() || {};
+    console.log('[nasty] preset vault:', Object.keys(presetVaultData).length, 'entries');
+  } catch (e) {
+    console.warn('[nasty] preset vault load failed', e);
+  }
+}
+
+// Ask the engine for a plugin-state snapshot and resolve once the matching
+// snapshot event fires. Used by save_current_preset — different from the
+// autosave path because we need the state RIGHT NOW to hand to the vault.
+// Times out after 3s so a broken plugin can't hang the tool call.
+function captureChannelStateOnce(channelId, timeoutMs = 3000) {
+  return new Promise((resolve, reject) => {
+    if (!(window.nasty && window.nasty.engine)) {
+      reject(new Error('audio engine not available')); return;
+    }
+    let unsub = null;
+    let done = false;
+    const timer = setTimeout(() => {
+      if (done) return;
+      done = true;
+      if (unsub) unsub();
+      reject(new Error('snapshot timed out'));
+    }, timeoutMs);
+    unsub = window.nasty.engine.onEvent((msg) => {
+      if (done) return;
+      if (msg && msg.event === 'plugin_states_snapshot') {
+        const state = (msg.states && msg.states[channelId]) || '';
+        done = true;
+        clearTimeout(timer);
+        if (unsub) unsub();
+        if (state) resolve(state);
+        else reject(new Error('no state captured for channel ' + channelId));
+      }
+    });
+    window.nasty.engine.send({ cmd: 'snapshot_plugin_states' });
+  });
 }
 
 // FLEX preset library scan — the user's ~/Documents/Image-Line/FLEX/Packs/
