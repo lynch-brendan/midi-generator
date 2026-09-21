@@ -1205,6 +1205,22 @@ function writePresetVault() {
 // { pluginId, pluginName, state (base64), capturedAt, notes? }.
 ipcMain.handle('nasty-vault-list', () => loadPresetVault());
 
+// Write arbitrary content to a scratch file under the nasty-engine support
+// dir — used by debug/experiment paths to dump state chunks or reports to
+// disk without polluting the live vault.
+ipcMain.handle('nasty-scratch-write', (_evt, { name, content }) => {
+  const dir = path.join(app.getPath('userData'), '..', 'nasty-engine', 'scratch');
+  try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
+  const safe = String(name || '').replace(/[^\w.\-]/g, '_');
+  const full = path.join(dir, safe);
+  try {
+    fs.writeFileSync(full, content, 'utf8');
+    return { ok: true, path: full };
+  } catch (e) {
+    return { ok: false, error: e && e.message };
+  }
+});
+
 // Save (or overwrite) one entry. Renderer sends {name, pluginId,
 // pluginName, state, notes?}; we stamp capturedAt.
 ipcMain.handle('nasty-vault-save', (_evt, entry) => {

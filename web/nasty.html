@@ -4496,6 +4496,95 @@ async function applyToolCalls(calls) {
       } else if (name === 'close_ideas_panel') {
         closeIdeasPanel();
         summaries.push('◇ ideas panel closed');
+      } else if (name === 'run_phase1_flex_test') {
+        // Phase 1 automation: send a small handful of program-change values
+        // to the currently-loaded FL Studio AU channel, capture state after
+        // each, analyze distinctness + determinism + plaintext preset-name
+        // extractability. Reports a compact summary back to Claude; dumps
+        // the raw state chunks to disk for post-hoc inspection.
+        try {
+          let ch = null;
+          if (input.channel_id) ch = song.channels.find(c => c.id === input.channel_id);
+          if (!ch) ch = song.channels.find(c => (c.pluginId || '').includes('FL Studio'));
+          if (!ch) { summaries.push('× phase1: no FL Studio channel loaded'); }
+          else {
+            const seq = Array.isArray(input.sequence) && input.sequence.length
+              ? input.sequence : [0, 5, 20, 100, 5];
+            const delayMs = Number.isFinite(input.delay_ms) ? input.delay_ms : 800;
+            const captures = [];
+            const captureAfter = async (program) => {
+              await window.nasty.debugMidi.pc(ch.id, program);
+              await new Promise(r => setTimeout(r, delayMs));
+              return new Promise((resolve, reject) => {
+                let unsub = null;
+                const timer = setTimeout(() => { if (unsub) unsub(); reject(new Error('timeout')); }, 5000);
+                unsub = window.nasty.engine.onEvent((msg) => {
+                  if (msg && msg.event === 'plugin_states_snapshot') {
+                    clearTimeout(timer); unsub();
+                    resolve((msg.states || {})[ch.id] || null);
+                  }
+                });
+                window.nasty.engine.send({ cmd: 'snapshot_plugin_states' });
+              });
+            };
+            for (const p of seq) {
+              const state = await captureAfter(p);
+              captures.push({ program: p, state });
+            }
+            // Plaintext extraction — pull readable ASCII runs.
+            const extractStrs = (b64) => {
+              if (!b64) return [];
+              const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+              let cur = ''; const out = [];
+              for (const b of bytes) {
+                if (b >= 32 && b <= 126) cur += String.fromCharCode(b);
+                else { if (cur.length >= 6) out.push(cur); cur = ''; }
+              }
+              return out.filter(s => !s.includes('/') && !s.includes('\\') && s.length < 60);
+            };
+            const pairs = [];
+            for (let i = 0; i < captures.length; i++)
+              for (let j = i+1; j < captures.length; j++)
+                pairs.push({ a: captures[i].program, b: captures[j].program,
+                             same: captures[i].state === captures[j].state });
+            const pc5 = captures.filter(c => c.program === 5);
+            const deterministic = pc5.length > 1 && pc5.every(c => c.state === pc5[0].state);
+            // Dump raw state chunks + a JSON summary to scratch dir.
+            const scratchPaths = [];
+            for (const c of captures) {
+              const r = await window.nasty.scratchWrite(
+                `phase1_pc${c.program}_${Date.now()}.b64`, c.state || '');
+              if (r?.ok) scratchPaths.push(r.path);
+            }
+            const report = {
+              channelId: ch.id, pluginName: ch.name,
+              sequence: seq, delayMs,
+              stateLengths: captures.map(c => ({ program: c.program, length: (c.state || '').length })),
+              pairDistinct: pairs,
+              deterministic,
+              plaintextByProgram: captures.map(c => ({
+                program: c.program, strings: extractStrs(c.state).slice(-10),
+              })),
+              scratchPaths,
+            };
+            await window.nasty.scratchWrite(`phase1_report_${Date.now()}.json`,
+              JSON.stringify(report, null, 2));
+            // Compact summary back to Claude (must fit tool_result payload).
+            const diffs = pairs.filter(p => !p.same).length;
+            const identical = pairs.filter(p => p.same).map(p => `pc(${p.a})~pc(${p.b})`);
+            const nameHits = report.plaintextByProgram.map(e => `pc(${e.program}): ${e.strings.slice(-5).join(' | ') || '(none)'}`).join('\n  ');
+            summaries.push(
+              `PHASE 1 REPORT — channel=${ch.name}\n` +
+              `  captures: ${captures.length}, sizes: ${captures.map(c => c.state?.length || 0).join('/')}\n` +
+              `  pair-distinct: ${diffs}/${pairs.length}${identical.length ? ` — identical pairs: ${identical.join(', ')}` : ''}\n` +
+              `  deterministic pc(5): ${deterministic}\n` +
+              `  plaintext strings per capture:\n  ${nameHits}\n` +
+              `  raw state chunks + report JSON written to scratch dir.`
+            );
+          }
+        } catch (e) {
+          summaries.push(`× phase1 failed: ${e.message || e}`);
+        }
       } else if (name === 'save_current_preset') {
         // Capture the current plugin state on a channel and file it in the
         // vault under `preset_name`. Channel resolves in this priority:

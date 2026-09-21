@@ -2150,6 +2150,29 @@ _NASTY_TOOLS = [
         },
     },
     {
+        "name": "run_phase1_flex_test",
+        "description": (
+            "Phase 1 automation experiment for the FLEX preset-priming loop. "
+            "Sends MIDI Program Change [0, 5, 20, 100, 5] to the loaded FL "
+            "Studio AU channel, snapshots state after each, and reports "
+            "back: (1) are all 5 captures distinct, (2) do the two pc(5) "
+            "match (deterministic), (3) do plaintext strings inside each "
+            "state look like FLEX preset names. Dumps the raw state chunks "
+            "to the scratch dir for post-hoc inspection. Fire this when "
+            "Brendan says 'run phase 1', 'test the automation', or similar. "
+            "No user input required — resolves the FL Studio channel "
+            "automatically. Takes ~5 seconds."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "channel_id": {"type": "string", "description": "Optional — overrides auto-resolved FL Studio channel."},
+                "sequence":   {"type": "array",  "items": {"type": "integer"}, "description": "Optional program-change sequence. Defaults to [0, 5, 20, 100, 5]."},
+                "delay_ms":   {"type": "integer", "description": "Optional ms between program-change and snapshot. Default 800."},
+            },
+        },
+    },
+    {
         "name": "save_current_preset",
         "description": (
             "Capture the current plugin state on a channel and file it in "

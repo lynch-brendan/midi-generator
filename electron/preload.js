@@ -75,6 +75,10 @@ contextBridge.exposeInMainWorld('nasty', {
     delete: (name)  => ipcRenderer.invoke('nasty-vault-delete', name),
   },
 
+  // Write scratch/debug output files under the nasty-engine support dir.
+  // Used by the phase1 automation to dump state chunks + analysis JSON.
+  scratchWrite: (name, content) => ipcRenderer.invoke('nasty-scratch-write', { name, content }),
+
   // Read a WAV file's header to learn duration/sampleRate/channels without
   // decoding audio. Used by the Sounds tab drag-to-arrangement flow so the
   // dropped clip has a real visual length. Returns null on non-WAV or error.
