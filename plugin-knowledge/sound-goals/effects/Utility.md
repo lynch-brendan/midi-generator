@@ -9,6 +9,14 @@ Metering, spectrum analysis, tuning, volume adjustment, gain staging. Reach for 
 
 ## Options
 
+### AUSampler
+
+- **Character:** Neutral and transparent — the sampler itself imparts no color; timbre is 100% determined by the loaded sample content (.aupreset / .exs / .sf2 / .dls).
+- **Best for:** Programmatic MIDI-driven sample playback in macOS/iOS apps and DAW sessions (GarageBand, Logic, MainStage); loading EXS24 or SoundFont libraries; embedding a lightweight sampler engine in Core Audio / AVAudioEngine projects.
+- **Emotional tags:** Neutral — depends entirely on loaded content.
+- **Comparison:** Functionally similar to a stripped-down version of Logic's EXS24/Sampler, but with fewer parameters exposed, no built-in browser, and significant undocumented internals; more limited than full-featured samplers like Kontakt or UVI Workstation.
+- **How to use:** `load_instrument(channel_id=..., plugin_id="AUSampler", preset_name="<path_to.aupreset>")` — note that the plugin will be silent until a valid instrument file is loaded.
+
 ### Airwindows Consolidated
 
 - **Character:** A plugin-selector meta-tool housing 500+ algorithms; as a utility it offers console bus systems (ConsoleX, ConsoleH channel/buss pairs for summing coloration), monitoring tools (Monitoring3 with headphone crossfeed), stereo manipulation (PurestDualPan), and gain utilities (PurestGain). The overall plugin itself functions as a utility framework for the entire Airwindows ecosystem.
