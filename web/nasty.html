@@ -4519,12 +4519,29 @@ async function applyToolCalls(calls) {
               for (let i = 0; i < s.length; i++) { h = ((h << 5) - h + s.charCodeAt(i)) | 0; }
               return `${s.length}_${h}`;
             };
+            const kick = !!input.kick;
             const captureAfter = async (program) => {
               await window.nasty.debugMidi.pc(ch.id, program);
-              await new Promise(r => setTimeout(r, delayMs));
+              // Kick mode: play a brief note between pc and snapshot to
+              // force FL Studio AU through its audio-processing path, on
+              // the theory that lazy state serialization might refresh
+              // after a render pass. Also wait longer overall.
+              if (kick) {
+                await new Promise(r => setTimeout(r, 400));
+                window.nasty.engine.send({ cmd: 'note_on',  channelId: ch.id, pitch: 60, velocity: 0.7 });
+                await new Promise(r => setTimeout(r, 300));
+                window.nasty.engine.send({ cmd: 'note_off', channelId: ch.id, pitch: 60 });
+                await new Promise(r => setTimeout(r, delayMs));
+                // Double-snapshot — some plugins refresh serialization
+                // only on the SECOND call after a state change.
+                window.nasty.engine.send({ cmd: 'snapshot_plugin_states' });
+                await new Promise(r => setTimeout(r, 200));
+              } else {
+                await new Promise(r => setTimeout(r, delayMs));
+              }
               return new Promise((resolve, reject) => {
                 let unsub = null;
-                const timer = setTimeout(() => { if (unsub) unsub(); reject(new Error('timeout')); }, 8000);
+                const timer = setTimeout(() => { if (unsub) unsub(); reject(new Error('timeout')); }, 10000);
                 unsub = window.nasty.engine.onEvent((msg) => {
                   if (msg && msg.event === 'plugin_states_snapshot') {
                     clearTimeout(timer); unsub();

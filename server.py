@@ -2167,6 +2167,7 @@ _NASTY_TOOLS = [
                 "count": {"type": "integer", "minimum": 1, "maximum": 128, "description": "How many program-change values to sweep. Default 128 (full 0-127 MIDI range)."},
                 "delay_ms": {"type": "integer", "description": "Milliseconds between pc and snapshot. Default 1500."},
                 "channel_id": {"type": "string", "description": "Optional — overrides auto-resolved FL Studio channel."},
+                "kick": {"type": "boolean", "description": "If true, play a brief note between pc and snapshot to force FL Studio through its audio-processing path (attempts to make lazy state serialization commit). Also double-snapshots. Default false."},
             },
         },
     },
