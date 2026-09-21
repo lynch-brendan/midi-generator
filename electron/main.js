@@ -164,6 +164,13 @@ function startAudioEngine() {
                         : null;
   const engineEnv = { ...process.env };
   if (instrumentsPath) engineEnv.NASTY_INSTRUMENTS_PATH = instrumentsPath;
+  // Let nested-DAW plugins (FL Studio VSTi/AU is the big one) keep keyboard
+  // focus. Default behavior yanks focus back to Nasty on every plugin-window
+  // click so Z-M piano input stays with the DAW — but that makes hosting a
+  // full DAW-as-plugin (FL Studio, Bitwig Grid inside another host, etc.)
+  // completely unusable because every click in the plugin window bounces
+  // focus. Tradeoff: Z-M piano row now goes to whichever window is key.
+  engineEnv.NASTY_LET_PLUGINS_KEEP_FOCUS = '1';
   // Path to the bundled General MIDI SoundFont — renderer sends this to the
   // engine when creating GM channels.
   const sf2Path = instrumentsPath ? path.join(instrumentsPath, 'GeneralUser.sf2') : '';
