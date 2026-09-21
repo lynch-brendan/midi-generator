@@ -213,6 +213,16 @@ public:
     void noteOff(const juce::String& channelId, int pitch);
     void allNotesOff(const juce::String& channelId);
 
+    // Non-note MIDI events routed to a channel's plugin. Used for driving
+    // in-plugin state that the standard VST/AU parameter API doesn't expose
+    // (FL Studio AU's FLEX preset browser is the flagship case). The MIDI
+    // channel defaults to the channel slot's assigned channel but can be
+    // overridden — some hosted plugins listen on a specific MIDI channel
+    // internally (FL Studio AU routes MIDI channel N to its internal
+    // channel N).
+    void sendProgramChange(const juce::String& channelId, int program, int midiChannel);
+    void sendControlChange(const juce::String& channelId, int controller, int value, int midiChannel);
+
     // Per-channel volume, applied by scaling outgoing noteOn velocities. Cheap
     // enough to change every buffer if the user drags a slider. Not a true
     // audio-level gain, but works uniformly across every velocity-honouring

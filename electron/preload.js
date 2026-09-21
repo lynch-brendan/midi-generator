@@ -48,6 +48,23 @@ contextBridge.exposeInMainWorld('nasty', {
   // Cached in main after the first call. Empty result if FLEX isn't installed.
   listFlexPresets: () => ipcRenderer.invoke('nasty-list-flex-presets'),
 
+  // Debug MIDI helpers — used from DevTools console to probe whether a
+  // hosted plugin (FL Studio AU + FLEX in particular) responds to program
+  // change / control change. Not exposed via chat; strictly for research
+  // into automating the preset-priming loop. Usage from console:
+  //   nasty.debugMidi.pc('ch_plugin_xxx', 5)          // program change 5 on default channel
+  //   nasty.debugMidi.pc('ch_plugin_xxx', 5, 2)       // program change 5 on midi channel 2
+  //   nasty.debugMidi.cc('ch_plugin_xxx', 32, 10)     // CC 32 value 10
+  debugMidi: {
+    pc: (channelId, program, midiChannel = 0) => ipcRenderer.invoke('engine-cmd', {
+      cmd: 'program_change', channelId, program, midiChannel,
+    }),
+    cc: (channelId, controller, value, midiChannel = 0) => ipcRenderer.invoke('engine-cmd', {
+      cmd: 'control_change', channelId, controller, value, midiChannel,
+    }),
+    snapshot: () => ipcRenderer.invoke('engine-cmd', { cmd: 'snapshot_plugin_states' }),
+  },
+
   // Preset vault — user-captured plugin state snapshots keyed by name.
   // list()   → { name → { pluginId, pluginName, state, capturedAt, notes? } }
   // save()   → persist one entry (renderer provides { name, pluginId, pluginName, state, notes? })

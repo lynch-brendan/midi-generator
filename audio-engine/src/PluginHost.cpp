@@ -1653,6 +1653,45 @@ void PluginHost::noteOn(const juce::String& channelId, int pitch, float velocity
     }
 }
 
+void PluginHost::sendProgramChange(const juce::String& channelId, int program, int midiChannel) {
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = channels.find(channelId);
+    if (it == channels.end()) {
+        std::cerr << "[PluginHost] program_change NO CH: " << channelId << std::endl;
+        return;
+    }
+    auto node = graph.getNodeForId(it->second.injectorNodeId);
+    if (!node) return;
+    if (auto* inj = dynamic_cast<MidiInjector*>(node->getProcessor())) {
+        const int ch = midiChannel > 0 ? midiChannel : it->second.midiChannel;
+        const int clampedProgram = program < 0 ? 0 : (program > 127 ? 127 : program);
+        inj->collector.addMessageToQueue(
+            juce::MidiMessage::programChange(ch, clampedProgram));
+        std::cerr << "[PluginHost] program_change ch=" << channelId
+                  << " midiCh=" << ch << " program=" << clampedProgram << std::endl;
+    }
+}
+
+void PluginHost::sendControlChange(const juce::String& channelId, int controller, int value, int midiChannel) {
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = channels.find(channelId);
+    if (it == channels.end()) {
+        std::cerr << "[PluginHost] control_change NO CH: " << channelId << std::endl;
+        return;
+    }
+    auto node = graph.getNodeForId(it->second.injectorNodeId);
+    if (!node) return;
+    if (auto* inj = dynamic_cast<MidiInjector*>(node->getProcessor())) {
+        const int ch = midiChannel > 0 ? midiChannel : it->second.midiChannel;
+        const int clampedCc  = controller < 0 ? 0 : (controller > 127 ? 127 : controller);
+        const int clampedVal = value < 0 ? 0 : (value > 127 ? 127 : value);
+        inj->collector.addMessageToQueue(
+            juce::MidiMessage::controllerEvent(ch, clampedCc, clampedVal));
+        std::cerr << "[PluginHost] control_change ch=" << channelId
+                  << " midiCh=" << ch << " cc=" << clampedCc << " val=" << clampedVal << std::endl;
+    }
+}
+
 void PluginHost::setChannelGain(const juce::String& channelId, float gain01) {
     std::lock_guard<std::mutex> lock(mutex);
     auto it = channels.find(channelId);

@@ -266,6 +266,29 @@ juce::var StdioBridge::handleCommand(const juce::var& msg) {
         return {};
     }
 
+    if (cmd == "program_change") {
+        // MIDI Program Change to a plugin. The MIDI channel is optional —
+        // defaults to the channel slot's assigned MIDI channel if unset or 0.
+        // Used to probe whether a hosted plugin (FL Studio AU + FLEX) will
+        // switch presets on program change; if yes, we automate priming
+        // the whole preset library via a program-change loop.
+        host.sendProgramChange(msg["channelId"].toString(),
+                               (int) msg["program"],
+                               (int) msg["midiChannel"]);
+        return {};
+    }
+
+    if (cmd == "control_change") {
+        // MIDI Control Change. Same use-case as program_change — some
+        // plugins expose preset browsing via MIDI CC (via MIDI Learn) even
+        // when they don't respond to program change.
+        host.sendControlChange(msg["channelId"].toString(),
+                               (int) msg["controller"],
+                               (int) msg["value"],
+                               (int) msg["midiChannel"]);
+        return {};
+    }
+
     if (cmd == "show_plugin_ui") {
         host.showPluginUI(msg["channelId"].toString());
         return {};
