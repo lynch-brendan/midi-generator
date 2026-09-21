@@ -2150,6 +2150,27 @@ _NASTY_TOOLS = [
         },
     },
     {
+        "name": "prime_flex_library",
+        "description": (
+            "Automatically prime the FLEX preset library by sweeping MIDI "
+            "program change values on the loaded FL Studio AU channel, "
+            "snapshotting state after each, and saving each unique state "
+            "to the vault. Fire this when Brendan says 'prime flex', "
+            "'run the automation', 'do the overnight thing', etc. Saves "
+            "under names like `flex_pc_005` — Brendan can rename later. "
+            "Aborts early if the first few captures produce identical "
+            "states (means the plugin isn't serializing the pc changes)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "count": {"type": "integer", "minimum": 1, "maximum": 128, "description": "How many program-change values to sweep. Default 128 (full 0-127 MIDI range)."},
+                "delay_ms": {"type": "integer", "description": "Milliseconds between pc and snapshot. Default 1500."},
+                "channel_id": {"type": "string", "description": "Optional — overrides auto-resolved FL Studio channel."},
+            },
+        },
+    },
+    {
         "name": "run_phase1_flex_test",
         "description": (
             "Phase 1 automation experiment for the FLEX preset-priming loop. "

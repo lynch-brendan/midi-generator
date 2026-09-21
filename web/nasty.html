@@ -4496,6 +4496,86 @@ async function applyToolCalls(calls) {
       } else if (name === 'close_ideas_panel') {
         closeIdeasPanel();
         summaries.push('◇ ideas panel closed');
+      } else if (name === 'prime_flex_library') {
+        // Full FLEX priming loop. Sweeps program-change 0..count-1, snapshots
+        // state after each, hashes to dedupe, saves unique captures to the
+        // vault as flex_pc_NNN. Safety valve: if the first 3 captures all
+        // have the same hash, we bail — that means the plugin isn't
+        // serializing MIDI-driven preset changes and continuing would just
+        // waste time/disk.
+        try {
+          let ch = null;
+          if (input.channel_id) ch = song.channels.find(c => c.id === input.channel_id);
+          if (!ch) ch = song.channels.find(c => (c.pluginId || '').includes('FL Studio'));
+          if (!ch) { summaries.push('× prime_flex: no FL Studio channel loaded'); }
+          else {
+            const count = Math.min(Math.max(1, input.count || 128), 128);
+            const delayMs = Number.isFinite(input.delay_ms) ? input.delay_ms : 1500;
+            // Simple non-crypto hash of a base64 string — enough to spot
+            // near-identical states.
+            const hash = (s) => {
+              if (!s) return 'empty';
+              let h = 0;
+              for (let i = 0; i < s.length; i++) { h = ((h << 5) - h + s.charCodeAt(i)) | 0; }
+              return `${s.length}_${h}`;
+            };
+            const captureAfter = async (program) => {
+              await window.nasty.debugMidi.pc(ch.id, program);
+              await new Promise(r => setTimeout(r, delayMs));
+              return new Promise((resolve, reject) => {
+                let unsub = null;
+                const timer = setTimeout(() => { if (unsub) unsub(); reject(new Error('timeout')); }, 8000);
+                unsub = window.nasty.engine.onEvent((msg) => {
+                  if (msg && msg.event === 'plugin_states_snapshot') {
+                    clearTimeout(timer); unsub();
+                    resolve((msg.states || {})[ch.id] || null);
+                  }
+                });
+                window.nasty.engine.send({ cmd: 'snapshot_plugin_states' });
+              });
+            };
+            const seen = new Map(); // hash → first-saved program index
+            let saved = 0, dupes = 0, empties = 0;
+            let aborted = null;
+            for (let p = 0; p < count; p++) {
+              let state;
+              try { state = await captureAfter(p); }
+              catch (e) { empties++; continue; }
+              if (!state) { empties++; continue; }
+              const h = hash(state);
+              // Safety valve: 3 identical hashes in the first 3 captures =
+              // bail. Plugin isn't serializing pc changes; saving 128 of
+              // the same thing wastes disk and Brendan's time.
+              if (p === 2 && seen.size === 1) {
+                aborted = 'first 3 captures have identical hash — plugin does not serialize MIDI-driven preset changes. aborting so we do not save 128 copies of the same state.';
+                break;
+              }
+              if (seen.has(h)) { dupes++; continue; }
+              seen.set(h, p);
+              const nm = `flex_pc_${String(p).padStart(3, '0')}`;
+              const r = await window.nasty.vault.save({
+                name: nm, pluginId: ch.pluginId, pluginName: ch.name,
+                state, notes: `auto-primed via pc(${p}) from ${ch.name}`,
+              });
+              if (r?.ok) {
+                presetVaultData[nm] = {
+                  pluginId: ch.pluginId, pluginName: ch.name,
+                  state, notes: r?.notes || '', capturedAt: Date.now(),
+                };
+                saved++;
+              }
+            }
+            summaries.push(
+              `PRIME FLEX${aborted ? ' — ABORTED' : ''}\n` +
+              `  channel=${ch.name}, sweep pc(0..${count-1}), delay=${delayMs}ms\n` +
+              `  saved: ${saved} unique presets to vault\n` +
+              `  dupes skipped: ${dupes}, empty captures: ${empties}\n` +
+              (aborted ? `  reason: ${aborted}` : '  done — check vault index, rename entries as needed.')
+            );
+          }
+        } catch (e) {
+          summaries.push(`× prime_flex crashed: ${e.message || e}`);
+        }
       } else if (name === 'run_phase1_flex_test') {
         // Phase 1 automation: send a small handful of program-change values
         // to the currently-loaded FL Studio AU channel, capture state after
