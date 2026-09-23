@@ -5763,8 +5763,9 @@ function renderChannelRack() {
       const box = document.createElement('div');
       box.style.cssText =
         `position:relative; width:${previewWidth}px; height:${previewHeight}px;` +
-        ` background:#0a0d10; border:1px solid #14171c; border-radius:2px;` +
-        ` margin:0 6px; cursor:pointer; overflow:hidden;`;
+        ` background:rgba(10,13,16,0.35); border:1px solid rgba(255,255,255,0.08);` +
+        ` border-radius:2px; margin:0 6px; cursor:pointer; overflow:hidden;` +
+        ` backdrop-filter:blur(2px); -webkit-backdrop-filter:blur(2px);`;
       box.title = 'Painted in the piano roll — click to open';
       const chNotes = pattern.notes.filter(n => n.channelId === ch.id);
       if (chNotes.length) {
