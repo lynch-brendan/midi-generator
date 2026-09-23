@@ -4553,6 +4553,13 @@ async function applyToolCalls(calls) {
       } else if (name === 'play') {
         // Same path as clicking the Play button — includes engine mode set,
         // pattern/arrangement push, seek honoring, metronome, animation.
+        // Drain the engine first: if this tool batch loaded plugins
+        // (load_instrument / load_gm_instrument / try_instruments), those
+        // commands are FIFO'd on stdin and the plugin may still be
+        // initializing when play arrives — silent bass/chords until stop
+        // and restart. transport_get round-trip guarantees every prior
+        // command on the pipe has been handled before we hit play.
+        await waitForEngineDrained();
         playSong();
         summaries.push(`▶ play (${song.transportMode})`);
       } else if (name === 'stop') {
