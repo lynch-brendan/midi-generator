@@ -2001,7 +2001,7 @@
       <div class="ob-step-title">A few gifts to get you started</div>
       <div class="ob-step-desc">
         We picked some of our favorite free plugins and want you to have them
-        — synths, reverbs, EQs, saturators. Nasty will grab them for you.
+        — synths, reverbs, EQs, saturators. FLOW will grab them for you.
         Most take a minute; a couple ask for a free account.
       </div>
 
@@ -2052,7 +2052,7 @@
   <div class="ob-view ob-view-wide" id="ob-installing-view" style="display:none;">
     <div class="ob-step-title">Getting your gifts ready…</div>
     <div class="ob-step-desc" id="ob-installing-desc">
-      Nasty is grabbing your plugins. Follow the tips at the top of each
+      FLOW is grabbing your plugins. Follow the tips at the top of each
       window when they pop up.
     </div>
     <div id="ob-install-list"></div>
@@ -2485,7 +2485,7 @@
   <div class="modal-panel" style="max-width:420px">
     <h3 style="font-size:14px;margin:0 0 8px">Pick a microphone</h3>
     <p style="font-size:12px;line-height:1.5;color:var(--text-dim);margin:0 0 10px">
-      Choose the USB mic or audio interface to route into a new channel. You'll hear yourself through Nasty as soon as you click Add.
+      Choose the USB mic or audio interface to route into a new channel. You'll hear yourself through FLOW as soon as you click Add.
     </p>
     <label style="font-size:12px;color:var(--text-dim)">Input device</label>
     <select id="mic-picker-select" style="width:100%"></select>
@@ -5766,8 +5766,8 @@ function renderChannelRack() {
       const box = document.createElement('div');
       box.style.cssText =
         `position:relative; width:${previewWidth}px; height:${previewHeight}px;` +
-        ` background:rgba(10,13,16,0.35); border:1px solid rgba(255,255,255,0.08);` +
-        ` border-radius:2px; margin:0 6px; cursor:pointer; overflow:hidden;` +
+        ` background:rgba(10,13,16,0.35); border-radius:2px; margin:0;` +
+        ` cursor:pointer; overflow:hidden;` +
         ` backdrop-filter:blur(2px); -webkit-backdrop-filter:blur(2px);`;
       box.title = 'Painted in the piano roll — click to open';
       const chNotes = pattern.notes.filter(n => n.channelId === ch.id);
@@ -8903,7 +8903,7 @@ function loadFromFile() {
         if (!parsed.channels) { alert('This file uses the old format. Load an FL-model song.'); return; }
         const v = parsed.version ?? 1;
         if (v > SONG_SCHEMA_VERSION) {
-          alert('This song was saved by a newer version of Nasty (schema v' + v + '). Update Nasty before opening it.');
+          alert('This song was saved by a newer version of FLOW (schema v' + v + '). Update FLOW before opening it.');
           return;
         }
         song = ensureShape(parsed);
@@ -10161,7 +10161,7 @@ function openFreePluginsModal() {
   const parts = [];
   parts.push('<div style="padding:0 0 8px;color:var(--dim);font-size:11px;line-height:1.4">' +
     'One-click install — opens the official page in your browser. ' +
-    'After install, restart Nasty and it appears under Plugins.' +
+    'After install, restart FLOW and it appears under Plugins.' +
     '</div>');
   for (const r of FREE_PLUGIN_RECOMMENDED) {
     const isInstalled = installed.has(r.name);
@@ -11204,7 +11204,7 @@ async function showOnboarding() {
     const btn = document.getElementById('ob-done');
     const hint = document.getElementById('ob-done-hint');
     if (btn) { btn.disabled = true; btn.textContent = 'Scanning…'; }
-    if (hint) hint.textContent = 'Restarting the audio engine so Nasty sees your new plugins.';
+    if (hint) hint.textContent = 'Restarting the audio engine so FLOW sees your new plugins.';
 
     markOnboarded();
     triggerResearchNow();

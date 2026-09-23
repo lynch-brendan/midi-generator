@@ -10,7 +10,7 @@ const readline = require('readline');
 // ADD ...) already exists as an HTML strip; the native macOS menu bar
 // can't be hidden but we can at least make it show the right app name
 // and keep it minimal.
-app.setName('Nasty');
+app.setName('FLOW');
 
 // Prevent multiple Nasty windows from stacking up when `npm start` is re-run
 // while another instance is still around. Second launch just focuses the
@@ -705,7 +705,7 @@ ipcMain.handle('install-plugin-via-web', async (evt, { pluginId, url, name, hint
     // window. Replaced automatically when we navigate to the vendor URL.
     const displayName = (name || 'plugin').replace(/[<>&"]/g, '');
     const loadingHtml = `<!DOCTYPE html><html><head>
-      <title>Installing ${displayName} — Nasty</title>
+      <title>Installing ${displayName} — FLOW</title>
       <style>
       html,body{margin:0;height:100vh;background:#252932;color:#eaecef;
         font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
@@ -724,7 +724,7 @@ ipcMain.handle('install-plugin-via-web', async (evt, { pluginId, url, name, hint
       <div class="brand">NASTY</div>
       <div class="msg">Fetching download page for <b>${displayName}</b>…</div>
       <div class="bar"></div>
-      <div class="hint">When the page loads, click any Download button. Nasty handles the rest.</div>
+      <div class="hint">When the page loads, click any Download button. FLOW handles the rest.</div>
     </body></html>`;
     win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(loadingHtml));
 
@@ -787,14 +787,14 @@ ipcMain.handle('install-plugin-via-web', async (evt, { pluginId, url, name, hint
           (hasHint
             ? '<span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);' +
               'font-size:18px;filter:drop-shadow(0 0 6px rgba(238,108,158,0.6));">💡</span>' +
-              '<span style="flex:1;"><b style="color:#ffb0d0;letter-spacing:0.5px;">Tip from Nasty:</b> ' +
+              '<span style="flex:1;"><b style="color:#ffb0d0;letter-spacing:0.5px;">Tip from FLOW:</b> ' +
               ${JSON.stringify(hintPayload)} + '</span>'
             : '<span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);' +
               'font-size:18px;filter:drop-shadow(0 0 6px rgba(238,108,158,0.6));">🎁</span>' +
               '<span style="flex:1;color:#c8ccd6;">' +
               '<b style="color:#ffb0d0;letter-spacing:0.5px;">You\\'re here for ' +
               ${JSON.stringify((name || 'a plugin').replace(/[<>&"]/g, ''))} +
-              '</b> — click its Download button when you find it. Nasty grabs the file and installs it.</span>');
+              '</b> — click its Download button when you find it. FLOW grabs the file and installs it.</span>');
         const btnStyle = 'background:transparent;border:1px solid rgba(255,255,255,0.25);' +
           'color:#ffe6f0;padding:5px 10px;font-size:11px;border-radius:6px;cursor:pointer;font-family:inherit;';
         let btnHtml;
@@ -871,7 +871,7 @@ ipcMain.handle('install-plugin-via-web', async (evt, { pluginId, url, name, hint
         let el = document.getElementById('__nasty_progress__');
         if (!el) {
           document.documentElement.innerHTML =
-            '<head><title>${phaseCopy.title.replace(/'/g, "\\'")} — Nasty</title>' +
+            '<head><title>${phaseCopy.title.replace(/'/g, "\\'")} — FLOW</title>' +
             '<style>html,body{margin:0;height:100vh;background:#252932;color:#eaecef;' +
             'font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;' +
             'display:flex;align-items:center;justify-content:center;}' +
@@ -1445,7 +1445,7 @@ function buildMenu() {
         // path without wiping his real Nasty install.
         { label: 'Reset onboarding…', click: () => sendCmd('reset-onboarding') },
         { type: 'separator' },
-        { label: 'Nasty — an AI-native DAW', enabled: false },
+        { label: 'FLOW — an AI-native DAW', enabled: false },
       ],
     },
   ];
