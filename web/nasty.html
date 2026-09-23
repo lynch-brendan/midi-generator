@@ -8443,8 +8443,19 @@ function onPrNoteMouseDown(e) {
     renderPianoRoll(); persist(); render();
     return;
   }
+  // If the clicked note is part of a multi-note selection, drag the
+  // whole selection as a rigid group. Otherwise fall through to the
+  // single-note drag path.
+  let selection = null;
+  if (prSelectedNoteIdx.size > 1 && prSelectedNoteIdx.has(idx)) {
+    selection = [];
+    for (const si of prSelectedNoteIdx) {
+      const sn = p.notes[si];
+      if (sn) selection.push({ idx: si, origBeat: sn.startBeat, origPitch: sn.pitch });
+    }
+  }
   prNoteDrag = { idx, startX: e.clientX, startY: e.clientY,
-    origBeat: note.startBeat, origPitch: note.pitch };
+    origBeat: note.startBeat, origPitch: note.pitch, selection };
   document.addEventListener('mousemove', onPrNoteMove);
   document.addEventListener('mouseup', onPrNoteUp);
 }
@@ -8452,11 +8463,36 @@ function onPrNoteMove(e) {
   if (!prNoteDrag) return;
   const p = song.patterns.find(pt => pt.id === currentPatternId);
   if (!p) return;
-  const note = p.notes[prNoteDrag.idx];
   const dx = e.clientX - prNoteDrag.startX;
   const dy = e.clientY - prNoteDrag.startY;
-  note.startBeat = Math.max(0, snapBeat(prNoteDrag.origBeat + dx / PR_BEAT_WIDTH));
-  note.pitch = clamp(prNoteDrag.origPitch - Math.round(dy / PR_KEY_HEIGHT), PR_PITCH_MIN, PR_PITCH_MAX);
+  if (prNoteDrag.selection) {
+    // Compute delta from the primary (clicked) note, then apply the same
+    // delta to every selected note so the relative shape is preserved.
+    // Clamp so no note in the group falls off the grid edges — otherwise
+    // the shape would deform whenever the leading edge hits a wall.
+    let beatDelta = snapBeat(prNoteDrag.origBeat + dx / PR_BEAT_WIDTH) - prNoteDrag.origBeat;
+    let pitchDelta = -Math.round(dy / PR_KEY_HEIGHT);
+    let minBeat = Infinity, minPitch = Infinity, maxPitch = -Infinity;
+    for (const s of prNoteDrag.selection) {
+      if (s.origBeat < minBeat) minBeat = s.origBeat;
+      if (s.origPitch < minPitch) minPitch = s.origPitch;
+      if (s.origPitch > maxPitch) maxPitch = s.origPitch;
+    }
+    beatDelta = Math.max(beatDelta, -minBeat);
+    pitchDelta = Math.max(pitchDelta, PR_PITCH_MIN - minPitch);
+    pitchDelta = Math.min(pitchDelta, PR_PITCH_MAX - maxPitch);
+    for (const s of prNoteDrag.selection) {
+      const sn = p.notes[s.idx];
+      if (!sn) continue;
+      sn.startBeat = s.origBeat + beatDelta;
+      sn.pitch = s.origPitch + pitchDelta;
+    }
+  } else {
+    const note = p.notes[prNoteDrag.idx];
+    if (!note) return;
+    note.startBeat = Math.max(0, snapBeat(prNoteDrag.origBeat + dx / PR_BEAT_WIDTH));
+    note.pitch = clamp(prNoteDrag.origPitch - Math.round(dy / PR_KEY_HEIGHT), PR_PITCH_MIN, PR_PITCH_MAX);
+  }
   renderPianoRoll();
 }
 function onPrNoteUp() {
@@ -8464,19 +8500,30 @@ function onPrNoteUp() {
   document.removeEventListener('mouseup', onPrNoteUp);
   if (prNoteDrag) {
     const p = song.patterns.find(pt => pt.id === currentPatternId);
-    const note = p && p.notes[prNoteDrag.idx];
-    if (p && note) {
-      const ch = song.channels.find(c => c.id === note.channelId);
+    if (p) {
       // Engine noteId is derived from channelId::pitch::startBeat, so a
       // drag that changes pitch or position produces a new noteId. Clear
-      // the old, set the new. Duration-only moves (which can't happen
-      // here — resize is a separate handler) would upsert cleanly.
-      const removed = {
-        channelId: note.channelId,
-        pitch: prNoteDrag.origPitch,
-        startBeat: prNoteDrag.origBeat,
-      };
-      mirrorPluginPatternEdit(p, ch, { removed, added: note });
+      // the old, set the new — for every moved note.
+      if (prNoteDrag.selection) {
+        for (const s of prNoteDrag.selection) {
+          const sn = p.notes[s.idx];
+          if (!sn) continue;
+          const ch = song.channels.find(c => c.id === sn.channelId);
+          const removed = { channelId: sn.channelId, pitch: s.origPitch, startBeat: s.origBeat };
+          mirrorPluginPatternEdit(p, ch, { removed, added: sn });
+        }
+      } else {
+        const note = p.notes[prNoteDrag.idx];
+        if (note) {
+          const ch = song.channels.find(c => c.id === note.channelId);
+          const removed = {
+            channelId: note.channelId,
+            pitch: prNoteDrag.origPitch,
+            startBeat: prNoteDrag.origBeat,
+          };
+          mirrorPluginPatternEdit(p, ch, { removed, added: note });
+        }
+      }
     }
   }
   prNoteDrag = null; persist(); render();
