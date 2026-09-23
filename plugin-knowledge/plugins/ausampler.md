@@ -1,53 +1,50 @@
 ---
 name: AUSampler
 verified: false
-last_updated: 2026-09-21
+last_updated: 2026-09-23
 preset_paths:
   - "/Library/Audio/Presets/Apple/AUSampler:.aupreset"
   - "~/Library/Audio/Presets/Apple/AUSampler:.aupreset"
-  - "/Library/Application Support/GarageBand/Instrument Library/Sampler/Sampler Instruments:.exs"
+  - "~/Library/Audio/Sounds/Banks:.sf2"
+  - "~/Library/Audio/Sounds/Banks:.dls"
 ---
 
 # AUSampler
 
-Apple's built-in Core Audio sampler instrument (AudioUnit v2/v3), available on macOS (OS X Lion+) and iOS (5.0+), capable of loading .aupreset, EXS24 (.exs), SoundFont2 (.sf2), and DLS instrument files for MIDI-driven sample playback.
+Apple's built-in Core Audio sampler instrument (AudioUnit), capable of playing back multi-sample instruments from .aupreset, EXS24, SoundFont2 (.sf2), and DLS2 (.dls) files — available on macOS (OS X Lion+) and iOS (5.0+).
 
 ## Presets on disk
 
-AUSampler uses `.aupreset` files (Apple property-list format) as its native preset format. Factory presets for GarageBand instruments live at:
+AUSampler uses `.aupreset` files (plist/XML format) as its native preset format. Presets are stored in:
 
-- `/Library/Application Support/GarageBand/Instrument Library/Sampler/Sampler Instruments/` (`.exs`)
-- `/Library/Application Support/GarageBand/Instrument Library/Sampler/Sampler Files/` (audio sample files)
-- `/Library/Audio/Presets/Apple/AUSampler/` (`.aupreset`)
-- `~/Library/Audio/Presets/Apple/AUSampler/` (user presets, `.aupreset`)
+- `/Library/Audio/Presets/Apple/AUSampler/` — system-level (`.aupreset`)
+- `~/Library/Audio/Presets/Apple/AUSampler/` — user-level (`.aupreset`)
+- `~/Library/Audio/Sounds/Banks/` — SF2/DLS sound banks (`.sf2`, `.dls`)
 
-Note: AUSampler can also load `.sf2` (SoundFont2) and `.dls` files directly at runtime via `kAUSamplerProperty_LoadInstrument`.
+There is no bundled factory preset library; content depends on what is installed (Logic Pro EXS24 instruments, GarageBand content, or user-supplied banks).
 
 ## Notable parameters
 
-Only four parameters are formally exposed via `AudioUnitParameters.h` / `kAudioUnitProperty_ParameterList`:
+Only four parameters are formally exposed via the standard AudioUnit parameter API (global scope):
 
-1. **Global Gain** — master output level of the sampler.
-2. **Coarse Tuning** — global pitch offset in semitones.
-3. **Fine Tuning** — global pitch offset in cents.
-4. **Stereo Pan** — global left/right pan of the sampler output.
+- **Global Gain** — master output level of the sampler
+- **Coarse Tuning** — global pitch offset in semitones
+- **Fine Tuning** — global pitch offset in cents
+- **Stereo Pan** — global stereo panning
 
-Additionally, up to **8 Performance Parameters** (named "Performance Parameter 1" through "Performance Parameter 8" by default) can be mapped via the AU Lab custom view to control internal subcomponents (e.g., envelope attack, filter cutoff, LFO rate) in real time. These are in an "unmapped" state until configured in a preset.
+Additionally, eight **Performance Parameters** (Performance Parameter 1–8) are available. These default to an unmapped state (controlling nothing) until configured in a preset via AU Lab, where they can be assigned to any internal subcomponent target (e.g., filter cutoff, envelope attack, LFO rate). Once mapped, they are stored in the .aupreset file and are automatable via Parameter Events.
 
-Internal synthesis subcomponents (oscillator pitch, filter cutoff/resonance, DAHDSR envelope stages, LFO rate) can be modulated via MIDI CC connections or via `AudioUnitSetParameter()` on `kAudioUnitScope_Group`. Many of these internal property IDs (e.g., resonance = 4162, voice count = 4104) are undocumented and discoverable only by reverse-engineering.
+Many deeper properties (voice count, filter resonance, etc.) are undocumented and only accessible via private/hidden property IDs found through reverse engineering.
 
 ## Quirks
 
-- **Silent until an instrument is loaded.** AUSampler produces no sound out of the box; it must be given a valid `.aupreset`, `.exs`, `.sf2`, or `.dls` file before it will respond to MIDI.
-- **Largely undocumented.** Most internal property IDs and many parameters are not in Apple's public documentation; using them requires reverse-engineering or reliance on community research.
-- **Performance Parameters are unmapped by default.** All 8 Performance Parameters do nothing until explicitly mapped to internal subcomponents inside AU Lab or programmatically.
-- **EXS24 compatibility is partial.** Logic Pro X–extended EXS24 features (e.g., Audio File Tail) cause load errors or silent failures; only instruments created in Logic Pro 9 or basic Logic Pro X instruments load reliably.
-- **Audio files longer than ~2.5 seconds** may produce audible clicks at loop points — a known bug reported in KVR forums.
-- **Availability varies by host.** AUSampler has disappeared from GarageBand on some newer macOS versions and may not appear under AU Instruments > Apple in all hosts.
-- **AU Lab is required** for designing and exporting `.aupreset` presets interactively; AU Lab is no longer bundled with Xcode and must be downloaded separately from Apple Developer Tools.
-- **Absolute sample paths** are baked into `.aupreset` files; the sampler falls back to searching app bundle, Documents, and Library/Sounds directories if the original path is missing.
-- **MIDI CC connections** that have no mapping silently do nothing and return no error.
-
-## Common recipes
-
-Not applicable — AUSampler is a general-purpose sample playback engine. Its sound is entirely determined by the loaded instrument file. No synthesis recipes apply independently of a loaded preset.
+- **Silent until a sample is loaded**: Produces no sound until a valid instrument is explicitly loaded (.aupreset, .sf2, .dls, EXS24, or individual audio files). There is no default patch.
+- **Performance Parameters unmapped by default**: All 8 Performance Parameters control nothing until a preset in AU Lab assigns them to subcomponent targets.
+- **Largely undocumented**: Apple's public docs cover only the four global params and eight performance params. Internal controls (e.g., resonance at property ID 4162, voice count at 4104) require reverse engineering to discover.
+- **Long audio file clicks**: Audio files longer than ~2.5 seconds can produce audible clicks at loop points — a known reported bug.
+- **No voice stealing**: When the voice count limit is reached, new notes are silently ignored rather than triggering voice stealing (confirmed Apple bug FB9835828).
+- **Connections partially broken**: MIDI-style Connections for real-time parameter control support only a limited parameter subset, and some listed connections are non-functional.
+- **EXS24 compatibility is partial**: Complex Logic Pro X EXS24 presets using newer features may fail or load with reduced functionality; older EXS24 files work reliably.
+- **AU Lab required for preset authoring**: Creating .aupreset files with mapped Performance Parameters requires AU Lab, which is no longer bundled with Xcode and must be downloaded separately.
+- **Path resolution fallback**: When referenced audio files are missing, AUSampler searches for `/Sounds/`, `/Sampler Files/`, or `/Apple Loops/` path segments and substitutes system directory constants rather than failing cleanly.
+- **Not a standard DAW plugin**: AUSampler is primarily a developer-facing Core Audio component. In GarageBand, it is found at Track → Plugins → AU Instruments → Apple → AUSampler, but it requires external tooling to author usable presets.
