@@ -2129,6 +2129,61 @@ _NASTY_TOOLS = [
         },
     },
     {
+        "name": "set_song_structure",
+        "description": (
+            "Declare the arrangement's section layout — labeled regions on the timeline (intro, verse, "
+            "chorus, bridge, outro, etc.). Sections are POSITIONAL: a clip is 'in' a section when its "
+            "startBar falls inside the section's [startBar, startBar+lengthBars) range. This tool "
+            "REPLACES the entire sections array — send the whole intended structure at once. Then use "
+            "the existing add_pattern_clip with start_bar = section.startBar + offset to place clips "
+            "inside sections. You invent each section's id (e.g. 'sec_verse1'). Fire this when the user "
+            "asks for a full-song shape ('make me a song', 'arrange this into a verse/chorus/verse/chorus') "
+            "or when reworking the structure of an existing arrangement."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "sections": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string"},
+                            "name": {"type": "string", "description": "Human label: 'intro', 'verse', 'chorus', 'drop', 'bridge', 'outro'."},
+                            "start_bar": {"type": "number", "description": "0-indexed bar where the section starts."},
+                            "length_bars": {"type": "number", "description": "How many bars long the section is."},
+                            "tags": {"type": "array", "items": {"type": "string"}, "description": "Optional descriptors like 'quiet', 'buildup', 'drop', 'climax'."},
+                        },
+                        "required": ["id", "name", "start_bar", "length_bars"],
+                    },
+                },
+            },
+            "required": ["sections"],
+        },
+    },
+    {
+        "name": "edit_section",
+        "description": (
+            "Modify a single existing section — rename, resize, retag, or delete. Use this for surgical "
+            "changes to structure without rewriting the whole layout (e.g. 'extend the chorus by 4 bars', "
+            "'rename the bridge to breakdown', 'delete the intro'). To delete, pass delete=true; every "
+            "other field is ignored in that case. Clips inside a deleted section stay put as orphans — "
+            "positional design means clips are never section-owned."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "section_id": {"type": "string"},
+                "name": {"type": "string"},
+                "start_bar": {"type": "number"},
+                "length_bars": {"type": "number"},
+                "tags": {"type": "array", "items": {"type": "string"}},
+                "delete": {"type": "boolean", "description": "If true, remove the section. Clips at those bars are untouched."},
+            },
+            "required": ["section_id"],
+        },
+    },
+    {
         "name": "get_plugin_cheatsheet",
         "description": (
             "Fetch the full cheatsheet for a specific plugin the user has "

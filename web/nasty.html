@@ -5177,6 +5177,34 @@ async function applyToolCalls(calls) {
           }
           summaries.push(`↻ ${input.clip_id} × ${times}`);
         }
+      } else if (name === 'set_song_structure') {
+        // Replace the whole sections array with the AI's declaration of the
+        // song shape. Positional regions only — clip placement is still done
+        // via add_pattern_clip using each section's startBar. Wipes previous
+        // sections; the AI is expected to send the full intended structure.
+        const incoming = Array.isArray(input.sections) ? input.sections : [];
+        song.sections = incoming.map(s => ({
+          id: s.id || 'sec_' + Math.random().toString(36).slice(2, 8),
+          name: String(s.name || ''),
+          startBar: Number.isFinite(s.start_bar) ? s.start_bar : (Number.isFinite(s.startBar) ? s.startBar : 0),
+          lengthBars: Number.isFinite(s.length_bars) ? s.length_bars : (Number.isFinite(s.lengthBars) ? s.lengthBars : 0),
+          tags: Array.isArray(s.tags) ? s.tags.map(String) : [],
+        }));
+        summaries.push(`⧉ structure: ${song.sections.map(s => s.name || '?').join(' → ')}`);
+      } else if (name === 'edit_section') {
+        const sec = song.sections.find(s => s.id === input.section_id);
+        if (sec) {
+          if (input.delete === true) {
+            song.sections = song.sections.filter(s => s.id !== input.section_id);
+            summaries.push(`− section ${sec.name || input.section_id}`);
+          } else {
+            if (typeof input.name === 'string') sec.name = input.name;
+            if (Number.isFinite(input.start_bar)) sec.startBar = input.start_bar;
+            if (Number.isFinite(input.length_bars)) sec.lengthBars = input.length_bars;
+            if (Array.isArray(input.tags)) sec.tags = input.tags.map(String);
+            summaries.push(`✎ section ${sec.name || input.section_id}`);
+          }
+        }
       }
     } catch (e) { console.error('tool apply failed', call, e); }
   }
