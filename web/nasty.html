@@ -4473,7 +4473,11 @@ async function applyToolCalls(calls) {
         // as N separate channels on the rack. No cycling; user picks which
         // to play by clicking a channel. Each entry runs the same load
         // pipeline as load_instrument / load_gm_instrument.
+        // Bass presets are voiced ~C2, but the typing keyboard defaults to
+        // C4 — so bass channels get a -2 octave input-offset by default.
         const items = Array.isArray(input.instruments) ? input.instruments : [];
+        const kind = (input.kind || '').toLowerCase();
+        const kindOctaveOffset = kind === 'bass' ? -2 : 0;
         let added = 0;
         for (const it of items) {
           if (!it || !it.channel_id || !it.channel_name) continue;
@@ -4485,6 +4489,8 @@ async function applyToolCalls(calls) {
               id: it.channel_id, name: it.channel_name,
               pluginId: 'gm-' + prog, gmProgram: prog,
             });
+            const created = song.channels.find(c => c.id === it.channel_id);
+            if (created) created.inputOctaveOffset = kindOctaveOffset;
             added++;
           } else if (it.plugin_id) {
             const plug = (enginePluginsList || []).find(p => p.id === it.plugin_id);
@@ -4508,6 +4514,8 @@ async function applyToolCalls(calls) {
               presetName: it.preset_name,
               base64State,
             });
+            const created = song.channels.find(c => c.id === it.channel_id);
+            if (created) created.inputOctaveOffset = kindOctaveOffset;
             added++;
           }
         }
@@ -6780,6 +6788,12 @@ async function addChannelFromInstrument({ id, name, pluginId, gmProgram, drumPit
     color: PALETTE[song.channels.length % PALETTE.length],
     insertId: 'master',
     targetInsertNum: nextInsert,
+    // Per-channel typing-piano octave offset. 0 = middle C on the Z key
+    // (FL Studio's default). `try_instruments` seeds this to -2 for bass
+    // channels so a freshly loaded bass sounds in its natural register
+    // instead of two octaves too high. Global `[` / `]` shortcuts mutate
+    // whichever channel is currently the active input target.
+    inputOctaveOffset: 0,
   };
   song.channels.push(ch);
   // Hydrate into the engine so notes actually play and the mixer can attach
@@ -9023,15 +9037,31 @@ document.addEventListener('keydown', (e) => {
   // would ring until Stop.
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const key = e.key;
-  if (key === '[') { typingOctave = Math.max(-3, typingOctave - 1); return; }
-  if (key === ']') { typingOctave = Math.min(3, typingOctave + 1); return; }
+  if (key === '[' || key === ']') {
+    // Per-channel typing octave: nudge whichever channel is the current
+    // input target, not a shared global. Falls back to the old global if
+    // no channel is selected (matches pre-change behavior).
+    const target = getActiveInputChannel();
+    if (target) {
+      const cur = target.inputOctaveOffset ?? 0;
+      target.inputOctaveOffset = key === '['
+        ? Math.max(-3, cur - 1)
+        : Math.min(3, cur + 1);
+    } else {
+      typingOctave = key === '['
+        ? Math.max(-3, typingOctave - 1)
+        : Math.min(3, typingOctave + 1);
+    }
+    return;
+  }
   const lk = key.toLowerCase();
   if (!(lk in TYPING_MAP)) return;
   const ch = getActiveInputChannel();
   if (!ch) return;
   if (typingActive[lk]) { e.preventDefault(); return; }
   e.preventDefault();
-  const pitch = TYPING_BASE_PITCH + TYPING_MAP[lk] + typingOctave * 12;
+  const octaveOffset = ch.inputOctaveOffset ?? typingOctave;
+  const pitch = TYPING_BASE_PITCH + TYPING_MAP[lk] + octaveOffset * 12;
   if (ch.instrument === 'plugin' && window.nasty && window.nasty.engine) {
     // Real note-on/note-off — hold-to-sustain like FL Studio.
     window.nasty.engine.send({ cmd: 'note_on', channelId: ch.id, pitch, velocity: 0.8 });
