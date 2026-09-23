@@ -5720,7 +5720,6 @@ function renderChannelRack() {
       <span class="cname" title="${escapeHtml(ch.instrument)}${ch.drumPitch != null ? ' · pitch ' + ch.drumPitch : ''}">${escapeHtml(ch.name)}</span>
       <input class="cvol" type="range" min="0" max="1" step="0.001" value="${faderGainToPosition(ch.volume)}" data-ch="${ch.id}" title="volume · ${volToDb(ch.volume)} dB" />
       <span class="cbtns">
-        ${ch.instrument === 'plugin' ? `<button data-a="gui" data-ch="${ch.id}" title="Open plugin window">GUI</button>` : ''}
         <button class="${ch.muted?'on-mute':''}" data-a="mute" data-ch="${ch.id}">M</button>
         <button class="${ch.solo?'on-solo':''}" data-a="solo" data-ch="${ch.id}">S</button>
         <button data-a="del" data-ch="${ch.id}" title="Delete channel">✕</button>
@@ -7552,12 +7551,6 @@ function onChannelBtn(e) {
   else if (a === 'solo') {
     ch.solo = !ch.solo;
     pushAllChannelGains();
-  }
-  else if (a === 'gui') {
-    if (window.nasty && window.nasty.engine) {
-      window.nasty.engine.send({ cmd: 'show_plugin_ui', channelId: ch.id });
-    }
-    return; // no re-render needed
   }
   else if (a === 'del') {
     if (confirm('Delete channel "' + ch.name + '"?')) {
