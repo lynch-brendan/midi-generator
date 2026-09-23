@@ -2519,10 +2519,10 @@ const PR_BEAT_WIDTH = 96; // fixed zoom — pattern scrolls horizontally if it's
 const PR_PITCH_MIN = 24;
 const PR_PITCH_MAX = 108;
 const STORAGE_KEY = 'nasty.song.fl.v1';
-const SONG_SCHEMA_VERSION = 4;
+const SONG_SCHEMA_VERSION = 5;
 const PALETTE = ['#ff5c93','#6b7cff','#33c58a','#ffb020','#a95cff','#ff7c47','#42c8e0','#e05cff','#ffdd57','#5cff8f'];
 
-let song = { version: SONG_SCHEMA_VERSION, bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] }, transportMode: 'pat' };
+let song = { version: SONG_SCHEMA_VERSION, bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] }, sections: [], transportMode: 'pat' };
 let recArmed = false;
 let chatHistory = [];
 // Undo / redo. Each entry is a full JSON snapshot of `song`. persist() is the
@@ -2826,6 +2826,11 @@ function ensureShape(s) {
   s.channels = s.channels || [];
   s.patterns = s.patterns || [];
   s.tracks = s.tracks || [];
+  // Sections: labeled regions on the arrangement timeline. Positional, not
+  // identity-based — a clip is "in" a section if its bar falls inside the
+  // section's [startBar, startBar+lengthBars) range. Empty by default; the AI
+  // populates via set_song_structure (arrangement tools land in piece 2).
+  s.sections = s.sections || [];
   s.mixer = s.mixer || { inserts: [], busses: [] };
   s.mixer.inserts = s.mixer.inserts || [];
   if (!s.mixer.inserts.find(i => i.id === 'master')) {
@@ -2944,6 +2949,16 @@ function ensureShape(s) {
     t.muted = !!t.muted;
     t.solo = !!t.solo;
     t.clips = t.clips || [];
+  });
+  // v4 → v5: sections[] added to top-level song. No data migration needed —
+  // empty array is the correct default for any pre-v5 song. Section-scoped
+  // arrangement smarts land in later pieces of the arrangement roadmap.
+  s.sections.forEach(sec => {
+    sec.id = sec.id || 'sec_' + Math.random().toString(36).slice(2, 8);
+    sec.name = sec.name || '';
+    sec.startBar = Number.isFinite(sec.startBar) ? sec.startBar : 0;
+    sec.lengthBars = Number.isFinite(sec.lengthBars) ? sec.lengthBars : 0;
+    sec.tags = Array.isArray(sec.tags) ? sec.tags : [];
   });
   // Migrations have run — stamp the file as current so a load-then-save
   // round trip advances the version forward.
@@ -4821,7 +4836,7 @@ async function applyToolCalls(calls) {
         // Same reset logic as the ✕ clear button, minus the confirm prompt
         // (Claude fires this only on explicit user request — the request is
         // the confirmation).
-        song = { version: SONG_SCHEMA_VERSION, bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] }, transportMode: 'pat' };
+        song = { version: SONG_SCHEMA_VERSION, bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] }, sections: [], transportMode: 'pat' };
         chatHistory = [];
         currentPatternId = null;
         ensureDefaults();
@@ -9281,7 +9296,7 @@ document.querySelectorAll('.patsong .ps-btn').forEach(btn => {
 });
 document.getElementById('clear-btn').addEventListener('click', () => {
   if (!confirm('Clear the song? (channels, patterns, and playlist all reset)')) return;
-  song = { version: SONG_SCHEMA_VERSION, bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] }, transportMode: 'pat' };
+  song = { version: SONG_SCHEMA_VERSION, bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] }, sections: [], transportMode: 'pat' };
   chatHistory = [];
   currentPatternId = null;
   ensureDefaults();
