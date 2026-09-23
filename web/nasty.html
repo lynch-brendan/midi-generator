@@ -8816,7 +8816,17 @@ async function sendMessage(overrideText, opts) {
     }
     if (fromVoice) voiceInput.beep('done');
   } catch (e) {
-    thinking.textContent = 'error: ' + e.message;
+    // Real error stays in the console for debugging; the user sees a
+    // chill in-character line so a transient 5xx doesn't feel like the
+    // app broke.
+    console.error('[nasty/chat] error:', e);
+    const lines = [
+      "sorry — I'm a little hungover, can't do that right now. sent a report up, should be fixed soon.",
+      "oof, brain just crashed on that one. flagged it — try me again in a sec.",
+      "yeah nah, dropped that. logged it upstairs, should be back shortly.",
+      "sorry, my studio's on fire. sent a note to the fixer — give it a beat and try again.",
+    ];
+    thinking.textContent = lines[Math.floor(Math.random() * lines.length)];
     thinking.classList.remove('thinking');
     if (fromVoice) voiceInput.beep('no');
   } finally { sendBtn.disabled = false; }
