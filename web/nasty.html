@@ -365,8 +365,13 @@
   .clip:hover .resize { background: rgba(255,255,255,0.3); }
 
   #playhead {
-    position: absolute; top: 22px; bottom: 0; width: 2px;
-    background: var(--accent); pointer-events: none;
+    position: absolute; top: 22px; left: 0;
+    width: 0; height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 8px solid var(--accent);
+    margin-left: -6px;
+    pointer-events: none;
     z-index: 4; display: none;
   }
 
@@ -1413,7 +1418,7 @@
        stay put while --bar-w scales, which was the "grid drift" symptom. */
   }
   .track-row:nth-child(even) { background-color: #414d59; }
-  #playhead { top: 22px; background: #ff8040; box-shadow: 0 0 6px rgba(255,128,64,0.6); }
+  #playhead { top: 22px; border-top-color: #ff8040; }
 
   /* Clips */
   .clip {
@@ -5397,7 +5402,8 @@ function renderPlaylist() {
     }
     timeline.appendChild(row);
   }
-  playhead.style.height = (28 + song.tracks.length * 50) + 'px';
+  // Playhead is now a small triangle at the top of the timeline (border
+  // trick, no height). No dynamic height needed to span the track rows.
 
   const th = document.getElementById('track-headers');
   th.innerHTML = '';
@@ -5578,6 +5584,22 @@ function findStepNote(pattern, channel, stepIdx) {
     Math.abs(n.startBeat - start) < 1e-4
   );
 }
+// A channel's notes fit the step grid iff they all sit on 16th boundaries
+// at the channel's stepPitch with the default step duration. Anything else
+// (multiple pitches, off-grid start, non-16th duration) means the channel
+// has been "painted" in the piano roll — the step grid can't represent it,
+// so the rack row shows a piano-roll preview instead.
+function channelUsesStepGrid(pattern, channel) {
+  const stepP = stepPitchFor(channel);
+  for (const n of pattern.notes) {
+    if (n.channelId !== channel.id) continue;
+    if (n.pitch !== stepP) return false;
+    const snapped = Math.round(n.startBeat / STEP_BEATS) * STEP_BEATS;
+    if (Math.abs(n.startBeat - snapped) > 1e-4) return false;
+    if (Math.abs(n.durationBeats - STEP_BEATS) > 1e-4) return false;
+  }
+  return true;
+}
 function toggleStepNote(pattern, channel, stepIdx) {
   const existing = findStepNote(pattern, channel, stepIdx);
   let addedNote = null;
@@ -5728,11 +5750,49 @@ function renderChannelRack() {
     wireChannelNumRouting(left.querySelector('.chnum'), ch);
     row.appendChild(left);
 
-    // Step grid
+    // Step grid — OR piano-roll preview if the channel has been painted
+    // (any note that doesn't fit the step grid). Preview click opens the
+    // piano roll for that channel.
     const steps = document.createElement('div');
     steps.className = 'ch-steps';
     if (!pattern) {
       steps.innerHTML = '<div style="color:var(--dim);font-size:10px;padding:0 6px">no pattern</div>';
+    } else if (!channelUsesStepGrid(pattern, ch)) {
+      const previewWidth = Math.max(1, pattern.lengthBars) * 16 * STEP_PX_RULER;
+      const previewHeight = 26;
+      const box = document.createElement('div');
+      box.style.cssText =
+        `position:relative; width:${previewWidth}px; height:${previewHeight}px;` +
+        ` background:#0a0d10; border:1px solid #14171c; border-radius:2px;` +
+        ` margin:0 6px; cursor:pointer; overflow:hidden;`;
+      box.title = 'Painted in the piano roll — click to open';
+      const chNotes = pattern.notes.filter(n => n.channelId === ch.id);
+      if (chNotes.length) {
+        const totalBeats = Math.max(1, pattern.lengthBars * 4);
+        const minP = Math.min(...chNotes.map(n => n.pitch));
+        const maxP = Math.max(...chNotes.map(n => n.pitch));
+        const range = Math.max(1, maxP - minP);
+        for (const n of chNotes) {
+          const el = document.createElement('div');
+          const x = (n.startBeat / totalBeats) * previewWidth;
+          const w = Math.max(2, (n.durationBeats / totalBeats) * previewWidth);
+          const yFrac = 1 - (n.pitch - minP) / range;
+          const y = 3 + yFrac * (previewHeight - 8);
+          el.style.cssText =
+            `position:absolute; left:${x}px; top:${y}px;` +
+            ` width:${w}px; height:2px;` +
+            ` background:${ch.color}; border-radius:1px;`;
+          box.appendChild(el);
+        }
+      }
+      box.addEventListener('click', () => {
+        for (const c of song.channels) if (c !== ch) c.armed = false;
+        ch.armed = true;
+        currentPatternId = pattern.id;
+        openPianoRoll(pattern.id);
+        render();
+      });
+      steps.appendChild(box);
     } else {
       for (let i = 0; i < stepCount; i++) {
         const cell = document.createElement('div');
