@@ -8820,13 +8820,7 @@ async function sendMessage(overrideText, opts) {
     // chill in-character line so a transient 5xx doesn't feel like the
     // app broke.
     console.error('[nasty/chat] error:', e);
-    const lines = [
-      "sorry — I'm a little hungover, can't do that right now. sent a report up, should be fixed soon.",
-      "oof, brain just crashed on that one. flagged it — try me again in a sec.",
-      "yeah nah, dropped that. logged it upstairs, should be back shortly.",
-      "sorry, my studio's on fire. sent a note to the fixer — give it a beat and try again.",
-    ];
-    thinking.textContent = lines[Math.floor(Math.random() * lines.length)];
+    thinking.textContent = "I'm sorry something went wrong and I can't do that — I reported it though and should be fixed soon.";
     thinking.classList.remove('thinking');
     if (fromVoice) voiceInput.beep('no');
   } finally { sendBtn.disabled = false; }
@@ -9245,6 +9239,34 @@ document.getElementById('clear-btn').addEventListener('click', () => {
 document.getElementById('bpm-input').addEventListener('change', (e) => {
   applyBpmChange(parseInt(e.target.value));
 });
+// Click-and-drag the BPM readout FL Studio style: drag up = faster,
+// down = slower, ~2 pixels per BPM (shift = fine control, 10 px/BPM).
+// Double-click still focuses the input for typing.
+(function wireBpmDrag() {
+  const el = document.getElementById('bpm-input');
+  if (!el) return;
+  el.style.cursor = 'ns-resize';
+  el.addEventListener('mousedown', (e) => {
+    if (e.detail >= 2) return; // let double-click focus for typing
+    e.preventDefault();
+    el.blur();
+    const startY = e.clientY;
+    const startBpm = parseInt(el.value) || 120;
+    const onMove = (ev) => {
+      const dy = startY - ev.clientY;
+      const factor = ev.shiftKey ? 0.1 : 0.5;
+      const target = Math.max(30, Math.min(300, Math.round(startBpm + dy * factor)));
+      if (target !== parseInt(el.value)) applyBpmChange(target);
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+  el.addEventListener('dblclick', () => { el.focus(); el.select(); });
+})();
 document.getElementById('add-channel-btn').addEventListener('click', (e) => {
   openInstPicker(e.currentTarget);
 });
