@@ -4468,6 +4468,50 @@ async function applyToolCalls(calls) {
         const plugins = input.plugins || (input.plugin_ids || []).map(id => ({ plugin_id: id }));
         openEffectIdeasPanel(input.target_id, plugins);
         summaries.push(`${plugins.length} effects → panel (${input.target_id})`);
+      } else if (name === 'try_instruments') {
+        // Palette-load — Claude picked N instruments (plugin or GM) to drop
+        // as N separate channels on the rack. No cycling; user picks which
+        // to play by clicking a channel. Each entry runs the same load
+        // pipeline as load_instrument / load_gm_instrument.
+        const items = Array.isArray(input.instruments) ? input.instruments : [];
+        let added = 0;
+        for (const it of items) {
+          if (!it || !it.channel_id || !it.channel_name) continue;
+          if (song.channels.find(c => c.id === it.channel_id)) continue;
+          // GM path if gm_program present, else VST/AU plugin path.
+          if (Number.isInteger(it.gm_program)) {
+            const prog = Math.max(0, Math.min(127, it.gm_program));
+            addChannelFromInstrument({
+              id: it.channel_id, name: it.channel_name,
+              pluginId: 'gm-' + prog, gmProgram: prog,
+            });
+            added++;
+          } else if (it.plugin_id) {
+            const plug = (enginePluginsList || []).find(p => p.id === it.plugin_id);
+            if (!plug || !plug.isInstrument) continue;
+            let base64State = '';
+            if (it.preset_name && plug._diskPresets) {
+              const wanted = String(it.preset_name).toLowerCase().trim();
+              const key = Object.keys(plug._diskPresets).find(
+                k => k.toLowerCase().trim() === wanted
+                  || k.toLowerCase().includes(wanted));
+              if (key && window.nasty && window.nasty.fs) {
+                try {
+                  base64State = await window.nasty.fs.readAsBase64(plug._diskPresets[key]);
+                } catch { /* fall through — engine loads default patch */ }
+              }
+            }
+            addChannelFromInstrument({
+              id: it.channel_id,
+              name: it.channel_name,
+              pluginId: plug.id,
+              presetName: it.preset_name,
+              base64State,
+            });
+            added++;
+          }
+        }
+        summaries.push(`+ ${added} ${input.kind || 'instrument'} palette`);
       } else if (name === 'set_tempo') {
         applyBpmChange(input.bpm); summaries.push(`tempo → ${input.bpm} BPM`);
       } else if (name === 'play') {

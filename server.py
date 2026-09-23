@@ -2375,6 +2375,67 @@ _NASTY_TOOLS = [
             "required": ["target_id", "plugins"],
         },
     },
+    {
+        "name": "try_instruments",
+        "description": (
+            "Load a small PALETTE of instruments onto NEW channels in the "
+            "Channel Rack so the user can play/noodle with each one. Use "
+            "for exploratory instrument asks where the user wants a HANDFUL "
+            "of sounds to mess with — NOT MIDI ideas, and NOT a single "
+            "committed instrument. Examples: 'lemme play with some bass "
+            "sounds,' 'load me a couple of pads to try,' 'gimme some leads "
+            "I can noodle on,' 'a few keys to mess with.' Every entry in "
+            "`instruments` creates its own channel — pick 3-4 by default "
+            "and span the vibe range (for bass: one 808/sub, one designed "
+            "reese/growl, one plucky/FM, one acoustic/electric — one from "
+            "each style bucket). Read the matching sound-goal cheatsheet "
+            "(Bass.md, Lead.md, Pads.md, Keys.md, etc.) BEFORE picking so "
+            "the palette is diverse, not four clumped near the same vibe. "
+            "For each entry pick EITHER `plugin_id` + optional `preset_name` "
+            "(for VST/AU synths from the manifest) OR `gm_program` (for GM "
+            "SoundFont — realistic acoustic/electric). Each entry needs a "
+            "unique short `channel_id` slug (e.g. `bass_sub`, `bass_reese`, "
+            "`bass_pluck`) and a human-readable `channel_name` that names "
+            "the vibe. This tool loads them all at once — no cycling, no "
+            "Keep flow. The user picks which to play by clicking channels."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "enum": ["bass", "lead", "pad", "keys", "strings", "drums", "winds", "textures", "vocal", "world"],
+                    "description": (
+                        "Which family the palette is drawn from. Used for "
+                        "narration + as a hint for the diversity buckets."
+                    ),
+                },
+                "instruments": {
+                    "type": "array",
+                    "description": (
+                        "Array of 2-6 instrument picks. Each entry becomes "
+                        "one new channel on the rack. Span the vibe range "
+                        "across your picks — do NOT return four items from "
+                        "the same style bucket."
+                    ),
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "channel_id":   {"type": "string"},
+                            "channel_name": {"type": "string"},
+                            "plugin_id":    {"type": "string"},
+                            "preset_name":  {"type": "string"},
+                            "gm_program":   {"type": "integer", "minimum": 0, "maximum": 127},
+                        },
+                        "required": ["channel_id", "channel_name"],
+                    },
+                    "minItems": 2,
+                    "maxItems": 6,
+                },
+            },
+            "required": ["kind", "instruments"],
+        },
+    },
 ]
 
 
@@ -2945,6 +3006,18 @@ def nasty_chat(req: NastyChatRequest):
                     "Effects Ideas Panel opened with the plugins you picked. "
                     "The user will A/B them and Keep the winner — no further "
                     "tool calls needed on your side."
+                )
+            elif block.name == "try_instruments":
+                # Palette-mode instrument load — the client creates one channel
+                # per entry in `instruments`. No panel, no cycling; user plays
+                # each by clicking its channel.
+                n = len(inp.get("instruments") or [])
+                kind = (inp.get("kind") or "instrument").lower()
+                result_text = (
+                    f"Loaded {n} {kind} channels on the rack — no further "
+                    "tool calls needed on your side. Give the user a short "
+                    "one-line narration naming the vibes (e.g. 'loaded 4 "
+                    "basses — 808, reese, pluck, upright')."
                 )
             else:
                 result_text = "applied"
