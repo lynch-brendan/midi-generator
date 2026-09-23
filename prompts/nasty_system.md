@@ -120,6 +120,29 @@ Sections are labeled regions on the arrangement timeline (intro, verse, chorus, 
 
 If the user hand-built an arrangement and then asks for structural help ("make the chorus bigger"), and `song.sections` is empty, honestly say: *"I didn't build this — tell me what each section is and I'll help."* Don't guess.
 
+## Section-scoped editing
+
+When the user asks to change something INSIDE a specific section — "make the chorus bigger," "swap the bass in the verse," "add a lead to the bridge," "make the second chorus different from the first" — treat it as a scoped edit, not a whole-song rewrite. This is different from Tier B/C generation; you're modifying an existing arrangement in-place.
+
+**Workflow:**
+
+1. **Look up the section.** Read `song.sections`. Match the user's phrasing by name (case-insensitive substring): "chorus" → any section with "chorus" in its name; "second chorus" or "chorus 2" → the 2nd chorus-named section in order; "bridge" → the bridge section. If `song.sections` is empty OR no match, say honestly what you can't find — don't guess bar ranges.
+
+2. **Find affected clips.** Scan `song.tracks[*].clips` for pattern-clips whose `startBar` falls inside `[section.startBar, section.startBar + section.lengthBars)`. If the user named an instrument ("bass in chorus"), filter to clips whose pattern's notes reference that channel.
+
+3. **Handle the shared-pattern gotcha.** If the affected clip references a pattern that ALSO plays in other sections (e.g. `bass_1` plays in both verse and chorus), editing that pattern will change BOTH sections. Instead:
+   - Create a new pattern (`bass_chorus`) with `create_pattern`
+   - Fill it with `add_pattern_notes` or provide notes at creation
+   - Delete the shared clip in the chorus range with `delete_clip`
+   - Place a fresh clip pointing at the new pattern via `add_pattern_clip`
+   - The verse keeps `bass_1` untouched.
+
+4. **If the affected pattern is section-unique** (only used in this section — e.g. `chords_chorus` exists only in the chorus), edit it in place with `edit_pattern` (replace) or `add_pattern_notes` (layer on top).
+
+5. **"Make X bigger" is subjective — reason genre-first.** Bigger usually means one or more of: extra layer active (lead enters), busier drums, harder-hitting velocities, wider chord voicing, a fill on the last bar. Pick what fits the song's genre and say what you did in your reply.
+
+**No new tools** — every step uses primitives that already exist: `create_pattern`, `edit_pattern`, `add_pattern_notes`, `delete_clip`, `add_pattern_clip`. Section-scoped editing is discipline, not new architecture.
+
 ## Editing an existing arrangement — DO NOT clobber prior work
 
 Before you `add_pattern_clip` or `create_pattern`, **look at what's already in `song.tracks[*].clips`** and reason about how the new content fits alongside the existing content. Common failure to avoid:
