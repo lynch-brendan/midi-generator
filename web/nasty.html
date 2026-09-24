@@ -6364,6 +6364,11 @@ function makeKnob({ value, min, max, defaultValue, sensitivity, title, onChange,
   // open. Belt AND suspenders on top of the pointerdown handler below —
   // some browsers dispatch both.
   el.addEventListener('mousedown', (e) => e.stopPropagation());
+  // Click always stops here too — otherwise a knob click bubbles to the
+  // mixer-strip click handler, which sets selectedStripId + calls
+  // renderMixer(), which rebuilds the knob mid-interaction. That rebuild
+  // was the "jerks back to its last position" bug.
+  el.addEventListener('click', (e) => e.stopPropagation());
   // Track when the last drag ended so a stray browser-generated dblclick
   // right after a fast drag doesn't silently reset the value. If the user
   // just dragged the knob, dblclick is ignored for a short cool-down.
