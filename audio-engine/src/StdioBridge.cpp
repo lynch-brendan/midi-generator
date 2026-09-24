@@ -81,6 +81,8 @@ static bool commandMutatesGraph(const juce::String& cmd) {
         || cmd == "reorder_effects"
         || cmd == "bypass_effect"
         || cmd == "set_wet_dry"
+        || cmd == "set_channel_pan"
+        || cmd == "set_channel_stereo_width"
         || cmd == "set_channel_target"
         || cmd == "create_bus"
         || cmd == "reset_graph"
@@ -316,6 +318,20 @@ juce::var StdioBridge::handleCommand(const juce::var& msg) {
         host.setEffectWetDry(msg["channelId"].toString(),
                              msg["slotId"].toString(),
                              (float) msg["value"]);
+        return {};
+    }
+
+    if (cmd == "set_channel_pan") {
+        // -1..+1, equal-power channel-independent pan applied post-gain.
+        host.setChannelPan(msg["channelId"].toString(),
+                           (float) msg["value"]);
+        return {};
+    }
+
+    if (cmd == "set_channel_stereo_width") {
+        // 0..2, M/S width applied post-gain, pre-pan.
+        host.setChannelStereoWidth(msg["channelId"].toString(),
+                                   (float) msg["value"]);
         return {};
     }
 

@@ -5873,8 +5873,8 @@ function renderChannelRack() {
       });
       volSlot.appendChild(volKnob);
     }
-    // Pan knob (-1..+1). Visual-only persistence for now; engine pan-node
-    // routing lands in a later piece (T1P5).
+    // Pan knob (-1..+1). Pushes to the engine's per-channel pan node so
+    // the change is audible immediately, and persists so it survives save.
     const panSlot = left.querySelector('.cpan-slot');
     if (panSlot) {
       const displayPan = (v) => v === 0 ? 'C' : (v < 0 ? Math.round(-v * 100) + 'L' : Math.round(v * 100) + 'R');
@@ -5884,6 +5884,11 @@ function renderChannelRack() {
         title: 'Pan: ' + displayPan(ch.pan ?? 0) + ' — drag to change, dbl-click centers',
         onChange: (v) => {
           ch.pan = v;
+          if (window.nasty && window.nasty.engine) {
+            window.nasty.engine.send({
+              cmd: 'set_channel_pan', channelId: ch.id, value: v,
+            });
+          }
           panKnob.title = 'Pan: ' + displayPan(v) + ' — drag to change, dbl-click centers';
           persist();
         },
@@ -6560,9 +6565,9 @@ function onStripRename(id, name) {
   if (ch && name) { ch.name = name; render(); }
 }
 
-// Pan / stereo-width persist to song JSON. Engine audio routing lands in a
-// later piece — until then these knobs are visual state that the AI can also
-// read from song context, and that survives save/reload.
+// Pan / stereo-width persist to song JSON AND push to the engine's pan+width
+// nodes so the change is audible immediately. Master maps to engine's
+// 'master_bus' node id via engineOwnerId.
 function onStripPan(id, kind, value) {
   if (kind === 'master') {
     const m = song.mixer.inserts.find(i => i.id === 'master');
@@ -6570,6 +6575,11 @@ function onStripPan(id, kind, value) {
   } else if (kind === 'bus') {
     const bus = (song.mixer.busses || []).find(b => b.id === id);
     if (bus) bus.pan = value;
+  }
+  if (window.nasty && window.nasty.engine) {
+    window.nasty.engine.send({
+      cmd: 'set_channel_pan', channelId: engineOwnerId(id), value,
+    });
   }
   persist();
 }
@@ -6580,6 +6590,11 @@ function onStripStereoWidth(id, kind, value) {
   } else if (kind === 'bus') {
     const bus = (song.mixer.busses || []).find(b => b.id === id);
     if (bus) bus.stereoWidth = value;
+  }
+  if (window.nasty && window.nasty.engine) {
+    window.nasty.engine.send({
+      cmd: 'set_channel_stereo_width', channelId: engineOwnerId(id), value,
+    });
   }
   persist();
 }
@@ -10965,6 +10980,20 @@ async function hydratePluginChannels() {
   // engine's dedicated master_bus node.
   const master = (song.mixer.inserts || []).find(i => i.id === 'master');
   if (master) hydrateEffects('master_bus', master.effects, master.effectStates);
+  // Restore per-channel and per-bus pan / stereo-width. Engine defaults to
+  // pan=0 (center) and width=1 (full stereo) on channel creation, so we
+  // only push non-default values.
+  const pushPanWidth = (engineId, pan, width) => {
+    if (pan != null && pan !== 0) {
+      window.nasty.engine.send({ cmd: 'set_channel_pan', channelId: engineId, value: pan });
+    }
+    if (width != null && width !== 1) {
+      window.nasty.engine.send({ cmd: 'set_channel_stereo_width', channelId: engineId, value: width });
+    }
+  };
+  for (const c of song.channels) pushPanWidth(c.id, c.pan, /* channels have no width knob today */ null);
+  for (const b of (song.mixer.busses || [])) pushPanWidth(b.id, b.pan, b.stereoWidth);
+  if (master) pushPanWidth('master_bus', master.pan, master.stereoWidth);
 
   // Audio clips — recorded WAVs that play back during SONG transport. Each
   // clip becomes an AudioClipPlayer node in the engine, wired to its bus.

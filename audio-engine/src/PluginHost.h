@@ -121,6 +121,14 @@ public:
     // clamped to [0, 1]. Sets wetGain to `value` and dryGain to `1 - value`.
     // Plugin-agnostic — the plugin doesn't need to expose a mix param.
     void setEffectWetDry(const juce::String& channelId, const juce::String& slotId, float value);
+
+    // Per-channel pan (-1 = full left, 0 = center, +1 = full right). Applied
+    // by an equal-power channel-independent pan node downstream of the gain.
+    void setChannelPan(const juce::String& channelId, float value);
+
+    // Per-channel stereo width (0 = mono, 1 = full stereo). M/S processing
+    // node downstream of the gain: side signal is scaled by width.
+    void setChannelStereoWidth(const juce::String& channelId, float value);
     void showEffectUI(const juce::String& channelId, const juce::String& slotId);
     void hideEffectUI(const juce::String& channelId, const juce::String& slotId);
 
@@ -366,6 +374,12 @@ private:
         // port on the target — main (mix in) or sidechain (feed a compressor's
         // detector). Empty = no extra sends, only the primary route runs.
         std::vector<SendSlot> sends;
+        // Stereo-width (M/S) and pan (equal-power) nodes, chained after
+        // gainNode. Empty NodeID = legacy slot that doesn't have them; the
+        // rewire pass gracefully skips missing nodes. Order in the graph:
+        //   gain → width → pan → target
+        juce::AudioProcessorGraph::NodeID widthNodeId;
+        juce::AudioProcessorGraph::NodeID panNodeId;
     };
 
     mutable std::mutex mutex;
@@ -392,6 +406,8 @@ private:
     // addDrumChannel) goes through here so pattern playback works uniformly.
     juce::AudioProcessorGraph::Node::Ptr addInjectorNode();
     juce::AudioProcessorGraph::Node::Ptr addGainNode();
+    juce::AudioProcessorGraph::Node::Ptr addPanNode();
+    juce::AudioProcessorGraph::Node::Ptr addWidthNode();
 
     // (Re)establish connections from the graph's audio input node into every
     // audio-input channel's passthrough. Called after setInputDevice() so the
