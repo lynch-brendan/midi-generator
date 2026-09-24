@@ -6459,6 +6459,14 @@ function makeKnob({ value, min, max, defaultValue, sensitivity, title, onChange,
   const el = document.createElement('div');
   el.className = 'knob' + (disabled ? ' disabled' : '');
   el.title = title || '';
+  // Wrap onChange so record-mode drags automatically append a breakpoint
+  // to the target's automation clip. When record isn't on, the wrapper is
+  // just a pass-through — no extra cost.
+  const rawOnChange = onChange;
+  onChange = (v) => {
+    if (target && isRecordingAutomation()) captureAutomationPoint(target, v);
+    rawOnChange(v);
+  };
   const setAngle = (v) => {
     const t = (v - min) / (max - min); // 0..1
     // -135° at min, +135° at max — leaves the top-facing gap FL-style.
@@ -6643,7 +6651,6 @@ function normalizeAutomationDisplay(target, value) {
 }
 
 function createAutomationClip(target, initialValue) {
-  console.log('[nasty] createAutomationClip fired for', target, 'value=', initialValue);
   // Auto-create a dedicated Automation track if one doesn't exist yet. All
   // automation clips go here for now — one shared lane keeps the initial
   // UX simple. Later we can split into one track per unique target.
@@ -6748,6 +6755,92 @@ function applyAutomationValue(target, value) {
       engine.send({ cmd: 'set_param', channelId: ownerEngineId, slotId: target.slotId || '', paramIndex: target.paramIndex, value });
       break;
   }
+}
+
+// True when the user has the transport RECORD button armed AND transport
+// is rolling. Knob drags during this window append breakpoints to a target-
+// matching automation clip (auto-creating one if none exists).
+function isRecordingAutomation() {
+  return recArmed && engineTransport.isPlaying;
+}
+
+function targetsMatch(a, b) {
+  if (!a || !b) return false;
+  return a.kind === b.kind
+      && a.ownerId === b.ownerId
+      && (a.slotId || '') === (b.slotId || '')
+      && (a.paramIndex ?? -1) === (b.paramIndex ?? -1);
+}
+
+// Direct SVG update — cheap enough to run every capture tick without a
+// full playlist re-render.
+function refreshClipCurve(clip) {
+  const el = document.querySelector(`.clip[data-clip-id="${clip.id}"]`);
+  if (!el) return;
+  const poly = el.querySelector('svg polyline');
+  if (!poly) return;
+  const pts = (clip.points || []).map(p => {
+    const x = clip.lengthBars > 0 ? (p.bar / clip.lengthBars) * 100 : 0;
+    const y = 100 - normalizeAutomationDisplay(clip.target, p.value) * 100;
+    return `${x.toFixed(2)},${y.toFixed(2)}`;
+  }).join(' ');
+  poly.setAttribute('points', pts);
+}
+
+// Record-mode capture. Called from the wrapped onChange inside makeKnob
+// whenever the user drags a knob during record+play. Finds or auto-creates
+// an automation clip covering the current playhead bar and appends the
+// point. Uses direct SVG update to avoid full re-renders per drag frame.
+function captureAutomationPoint(target, value) {
+  if (song.transportMode !== 'song') return; // automation runs on the playlist
+  const beatsPerSec = song.bpm / 60;
+  const currentBar = engineTransport.transportSecondsLive() * beatsPerSec / 4;
+  // Look for an existing clip on any track that (a) matches this target
+  // and (b) covers the current playhead bar.
+  let clip = null;
+  for (const t of song.tracks) {
+    for (const c of t.clips || []) {
+      if (c.type !== 'automation') continue;
+      if (!targetsMatch(c.target, target)) continue;
+      if (currentBar < c.startBar) continue;
+      if (currentBar > c.startBar + c.lengthBars) continue;
+      clip = c;
+      break;
+    }
+    if (clip) break;
+  }
+  // No matching clip → auto-create one on the shared Automation track,
+  // spanning bars [0, currentBar + some room]. Simpler than tracking
+  // "session started at bar N" — the clip covers everything from the
+  // playlist origin so subsequent captures during this session land in
+  // the same clip.
+  if (!clip) {
+    let autoTrack = song.tracks.find(t => t.__automation === true);
+    if (!autoTrack) {
+      autoTrack = {
+        id: 'track_auto', name: 'Automation', __automation: true,
+        clips: [], muted: false, solo: false,
+      };
+      song.tracks.unshift(autoTrack);
+    }
+    const lengthBars = Math.max(4, Math.ceil(currentBar) + 4);
+    clip = {
+      id: 'clip_auto_' + Math.random().toString(36).slice(2, 10),
+      type: 'automation',
+      target: JSON.parse(JSON.stringify(target)),
+      startBar: 0,
+      lengthBars,
+      points: [{ bar: 0, value }],
+    };
+    autoTrack.clips.push(clip);
+    render();
+    return;
+  }
+  const localBar = currentBar - clip.startBar;
+  const clamped = Math.max(0, Math.min(clip.lengthBars, localBar));
+  clip.points.push({ bar: clamped, value });
+  clip.points.sort((a, b) => a.bar - b.bar);
+  refreshClipCurve(clip);
 }
 
 // Curve walker. Permanent 60 Hz tick — checks transport state itself so no
