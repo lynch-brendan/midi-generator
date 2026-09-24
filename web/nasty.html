@@ -2554,7 +2554,7 @@ const PR_BEAT_WIDTH = 96; // fixed zoom — pattern scrolls horizontally if it's
 const PR_PITCH_MIN = 24;
 const PR_PITCH_MAX = 108;
 const STORAGE_KEY = 'nasty.song.fl.v1';
-const SONG_SCHEMA_VERSION = 7;
+const SONG_SCHEMA_VERSION = 8;
 const PALETTE = ['#ff5c93','#6b7cff','#33c58a','#ffb020','#a95cff','#ff7c47','#42c8e0','#e05cff','#ffdd57','#5cff8f'];
 
 let song = { version: SONG_SCHEMA_VERSION, bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] }, sections: [], transportMode: 'pat' };
@@ -2992,6 +2992,23 @@ function ensureShape(s) {
     t.muted = !!t.muted;
     t.solo = !!t.solo;
     t.clips = t.clips || [];
+    // Sanitize automation clips: give them stable IDs, ensure at least one
+    // breakpoint, and default target shape so hydration doesn't NPE on old
+    // half-written clips. Pattern + audio clips are untouched.
+    for (const clip of t.clips) {
+      if (clip && clip.type === 'automation') {
+        clip.id = clip.id || ('clip_' + Math.random().toString(36).slice(2, 10));
+        clip.target = clip.target || { kind: 'channel_volume', ownerId: '' };
+        clip.startBar = Number.isFinite(clip.startBar) ? clip.startBar : 0;
+        clip.lengthBars = Math.max(0.25, Number.isFinite(clip.lengthBars) ? clip.lengthBars : 4);
+        clip.points = Array.isArray(clip.points) && clip.points.length
+          ? clip.points.filter(p => p && Number.isFinite(p.bar) && Number.isFinite(p.value))
+          : [{ bar: 0, value: 1 }];
+        // Points are (bar, value) breakpoints in clip-local bar coords —
+        // 0 is the clip start. Sort so the walker can interpolate linearly.
+        clip.points.sort((a, b) => a.bar - b.bar);
+      }
+    }
   });
   // v4 → v5: sections[] added to top-level song. No data migration needed —
   // empty array is the correct default for any pre-v5 song. Section-scoped
@@ -2999,6 +3016,15 @@ function ensureShape(s) {
   // v5 → v6: pan (-1..+1) and stereoWidth (0..1) on channels + mixer strips,
   // and wetDry (0..1) per effect slot. Defaults above are additive; no data
   // migration needed. UI dials + engine routing land in later pieces.
+  // v7 → v8: automation clip type on playlist tracks. No data migration —
+  // absence of automation clips is fine for pre-v8 songs. Structure:
+  //   { type:"automation", id, target:{kind, ownerId, slotId?, paramIndex?},
+  //     startBar, lengthBars, points:[{bar, value}] }
+  // target.kind: channel_volume | channel_pan | bus_volume | bus_pan
+  //            | bus_stereo_width | effect_wetdry | plugin_param
+  // Points are linear breakpoints in clip-local bar coords. Client walks
+  // them at ~60Hz during playback and dispatches through existing engine
+  // commands (set_channel_gain / set_channel_pan / set_wet_dry / set_param).
   // v6 → v7: master insert gets a NastyMasterLimiter effect by default so
   // FLOW output loudness is competitive with mastered media at the same
   // system volume. Only runs once — if the user removes the limiter, the
@@ -5482,11 +5508,46 @@ function renderPlaylist() {
     row.addEventListener('drop', onLaneDrop);
     for (const clip of track.clips) {
       const el = document.createElement('div');
-      el.className = 'clip' + (clip.type === 'audio' ? ' audio' : '');
+      el.className = 'clip'
+        + (clip.type === 'audio' ? ' audio' : '')
+        + (clip.type === 'automation' ? ' automation' : '');
       if (clip.id === selectedClipId || selectedClipIds.has(clip.id)) el.classList.add('selected');
       el.style.left = (clip.startBar * BAR_WIDTH) + 'px';
       el.style.width = (clip.lengthBars * BAR_WIDTH) + 'px';
-      if (clip.type === 'pattern') {
+      if (clip.type === 'automation') {
+        // Colored block + SVG polyline connecting the breakpoints. Curve is
+        // in clip-local space (bar 0 → left, bar lengthBars → right; value
+        // normalized via normalizeAutomationDisplay so different target
+        // ranges all draw within the block).
+        el.style.background = 'linear-gradient(135deg, #ff6a9c, #ff6a9ccc)';
+        el.title = describeAutomationTarget(clip.target) + ' · '
+          + clip.points.length + ' points · drag to move · delete to remove';
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('preserveAspectRatio', 'none');
+        svg.setAttribute('viewBox', '0 0 100 100');
+        svg.style.cssText =
+          'position:absolute; left:0; top:0; width:100%; height:100%;' +
+          ' pointer-events:none; opacity:0.9;';
+        const pts = (clip.points || []).map(p => {
+          const x = clip.lengthBars > 0 ? (p.bar / clip.lengthBars) * 100 : 0;
+          const y = 100 - normalizeAutomationDisplay(clip.target, p.value) * 100;
+          return `${x.toFixed(2)},${y.toFixed(2)}`;
+        }).join(' ');
+        const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+        poly.setAttribute('points', pts);
+        poly.setAttribute('fill', 'none');
+        poly.setAttribute('stroke', '#fff');
+        poly.setAttribute('stroke-width', '1.5');
+        poly.setAttribute('vector-effect', 'non-scaling-stroke');
+        svg.appendChild(poly);
+        el.appendChild(svg);
+        const label = document.createElement('div');
+        label.textContent = describeAutomationTarget(clip.target);
+        label.style.cssText =
+          'position:relative; z-index:1; pointer-events:none;' +
+          ' font-size:10px; padding:2px 4px; text-shadow: 0 1px 1px rgba(0,0,0,0.5);';
+        el.appendChild(label);
+      } else if (clip.type === 'pattern') {
         const p = patternById.get(clip.patternId);
         if (p) {
           el.style.background = `linear-gradient(135deg, ${p.color}, ${p.color}cc)`;
@@ -5882,6 +5943,7 @@ function renderChannelRack() {
         min: 0, max: 1, defaultValue: unityPos,
         sensitivity: 0.005,
         title: 'Volume: ' + volToDb(ch.volume) + ' dB — drag to change, dbl-click resets to 0 dB',
+        target: { kind: 'channel_volume', ownerId: ch.id },
         onChange: (v) => {
           ch.volume = faderPositionToGain(v);
           const bus = (song.mixer.busses || []).find(b => b.num === (ch.targetInsertNum || 0));
@@ -5904,6 +5966,7 @@ function renderChannelRack() {
         value: ch.pan ?? 0, min: -1, max: 1, defaultValue: 0,
         sensitivity: 0.01,
         title: 'Pan: ' + displayPan(ch.pan ?? 0) + ' — drag to change, dbl-click centers',
+        target: { kind: 'channel_pan', ownerId: ch.id },
         onChange: (v) => {
           ch.pan = v;
           if (window.nasty && window.nasty.engine) {
@@ -6368,8 +6431,10 @@ document.addEventListener('DOMContentLoaded', () => {
 // Small FL-style rotary knob. Vertical drag = value change (up increases,
 // down decreases). Shift-drag for fine control. Double-click resets to
 // `defaultValue`. `min`/`max` bound the value; `sensitivity` is the units
-// changed per pixel of drag. Returns the DOM element.
-function makeKnob({ value, min, max, defaultValue, sensitivity, title, onChange, disabled }) {
+// changed per pixel of drag. `target` (optional) is a structured
+// automation target — if present, right-clicking the knob opens a menu
+// with "Create automation clip". Returns the DOM element.
+function makeKnob({ value, min, max, defaultValue, sensitivity, title, onChange, disabled, target }) {
   const el = document.createElement('div');
   el.className = 'knob' + (disabled ? ' disabled' : '');
   el.title = title || '';
@@ -6440,8 +6505,229 @@ function makeKnob({ value, min, max, defaultValue, sensitivity, title, onChange,
     setAngle(defaultValue);
     onChange(defaultValue);
   });
+  // Right-click → FL-style menu. For now: "Create automation clip". The
+  // menu is intentionally tiny — extend as we add more per-knob actions
+  // (reset value, edit value, etc). Only wire it up when the caller passed
+  // a target so we know what parameter to automate.
+  if (target) {
+    el.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openKnobMenu(target, value, e.clientX, e.clientY);
+    });
+  }
   return el;
 }
+
+// ============================================================
+// Automation — clips on the playlist that move parameters over time.
+// Data model:
+//   { id, type:"automation", target:{kind, ownerId, slotId?, paramIndex?},
+//     startBar, lengthBars, points:[{bar, value}] }
+// Playback: client-side walker runs at ~60Hz during SONG-mode transport;
+// interpolates points at the current bar; dispatches through the same
+// engine commands that user knob drags do (set_channel_gain / set_wet_dry /
+// set_param / set_channel_pan / set_channel_stereo_width).
+// Creation: right-click any knob → "Create automation clip".
+// ============================================================
+
+function openKnobMenu(target, currentValue, x, y) {
+  // Reuse the existing route-menu div for consistency with the mixer's
+  // right-click routing menu. Same styling, same show/hide pattern.
+  const menu = document.getElementById('route-menu');
+  if (!menu) return;
+  menu.innerHTML = `
+    <div class="rm-header">${escapeHtml(describeAutomationTarget(target))}</div>
+    <div class="rm-item" id="km-create-auto">Create automation clip</div>
+  `;
+  menu.style.left = x + 'px';
+  menu.style.top  = y + 'px';
+  menu.classList.remove('hidden');
+  const closeMenu = () => {
+    menu.classList.add('hidden');
+    document.removeEventListener('mousedown', onDocMouseDown, true);
+  };
+  const onDocMouseDown = (ev) => {
+    if (!menu.contains(ev.target)) closeMenu();
+  };
+  setTimeout(() => document.addEventListener('mousedown', onDocMouseDown, true), 0);
+  const item = document.getElementById('km-create-auto');
+  if (item) item.addEventListener('click', () => {
+    createAutomationClip(target, currentValue);
+    closeMenu();
+  });
+}
+
+function describeAutomationTarget(target) {
+  const kindLabels = {
+    channel_volume: 'Volume',
+    channel_pan: 'Pan',
+    bus_volume: 'Bus Volume',
+    bus_pan: 'Bus Pan',
+    bus_stereo_width: 'Stereo Width',
+    effect_wetdry: 'Wet/Dry',
+    plugin_param: 'Param #' + target.paramIndex,
+  };
+  const kindLabel = kindLabels[target.kind] || target.kind;
+  let ownerLabel = '';
+  if (target.ownerId) {
+    const ch = song.channels.find(c => c.id === target.ownerId);
+    if (ch) ownerLabel = ch.name;
+    else {
+      const bus = (song.mixer.busses || []).find(b => b.id === target.ownerId);
+      if (bus) ownerLabel = bus.name;
+      else {
+        const ins = song.mixer.inserts.find(i => i.id === target.ownerId);
+        if (ins) ownerLabel = ins.name;
+      }
+    }
+  }
+  return ownerLabel ? `${ownerLabel} · ${kindLabel}` : kindLabel;
+}
+
+// Turn a raw automation value into a 0..1 y-coord for the curve display.
+// Each target kind has a different natural range; this normalizes for the
+// tiny curve-inside-the-clip render only. The engine gets the raw value.
+function normalizeAutomationDisplay(target, value) {
+  switch (target && target.kind) {
+    case 'channel_pan':
+    case 'bus_pan':
+      return (Math.max(-1, Math.min(1, value)) + 1) / 2;
+    case 'bus_stereo_width':
+      return Math.max(0, Math.min(1, value / 2));
+    case 'channel_volume':
+    case 'bus_volume':
+      return Math.max(0, Math.min(1, value));
+    default:
+      return Math.max(0, Math.min(1, value));
+  }
+}
+
+function createAutomationClip(target, initialValue) {
+  // Auto-create a dedicated Automation track if one doesn't exist yet. All
+  // automation clips go here for now — one shared lane keeps the initial
+  // UX simple. Later we can split into one track per unique target.
+  let autoTrack = song.tracks.find(t => t.__automation === true);
+  if (!autoTrack) {
+    autoTrack = {
+      id: 'track_auto',
+      name: 'Automation',
+      __automation: true,
+      clips: [],
+      muted: false,
+      solo: false,
+    };
+    song.tracks.push(autoTrack);
+  }
+  // Length: fit the current pattern if PAT mode, else 4 bars. Two
+  // breakpoints at the same value = flat clip; user then either records
+  // over it (moves the knob during record-mode play) or the curve editor
+  // (later) reshapes it.
+  const curPat = song.patterns.find(p => p.id === currentPatternId);
+  const lengthBars = curPat ? (curPat.lengthBars || 4) : 4;
+  const clip = {
+    id: 'clip_auto_' + Math.random().toString(36).slice(2, 10),
+    type: 'automation',
+    target: JSON.parse(JSON.stringify(target)), // defensive copy
+    startBar: 0,
+    lengthBars,
+    points: [
+      { bar: 0, value: initialValue },
+      { bar: lengthBars, value: initialValue },
+    ],
+  };
+  autoTrack.clips.push(clip);
+  render();
+  persist();
+}
+
+// Linear interpolation between (bar, value) breakpoints. Clamps beyond
+// the first/last point rather than extrapolating.
+function interpolateAutomationPoints(points, bar) {
+  if (!points || !points.length) return 0;
+  if (bar <= points[0].bar) return points[0].value;
+  if (bar >= points[points.length - 1].bar) return points[points.length - 1].value;
+  for (let i = 1; i < points.length; i++) {
+    if (bar <= points[i].bar) {
+      const p0 = points[i - 1], p1 = points[i];
+      const span = p1.bar - p0.bar;
+      const t = span > 0 ? (bar - p0.bar) / span : 0;
+      return p0.value + t * (p1.value - p0.value);
+    }
+  }
+  return points[points.length - 1].value;
+}
+
+// Send a single automation value through to the engine via the same
+// command the user's knob would have fired. Does not touch song state —
+// stops leaving the state modified means the UI knob returns to its
+// user-set value on the next render, and persist doesn't fire on every
+// walker tick.
+function applyAutomationValue(target, value) {
+  if (!(window.nasty && window.nasty.engine)) return;
+  const engine = window.nasty.engine;
+  const ownerEngineId = engineOwnerId(target.ownerId);
+  switch (target.kind) {
+    case 'channel_volume':
+    case 'bus_volume': {
+      // Compose with bus × master multipliers so the composed gain the
+      // engine sees matches how the user's knob computes it.
+      const ch = song.channels.find(c => c.id === target.ownerId);
+      const bus = (song.mixer.busses || []).find(b => b.id === target.ownerId);
+      const master = song.mixer.inserts.find(i => i.id === 'master');
+      const masterVol = master ? (master.volume ?? 1.0) : 1.0;
+      if (ch) {
+        const busForCh = (song.mixer.busses || []).find(b => b.num === (ch.targetInsertNum || 0));
+        const busVol = busForCh ? (busForCh.volume ?? 1.0) : 1.0;
+        engine.send({ cmd: 'set_channel_gain', channelId: ch.id, gain: value * busVol * masterVol * channelMuteFactor(ch) });
+      } else if (bus) {
+        // Bus volume: apply to bus, then push composed gain to every channel routed through it.
+        // Simplest path: set bus.volume and re-push. But we're not touching state — so send
+        // the composed gain per channel directly.
+        for (const c of song.channels) {
+          if ((c.targetInsertNum || 0) !== bus.num) continue;
+          const chVol = c.volume ?? 1.0;
+          engine.send({ cmd: 'set_channel_gain', channelId: c.id, gain: chVol * value * masterVol * channelMuteFactor(c) });
+        }
+      }
+      break;
+    }
+    case 'channel_pan':
+    case 'bus_pan':
+      engine.send({ cmd: 'set_channel_pan', channelId: ownerEngineId, value });
+      break;
+    case 'bus_stereo_width':
+      engine.send({ cmd: 'set_channel_stereo_width', channelId: ownerEngineId, value });
+      break;
+    case 'effect_wetdry':
+      engine.send({ cmd: 'set_wet_dry', channelId: ownerEngineId, slotId: target.slotId || '', value });
+      break;
+    case 'plugin_param':
+      engine.send({ cmd: 'set_param', channelId: ownerEngineId, slotId: target.slotId || '', paramIndex: target.paramIndex, value });
+      break;
+  }
+}
+
+// Curve walker. Permanent 60 Hz tick — checks transport state itself so no
+// start/stop plumbing is needed. Only runs in SONG mode (in PAT mode there
+// is no playlist playhead to align clips against, so automation is a no-op).
+setInterval(() => {
+  if (!engineTransport.isPlaying) return;
+  if (song.transportMode !== 'song') return;
+  const beatsPerSec = song.bpm / 60;
+  const currentBar = engineTransport.transportSecondsLive() * beatsPerSec / 4;
+  for (const track of song.tracks) {
+    if (track.muted) continue;
+    for (const clip of track.clips) {
+      if (clip.type !== 'automation') continue;
+      if (currentBar < clip.startBar) continue;
+      if (currentBar > clip.startBar + clip.lengthBars) continue;
+      const local = currentBar - clip.startBar;
+      const v = interpolateAutomationPoints(clip.points, local);
+      applyAutomationValue(clip.target, v);
+    }
+  }
+}, 16);
 
 function buildStrip({ id, name, volume, color, kind, fxCount, muted, solo, num, audioInputEnabled, recArmed, sidechainActive, sidechainLabel, pan, stereoWidth }) {
   const strip = document.createElement('div');
@@ -6522,6 +6808,7 @@ function buildStrip({ id, name, volume, color, kind, fxCount, muted, solo, num, 
       value: pan ?? 0, min: -1, max: 1, defaultValue: 0,
       sensitivity: 0.01,
       title: 'Pan: ' + displayPan(pan ?? 0) + ' — drag to change, dbl-click centers',
+      target: { kind: 'bus_pan', ownerId: id },
       onChange: (v) => {
         onStripPan(id, kind, v);
         panKnob.title = 'Pan: ' + displayPan(v) + ' — drag to change, dbl-click centers';
@@ -6531,6 +6818,7 @@ function buildStrip({ id, name, volume, color, kind, fxCount, muted, solo, num, 
       value: stereoWidth ?? 1, min: 0, max: 1, defaultValue: 1,
       sensitivity: 0.005,
       title: 'Stereo width: ' + displayWidth(stereoWidth ?? 1) + ' — drag down for mono',
+      target: { kind: 'bus_stereo_width', ownerId: id },
       onChange: (v) => {
         onStripStereoWidth(id, kind, v);
         widthKnob.title = 'Stereo width: ' + displayWidth(v) + ' — drag down for mono';
@@ -6758,6 +7046,7 @@ function renderMixerSlots() {
         value: fx.wetDry ?? 1, min: 0, max: 1, defaultValue: 1,
         sensitivity: 0.005,
         title: `Wet/dry: ${Math.round((fx.wetDry ?? 1) * 100)}% — drag to blend, dbl-click for 100% wet`,
+        target: { kind: 'effect_wetdry', ownerId: owner.id, slotId: fx.slotId },
         onChange: (v) => {
           fx.wetDry = v;
           if (window.nasty && window.nasty.engine) {
