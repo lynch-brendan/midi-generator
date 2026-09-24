@@ -6376,15 +6376,21 @@ function makeKnob({ value, min, max, defaultValue, sensitivity, title, onChange,
   el.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     e.stopPropagation();
-    const startY = e.clientY;
-    const startVal = value;
+    // Incremental drag: track the delta since the LAST pointermove, add to
+    // current value, clamp. If we integrated from startVal + total-delta-since-
+    // start, dragging past the max would accumulate invisible overshoot; the
+    // knob would then jump back by that overshoot when the mouse returned.
+    // With per-frame deltas, clamping absorbs the overshoot naturally — the
+    // knob responds immediately to the mouse coming back.
+    let lastY = e.clientY;
     let dragMoved = false;
     el.setPointerCapture(e.pointerId);
     const onMove = (ev) => {
-      const dy = startY - ev.clientY; // up = positive
+      const dy = lastY - ev.clientY; // up = positive
+      lastY = ev.clientY;
       if (Math.abs(dy) > 0) dragMoved = true;
       const step = ev.shiftKey ? sensitivity * 0.2 : sensitivity;
-      let v = startVal + dy * step;
+      let v = value + dy * step;
       if (v < min) v = min;
       if (v > max) v = max;
       value = v;
