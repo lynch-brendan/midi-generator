@@ -3063,6 +3063,24 @@ function ensureDefaults() {
   if (!song.mixer.inserts.length) {
     song.mixer.inserts.push({ id: 'master', name: 'Master', volume: 1.0, effects: [], sendToId: null });
   }
+  // Fresh songs (no autosave) never go through ensureShape's migrations,
+  // so the master limiter never gets added. Do the same check here.
+  const master = song.mixer.inserts.find(i => i.id === 'master');
+  if (master) {
+    master.effects = master.effects || [];
+    const hasLimiter = master.effects.some(e =>
+      e && e.type === 'plugin' && e.pluginId === 'nasty:master_limiter');
+    if (!hasLimiter) {
+      master.effects.push({
+        type: 'plugin',
+        slotId: 'fx_master_limiter',
+        pluginId: 'nasty:master_limiter',
+        name: 'MasterLimiter',
+        bypassed: false,
+        wetDry: 1,
+      });
+    }
+  }
   if (song.mixer.inserts.length === 1) {
     // add 4 empty inserts on empty song
     for (let i = 1; i <= 4; i++) {
@@ -6450,7 +6468,10 @@ function makeKnob({ value, min, max, defaultValue, sensitivity, title, onChange,
   // click) so a knob drag never registers as a strip select or a plugin-UI
   // open. Belt AND suspenders on top of the pointerdown handler below —
   // some browsers dispatch both.
-  el.addEventListener('mousedown', (e) => e.stopPropagation());
+  // Only stop LEFT mousedown from bubbling — right-mousedown must reach
+  // its default so the contextmenu event fires (that's how right-click
+  // → "Create automation clip" gets triggered).
+  el.addEventListener('mousedown', (e) => { if (e.button === 0) e.stopPropagation(); });
   // Click always stops here too — otherwise a knob click bubbles to the
   // mixer-strip click handler, which sets selectedStripId + calls
   // renderMixer(), which rebuilds the knob mid-interaction. That rebuild
@@ -6461,6 +6482,10 @@ function makeKnob({ value, min, max, defaultValue, sensitivity, title, onChange,
   // just dragged the knob, dblclick is ignored for a short cool-down.
   let lastDragEndTime = 0;
   el.addEventListener('pointerdown', (e) => {
+    // Right-mousedown must not preventDefault — it needs to reach its
+    // default action so the contextmenu event fires normally. Only handle
+    // the left-button drag here.
+    if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
     // Incremental drag: track the delta since the LAST pointermove, add to
@@ -6543,14 +6568,25 @@ function openKnobMenu(target, currentValue, x, y) {
   menu.style.left = x + 'px';
   menu.style.top  = y + 'px';
   menu.classList.remove('hidden');
+  // Stop mousedown from bubbling to the document-level close handler
+  // below. Belt-and-braces so clicks INSIDE the menu don't close it,
+  // regardless of capture/bubble timing quirks.
+  const swallow = (e) => e.stopPropagation();
+  menu.addEventListener('mousedown', swallow);
+  menu.addEventListener('click', swallow);
   const closeMenu = () => {
     menu.classList.add('hidden');
-    document.removeEventListener('mousedown', onDocMouseDown, true);
+    menu.removeEventListener('mousedown', swallow);
+    menu.removeEventListener('click', swallow);
+    document.removeEventListener('mousedown', onDocMouseDown);
   };
   const onDocMouseDown = (ev) => {
     if (!menu.contains(ev.target)) closeMenu();
   };
-  setTimeout(() => document.addEventListener('mousedown', onDocMouseDown, true), 0);
+  // Bubble phase, not capture — bubble runs AFTER the target listeners,
+  // so a click on the menu item fires its handler before this listener
+  // ever sees the event (and the menu.mousedown swallower stops it too).
+  setTimeout(() => document.addEventListener('mousedown', onDocMouseDown), 0);
   const item = document.getElementById('km-create-auto');
   if (item) item.addEventListener('click', () => {
     createAutomationClip(target, currentValue);
