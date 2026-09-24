@@ -6354,14 +6354,25 @@ function makeKnob({ value, min, max, defaultValue, sensitivity, title, onChange,
   };
   setAngle(value);
   if (disabled) return el;
+  // Stop mousedown from bubbling to parent handlers (mslot click, strip
+  // click) so a knob drag never registers as a strip select or a plugin-UI
+  // open. Belt AND suspenders on top of the pointerdown handler below —
+  // some browsers dispatch both.
+  el.addEventListener('mousedown', (e) => e.stopPropagation());
+  // Track when the last drag ended so a stray browser-generated dblclick
+  // right after a fast drag doesn't silently reset the value. If the user
+  // just dragged the knob, dblclick is ignored for a short cool-down.
+  let lastDragEndTime = 0;
   el.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     e.stopPropagation();
     const startY = e.clientY;
     const startVal = value;
+    let dragMoved = false;
     el.setPointerCapture(e.pointerId);
     const onMove = (ev) => {
       const dy = startY - ev.clientY; // up = positive
+      if (Math.abs(dy) > 0) dragMoved = true;
       const step = ev.shiftKey ? sensitivity * 0.2 : sensitivity;
       let v = startVal + dy * step;
       if (v < min) v = min;
@@ -6374,6 +6385,7 @@ function makeKnob({ value, min, max, defaultValue, sensitivity, title, onChange,
       el.releasePointerCapture(e.pointerId);
       el.removeEventListener('pointermove', onMove);
       el.removeEventListener('pointerup', onUp);
+      if (dragMoved) lastDragEndTime = Date.now();
     };
     el.addEventListener('pointermove', onMove);
     el.addEventListener('pointerup', onUp);
@@ -6381,6 +6393,11 @@ function makeKnob({ value, min, max, defaultValue, sensitivity, title, onChange,
   el.addEventListener('dblclick', (e) => {
     e.preventDefault();
     e.stopPropagation();
+    // Ignore dblclick that follows a real drag — the browser can dispatch
+    // dblclick when two quick pointer-up events happen close together during
+    // a fast drag-release-drag sequence, which was silently resetting the
+    // knob to default mid-work.
+    if (Date.now() - lastDragEndTime < 400) return;
     value = defaultValue;
     setAngle(defaultValue);
     onChange(defaultValue);
