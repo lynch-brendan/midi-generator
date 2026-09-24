@@ -6856,18 +6856,70 @@ function interpolateAutomationPoints(points, bar) {
   return points[points.length - 1].value;
 }
 
-// Send a single automation value through to the engine via the same
-// command the user's knob would have fired. Also nudges the visible knob
-// so it visually follows the automated value while the walker runs. Does
-// not touch song state — persist doesn't fire on every walker tick.
-function applyAutomationValue(target, value) {
-  // Move the knob visual to match the automated value. Cheap DOM query per
-  // tick — targetSig is small and there's usually just one knob per target.
+// Track every target the walker has driven during the current play
+// session. On stop, we replay the user's set state values so the engine
+// returns to base — otherwise the last-applied automation value stays
+// forever (Bug B: kick stuck silent when another pattern plays).
+const automatedTargetsThisSession = new Map(); // sig → target
+
+// Look up the user's "set" value for a target so we can restore it on
+// stop. Returns null when the owner can't be found (in which case the
+// engine's last value just stays).
+function getStateValueForTarget(target) {
+  const findOwner = (id) => song.channels.find(c => c.id === id)
+    || (song.mixer.busses || []).find(b => b.id === id)
+    || (song.mixer.inserts || []).find(i => i.id === id);
+  switch (target.kind) {
+    case 'channel_volume':
+    case 'bus_volume': {
+      const o = findOwner(target.ownerId);
+      return o ? (o.volume ?? 1) : null;
+    }
+    case 'channel_pan':
+    case 'bus_pan': {
+      const o = findOwner(target.ownerId);
+      return o ? (o.pan ?? 0) : null;
+    }
+    case 'bus_stereo_width': {
+      const o = findOwner(target.ownerId);
+      return o ? (o.stereoWidth ?? 1) : null;
+    }
+    case 'effect_wetdry': {
+      const o = findOwner(target.ownerId);
+      if (!o) return null;
+      const fx = (o.effects || []).find(e => e.slotId === target.slotId);
+      return fx ? (fx.wetDry ?? 1) : null;
+    }
+    default: return null;
+  }
+}
+
+function restoreAutomatedTargets() {
+  for (const [, target] of automatedTargetsThisSession) {
+    const v = getStateValueForTarget(target);
+    if (v != null) applyAutomationValueRaw(target, v);
+  }
+  automatedTargetsThisSession.clear();
+}
+
+// The core dispatch — split out from applyAutomationValue so the restore
+// path can send values through without re-adding to the session-tracking
+// set (which would defeat the purpose on the next stop).
+function applyAutomationValueRaw(target, value) {
   const sig = targetSig(target);
   const knob = document.querySelector(`.knob[data-target-sig="${sig}"]`);
   if (knob && knob._setDisplay) knob._setDisplay(value);
   if (!(window.nasty && window.nasty.engine)) return;
   const engine = window.nasty.engine;
+  dispatchAutomation(engine, target, value);
+}
+
+function applyAutomationValue(target, value) {
+  automatedTargetsThisSession.set(targetSig(target), target);
+  applyAutomationValueRaw(target, value);
+}
+
+function dispatchAutomation(engine, target, value) {
   const ownerEngineId = engineOwnerId(target.ownerId);
   switch (target.kind) {
     case 'channel_volume':
@@ -7108,8 +7160,22 @@ function captureFreeFloatingAutomation(target, value) {
 // Curve walker. Permanent 60 Hz tick — checks transport state itself so no
 // start/stop plumbing is needed. Only runs in SONG mode (in PAT mode there
 // is no playlist playhead to align clips against, so automation is a no-op).
+// Faster tick (8ms vs 16ms) halves the window between an audio-loop wrap
+// and the walker seeing the new bar position. Combined with the loop-back
+// detection below it makes the first note after each loop pass reliably
+// hit its automated value.
+let _walkerLastBar = null;
+let _walkerWasPlaying = false;
 setInterval(() => {
-  if (!engineTransport.isPlaying) return;
+  const nowPlaying = engineTransport.isPlaying;
+  if (_walkerWasPlaying && !nowPlaying) {
+    // Play → stop transition: restore user-set state so a subsequent
+    // pattern isn't stuck at the last automated value.
+    restoreAutomatedTargets();
+    _walkerLastBar = null;
+  }
+  _walkerWasPlaying = nowPlaying;
+  if (!nowPlaying) return;
   const beatsPerSec = song.bpm / 60;
   const patternById = new Map(song.patterns.map(p => [p.id, p]));
 
@@ -7138,6 +7204,14 @@ setInterval(() => {
   // keep the walker past every clip forever after the first pass — that
   // was the "loops but stays silent" bug (last value stuck at silence).
   const currentBar = engineTransport.elapsedSecondsLive() * beatsPerSec / 4;
+  // Loop-back detection: currentBar jumping backwards means the audio just
+  // wrapped. Reset _walkerLastBar so subsequent frames see monotonic
+  // progression again. The re-application at bar~0 happens naturally on
+  // this same tick — no need for a special-case dispatch.
+  if (_walkerLastBar !== null && currentBar + 0.05 < _walkerLastBar) {
+    _walkerLastBar = null;
+  }
+  _walkerLastBar = currentBar;
   const bakedApplications = [];
   for (const track of song.tracks) {
     if (track.muted) continue;
@@ -7167,7 +7241,7 @@ setInterval(() => {
     const v = interpolateAutomationPoints(a.points, a.patternBar);
     applyAutomationValue(a.target, v);
   }
-}, 16);
+}, 8);
 
 function buildStrip({ id, name, volume, color, kind, fxCount, muted, solo, num, audioInputEnabled, recArmed, sidechainActive, sidechainLabel, pan, stereoWidth }) {
   const strip = document.createElement('div');
