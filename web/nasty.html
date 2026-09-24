@@ -573,6 +573,40 @@
     background: rgba(0,0,0,0.35);
   }
   #piano-roll.hidden { display: none; }
+  /* Automation curve editor — same modal shell as the piano roll, but
+     the body is a full-panel SVG canvas with draggable point handles. */
+  #auto-editor {
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,0.55);
+    display: flex; align-items: center; justify-content: center;
+  }
+  #auto-editor.hidden { display: none; }
+  #ae-panel {
+    width: 82vw; height: 62vh; max-width: 1400px; max-height: 800px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+    display: flex; flex-direction: column; overflow: hidden;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+  }
+  #ae-header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px; background: var(--panel-2);
+    border-bottom: 1px solid var(--line);
+  }
+  #ae-header .spacer { flex: 1; }
+  #ae-title { font-weight: 600; font-size: 13px; }
+  #ae-body { flex: 1; position: relative; background: #14171c; overflow: hidden; }
+  #ae-canvas { width: 100%; height: 100%; display: block; cursor: crosshair; }
+  #ae-canvas .ae-grid { stroke: rgba(255,255,255,0.08); stroke-width: 1; }
+  #ae-canvas .ae-grid-bar { stroke: rgba(255,255,255,0.16); }
+  #ae-canvas .ae-line { stroke: #ff2d9c; stroke-width: 2; fill: none; }
+  #ae-canvas .ae-fill { fill: rgba(255,45,156,0.15); stroke: none; }
+  #ae-canvas .ae-point {
+    fill: #ff2d9c; stroke: white; stroke-width: 1.5;
+    cursor: grab;
+  }
+  #ae-canvas .ae-point.selected { fill: white; stroke: #ff2d9c; stroke-width: 2; }
+  #ae-canvas .ae-point:hover { fill: #ffffff; }
+
   #piano-roll-panel {
     width: 88vw; height: 84vh; background: var(--panel);
     border: 1px solid var(--line); border-radius: 3px;
@@ -2374,6 +2408,24 @@
       <div id="pr-ruler-wrap"><div id="pr-ruler"></div></div>
       <div id="pr-keys-wrap"><div id="pr-keys"></div></div>
       <div id="pr-grid-wrap"><div id="pr-grid"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Automation curve editor. Opens on double-click of an automation clip
+     (free-floating pattern) or via the right-click "Edit this automation"
+     menu on a baked pink overlay of a MIDI clip. Same modal shell as the
+     piano roll, dedicated body for the SVG canvas. -->
+<div id="auto-editor" class="hidden">
+  <div id="ae-panel">
+    <div id="ae-header">
+      <div id="ae-title">Automation</div>
+      <div class="spacer"></div>
+      <span id="ae-hint" style="font-size:11px;color:var(--dim);margin-left:10px">double-click canvas = add point · drag = move · right-click point / delete = remove</span>
+      <button id="ae-close">Close</button>
+    </div>
+    <div id="ae-body">
+      <svg id="ae-canvas"></svg>
     </div>
   </div>
 </div>
@@ -6697,6 +6749,209 @@ function makeKnob({ value, min, max, defaultValue, sensitivity, title, onChange,
 }
 
 // ============================================================
+// Automation curve editor.
+// Opens as a modal panel with an SVG canvas showing the curve. Points are
+// draggable circles. Double-click empty area adds a point at the (bar, value)
+// under the cursor; right-click / delete-key removes a selected point.
+// Works uniformly for free-floating patterns (edits pattern.points) AND
+// baked entries inside a MIDI pattern (edits entry.points). Caller passes
+// a "holder" object exposing .points and .target — the editor mutates
+// those in place and calls back on any change.
+// ============================================================
+let aeState = null; // { target, points, lengthBars, label, onEdit, selectedIdx }
+
+function openAutomationEditor(opts) {
+  aeState = {
+    target: opts.target,
+    points: opts.points,
+    lengthBars: opts.lengthBars,
+    label: opts.label || 'Automation',
+    onEdit: opts.onEdit || (() => {}),
+    selectedIdx: -1,
+  };
+  document.getElementById('ae-title').textContent = 'Editing: ' + aeState.label;
+  document.getElementById('auto-editor').classList.remove('hidden');
+  renderAutomationEditor();
+}
+
+function closeAutomationEditor() {
+  aeState = null;
+  document.getElementById('auto-editor').classList.add('hidden');
+}
+
+function aeRect() {
+  const svg = document.getElementById('ae-canvas');
+  return svg.getBoundingClientRect();
+}
+
+function aePointToXY(pt) {
+  if (!aeState) return { x: 0, y: 0 };
+  const rect = aeRect();
+  const x = aeState.lengthBars > 0 ? (pt.bar / aeState.lengthBars) * rect.width : 0;
+  const y = rect.height - normalizeAutomationDisplay(aeState.target, pt.value) * rect.height;
+  return { x, y };
+}
+
+function aeXYToPoint(clientX, clientY) {
+  if (!aeState) return { bar: 0, value: 0 };
+  const rect = aeRect();
+  const x = clientX - rect.left;
+  const y = clientY - rect.top;
+  const bar = aeState.lengthBars > 0
+    ? Math.max(0, Math.min(aeState.lengthBars, (x / rect.width) * aeState.lengthBars))
+    : 0;
+  const norm = Math.max(0, Math.min(1, 1 - (y / rect.height)));
+  const value = denormalizeAutomationDisplay(aeState.target, norm);
+  return { bar, value };
+}
+
+function renderAutomationEditor() {
+  if (!aeState) return;
+  const svg = document.getElementById('ae-canvas');
+  const rect = aeRect();
+  const w = rect.width, h = rect.height;
+  svg.setAttribute('width', w);
+  svg.setAttribute('height', h);
+  svg.innerHTML = '';
+  // Grid — one line per bar (bold), 4 subdivisions per bar (dim).
+  const gridFrag = document.createDocumentFragment();
+  const beats = Math.ceil(aeState.lengthBars * 4);
+  for (let i = 0; i <= beats; i++) {
+    const bar = i / 4;
+    const x = aeState.lengthBars > 0 ? (bar / aeState.lengthBars) * w : 0;
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', x); line.setAttribute('x2', x);
+    line.setAttribute('y1', 0); line.setAttribute('y2', h);
+    line.setAttribute('class', 'ae-grid' + (i % 4 === 0 ? ' ae-grid-bar' : ''));
+    gridFrag.appendChild(line);
+  }
+  // Horizontal reference lines at 25/50/75/100%.
+  for (const yfrac of [0.25, 0.5, 0.75]) {
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', 0); line.setAttribute('x2', w);
+    line.setAttribute('y1', h * yfrac); line.setAttribute('y2', h * yfrac);
+    line.setAttribute('class', 'ae-grid');
+    gridFrag.appendChild(line);
+  }
+  svg.appendChild(gridFrag);
+  // Filled curve area under the polyline — subtle pink wash.
+  if (aeState.points.length) {
+    const first = aePointToXY(aeState.points[0]);
+    const last = aePointToXY(aeState.points[aeState.points.length - 1]);
+    const areaPts = [`${first.x},${h}`]
+      .concat(aeState.points.map(p => { const q = aePointToXY(p); return `${q.x},${q.y}`; }))
+      .concat([`${last.x},${h}`])
+      .join(' ');
+    const area = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    area.setAttribute('points', areaPts);
+    area.setAttribute('class', 'ae-fill');
+    svg.appendChild(area);
+    // Line curve on top.
+    const linePts = aeState.points.map(p => { const q = aePointToXY(p); return `${q.x},${q.y}`; }).join(' ');
+    const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+    poly.setAttribute('points', linePts);
+    poly.setAttribute('class', 'ae-line');
+    svg.appendChild(poly);
+  }
+  // Points — draggable circles.
+  aeState.points.forEach((pt, idx) => {
+    const { x, y } = aePointToXY(pt);
+    const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    c.setAttribute('cx', x); c.setAttribute('cy', y);
+    c.setAttribute('r', 5);
+    c.setAttribute('class', 'ae-point' + (idx === aeState.selectedIdx ? ' selected' : ''));
+    c.dataset.idx = String(idx);
+    svg.appendChild(c);
+  });
+}
+
+// Editor interactions. Wired once on script init below.
+function initAutomationEditor() {
+  const svg = document.getElementById('ae-canvas');
+  const closeBtn = document.getElementById('ae-close');
+  if (closeBtn) closeBtn.addEventListener('click', closeAutomationEditor);
+  // Click backdrop closes.
+  const backdrop = document.getElementById('auto-editor');
+  if (backdrop) backdrop.addEventListener('mousedown', (e) => {
+    if (e.target === backdrop) closeAutomationEditor();
+  });
+  if (!svg) return;
+  // Right-click on a point deletes it. Right-click empty = no-op (blocked).
+  svg.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    if (!aeState) return;
+    const idx = e.target && e.target.dataset && e.target.dataset.idx;
+    if (idx == null) return;
+    aeState.points.splice(parseInt(idx, 10), 1);
+    aeState.selectedIdx = -1;
+    aeState.onEdit();
+    renderAutomationEditor();
+  });
+  // Mouse down: on a point → select + start drag; elsewhere → nothing.
+  // Double-click on empty canvas → add a point.
+  svg.addEventListener('mousedown', (e) => {
+    if (!aeState) return;
+    if (e.button !== 0) return;
+    const idx = e.target && e.target.dataset && e.target.dataset.idx;
+    if (idx != null) {
+      aeState.selectedIdx = parseInt(idx, 10);
+      renderAutomationEditor();
+      const startX = e.clientX, startY = e.clientY;
+      const origPt = { ...aeState.points[aeState.selectedIdx] };
+      const onMove = (ev) => {
+        const rect = aeRect();
+        const nx = origPt ? aePointToXY(origPt).x + (ev.clientX - startX) : ev.clientX - rect.left;
+        const ny = origPt ? aePointToXY(origPt).y + (ev.clientY - startY) : ev.clientY - rect.top;
+        const bar = aeState.lengthBars > 0
+          ? Math.max(0, Math.min(aeState.lengthBars, (nx / rect.width) * aeState.lengthBars))
+          : 0;
+        const norm = Math.max(0, Math.min(1, 1 - (ny / rect.height)));
+        const value = denormalizeAutomationDisplay(aeState.target, norm);
+        aeState.points[aeState.selectedIdx] = { bar, value };
+        aeState.points.sort((a, b) => a.bar - b.bar);
+        // Re-locate the moved point in the sorted list.
+        for (let i = 0; i < aeState.points.length; i++) {
+          if (aeState.points[i].bar === bar && aeState.points[i].value === value) {
+            aeState.selectedIdx = i;
+            break;
+          }
+        }
+        aeState.onEdit();
+        renderAutomationEditor();
+      };
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+      return;
+    }
+    // Empty canvas click — deselect for now. Double-click is caught by dblclick.
+    aeState.selectedIdx = -1;
+    renderAutomationEditor();
+  });
+  svg.addEventListener('dblclick', (e) => {
+    if (!aeState) return;
+    const idx = e.target && e.target.dataset && e.target.dataset.idx;
+    if (idx != null) return; // dbl-click on a point does nothing (single-click selects, drag moves)
+    const { bar, value } = aeXYToPoint(e.clientX, e.clientY);
+    aeState.points.push({ bar, value });
+    aeState.points.sort((a, b) => a.bar - b.bar);
+    // Find the new point's index for selection.
+    aeState.selectedIdx = aeState.points.findIndex(p => p.bar === bar && p.value === value);
+    aeState.onEdit();
+    renderAutomationEditor();
+  });
+}
+// Fire once the DOM is ready — the modal exists, listeners can attach.
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initAutomationEditor);
+} else {
+  initAutomationEditor();
+}
+
+// ============================================================
 // Automation — clips on the playlist that move parameters over time.
 // Data model:
 //   { id, type:"automation", target:{kind, ownerId, slotId?, paramIndex?},
@@ -6771,6 +7026,25 @@ function describeAutomationTarget(target) {
     }
   }
   return ownerLabel ? `${ownerLabel} · ${kindLabel}` : kindLabel;
+}
+
+// Reverse of normalizeAutomationDisplay — turns a 0..1 y-coord back into
+// the raw parameter value for the target kind. Used by the curve editor
+// when dragging a point vertically.
+function denormalizeAutomationDisplay(target, norm) {
+  norm = Math.max(0, Math.min(1, norm));
+  switch (target && target.kind) {
+    case 'channel_pan':
+    case 'bus_pan':
+      return norm * 2 - 1;                // 0..1 → -1..+1
+    case 'bus_stereo_width':
+      return norm;                        // display is 0..1 (matching UI knob)
+    case 'channel_volume':
+    case 'bus_volume':
+      return faderPositionToGain(norm);   // fader-position 0..1 → gain 0..~4
+    default:
+      return norm;                        // wet/dry, plugin_param: 0..1
+  }
 }
 
 // Turn a raw automation value into a 0..1 y-coord for the curve display.
@@ -9244,6 +9518,18 @@ function onClipMouseUp(e) {
     lastClipClickAt = now;
     lastClipClickId = clip.id;
     if (isDouble) {
+      const targetPat = song.patterns.find(pt => pt.id === clip.patternId);
+      if (targetPat && targetPat.__automation) {
+        // Automation clip → open the curve editor (not the piano roll).
+        openAutomationEditor({
+          target: targetPat.target,
+          points: targetPat.points,
+          lengthBars: targetPat.lengthBars,
+          label: targetPat.name || describeAutomationTarget(targetPat.target),
+          onEdit: () => { renderPlaylist(); persist(); },
+        });
+        return;
+      }
       const wasPlaying = !!animationFrame;
       currentPatternId = clip.patternId;
       if (typeof isWindowOpen === 'function' && !isWindowOpen('rack')) setWindow('rack', true);
@@ -9267,6 +9553,22 @@ function onClipMouseUp(e) {
 // Keyboard
 // ============================================================
 document.addEventListener('keydown', (e) => {
+  // Automation editor keys take priority when open.
+  if (aeState) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeAutomationEditor();
+      return;
+    }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && aeState.selectedIdx >= 0) {
+      e.preventDefault();
+      aeState.points.splice(aeState.selectedIdx, 1);
+      aeState.selectedIdx = -1;
+      aeState.onEdit();
+      renderAutomationEditor();
+      return;
+    }
+  }
   // Cmd+Z / Cmd+Shift+Z / Cmd+Y are global — they must fire even when the
   // piano roll's Editing-channel <select> or a text field holds focus. Do
   // NOT gate them behind the form-focus check below (which is there to keep
