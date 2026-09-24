@@ -2554,7 +2554,7 @@ const PR_BEAT_WIDTH = 96; // fixed zoom — pattern scrolls horizontally if it's
 const PR_PITCH_MIN = 24;
 const PR_PITCH_MAX = 108;
 const STORAGE_KEY = 'nasty.song.fl.v1';
-const SONG_SCHEMA_VERSION = 9;
+const SONG_SCHEMA_VERSION = 10;
 const PALETTE = ['#ff5c93','#6b7cff','#33c58a','#ffb020','#a95cff','#ff7c47','#42c8e0','#e05cff','#ffdd57','#5cff8f'];
 
 let song = { version: SONG_SCHEMA_VERSION, bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] }, sections: [], transportMode: 'pat' };
@@ -2998,6 +2998,19 @@ function ensureShape(s) {
     } else {
       recomputePatternLength(p); // fit-to-notes on load
     }
+    // v10: MIDI patterns can hold BAKED automation — the FL model where
+    // knob movements recorded while a pattern is selected belong to that
+    // pattern. Each entry: { id, target, points }. Points are in
+    // pattern-local bar coords (0 = pattern start, lengthBars = pattern
+    // end). Playback walker feeds these to the same set_channel_gain /
+    // set_wet_dry / set_channel_pan etc. commands.
+    p.automation = Array.isArray(p.automation) ? p.automation : [];
+    p.automation.forEach(a => {
+      a.id = a.id || 'auto_' + Math.random().toString(36).slice(2, 8);
+      a.target = a.target || { kind: 'channel_volume', ownerId: '' };
+      a.points = Array.isArray(a.points) ? a.points : [];
+      a.points.sort((x, y) => x.bar - y.bar);
+    });
   });
   s.tracks.forEach(t => {
     t.muted = !!t.muted;
@@ -5626,6 +5639,35 @@ function renderPlaylist() {
           el.style.background = `linear-gradient(135deg, ${p.color}, ${p.color}cc)`;
           el.textContent = p.name;
           el.title = `${p.name} · ${p.notes.length} notes · drag to move · alt-drag to copy · click to edit`;
+          // Baked automation overlay — one SVG polyline per entry, drawn
+          // on top of the MIDI clip so the curve is visible in-place. Uses
+          // the pattern's local bar range (so a stretched clip stretches
+          // the curve visually to match).
+          if (Array.isArray(p.automation) && p.automation.length) {
+            for (const entry of p.automation) {
+              const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+              svg.setAttribute('preserveAspectRatio', 'none');
+              svg.setAttribute('viewBox', '0 0 100 100');
+              svg.dataset.bakedId = entry.id;
+              svg.style.cssText =
+                'position:absolute; left:0; top:0; width:100%; height:100%;' +
+                ' pointer-events:none;';
+              const pts = (entry.points || []).map(pt => {
+                const x = p.lengthBars > 0 ? (pt.bar / p.lengthBars) * 100 : 0;
+                const y = 100 - normalizeAutomationDisplay(entry.target, pt.value) * 100;
+                return `${x.toFixed(2)},${y.toFixed(2)}`;
+              }).join(' ');
+              const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+              poly.setAttribute('points', pts);
+              poly.setAttribute('fill', 'none');
+              poly.setAttribute('stroke', '#ff2d9c');
+              poly.setAttribute('stroke-width', '2');
+              poly.setAttribute('vector-effect', 'non-scaling-stroke');
+              poly.setAttribute('opacity', '0.9');
+              svg.appendChild(poly);
+              el.appendChild(svg);
+            }
+          }
         } else {
           el.textContent = '(missing pattern)'; el.style.background = '#444';
         }
@@ -6862,12 +6904,93 @@ function refreshClipCurve(clip, pattern) {
   poly.setAttribute('points', pts);
 }
 
-// Record-mode capture. FL model: append the point to the automation
-// PATTERN for this target (one pattern per unique target). Auto-create
-// pattern + playlist clip on first touch if either is missing; every
-// subsequent drag during the same record session lands in the same
-// pattern, so no runaway clip proliferation.
+// Record-mode capture. Two paths:
+//   (a) If the currently-selected pattern is a MIDI pattern, the knob move
+//       is baked INTO that pattern's automation[] (FL model — automation
+//       belongs to the pattern you were shaping).
+//   (b) Otherwise, fall back to free-floating: find or create a stand-alone
+//       automation pattern for this target (unchanged from the prior model).
 function captureAutomationPoint(target, value) {
+  const currentPat = song.patterns.find(p => p.id === currentPatternId);
+  if (currentPat && !currentPat.__automation) {
+    captureBakedAutomation(currentPat, target, value);
+    return;
+  }
+  captureFreeFloatingAutomation(target, value);
+}
+
+// Baked: append a breakpoint to the pattern's own automation[]. Bar coord
+// is pattern-local (PAT mode: current loop position mod pattern length;
+// SONG mode: relative to the pattern clip covering the current playhead).
+function captureBakedAutomation(pattern, target, value) {
+  const beatsPerSec = song.bpm / 60;
+  let bar;
+  if (song.transportMode === 'pat') {
+    const elapsedBars = engineTransport.elapsedSecondsLive() * beatsPerSec / 4;
+    bar = ((elapsedBars % pattern.lengthBars) + pattern.lengthBars) % pattern.lengthBars;
+  } else {
+    // SONG: find the active playlist clip pointing at this pattern.
+    const currentBar = engineTransport.transportSecondsLive() * beatsPerSec / 4;
+    let clip = null;
+    for (const t of song.tracks) {
+      for (const c of (t.clips || [])) {
+        if (c.type !== 'pattern' || c.patternId !== pattern.id) continue;
+        if (currentBar < c.startBar) continue;
+        if (currentBar > c.startBar + c.lengthBars) continue;
+        clip = c;
+        break;
+      }
+      if (clip) break;
+    }
+    if (!clip) return; // pattern not on the playlist right now
+    const localClipBar = currentBar - clip.startBar;
+    const stretch = pattern.lengthBars / clip.lengthBars;
+    bar = Math.max(0, Math.min(pattern.lengthBars, localClipBar * stretch));
+  }
+  pattern.automation = pattern.automation || [];
+  let entry = pattern.automation.find(a => targetsMatch(a.target, target));
+  const isNew = !entry;
+  if (!entry) {
+    entry = {
+      id: 'auto_' + Math.random().toString(36).slice(2, 8),
+      target: JSON.parse(JSON.stringify(target)),
+      points: [],
+    };
+    pattern.automation.push(entry);
+  }
+  entry.points.push({ bar, value });
+  entry.points.sort((a, b) => a.bar - b.bar);
+  if (isNew) {
+    renderPlaylist();
+  } else {
+    refreshBakedAutomationCurves(pattern.id, entry.id);
+  }
+}
+
+// Update the SVG overlay for every visible playlist clip that references
+// `patternId` and has an overlay for entry `entryId`. Called on every
+// record-mode drag tick for a live-growing curve.
+function refreshBakedAutomationCurves(patternId, entryId) {
+  const pattern = song.patterns.find(p => p.id === patternId);
+  if (!pattern) return;
+  const entry = (pattern.automation || []).find(a => a.id === entryId);
+  if (!entry) return;
+  document.querySelectorAll(`svg[data-baked-id="${entryId}"]`).forEach(svg => {
+    const poly = svg.querySelector('polyline');
+    if (!poly) return;
+    const pts = (entry.points || []).map(pt => {
+      const x = pattern.lengthBars > 0 ? (pt.bar / pattern.lengthBars) * 100 : 0;
+      const y = 100 - normalizeAutomationDisplay(entry.target, pt.value) * 100;
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    }).join(' ');
+    poly.setAttribute('points', pts);
+  });
+}
+
+// Fallback path — used when there's no MIDI pattern selected. Creates or
+// grows a free-floating automation pattern (visible in the sidebar as its
+// own pattern) with a playlist clip on the Automation track.
+function captureFreeFloatingAutomation(target, value) {
   if (song.transportMode !== 'song') return;
   const beatsPerSec = song.bpm / 60;
   const currentBar = engineTransport.transportSecondsLive() * beatsPerSec / 4;
@@ -6945,24 +7068,57 @@ function captureAutomationPoint(target, value) {
 // is no playlist playhead to align clips against, so automation is a no-op).
 setInterval(() => {
   if (!engineTransport.isPlaying) return;
-  if (song.transportMode !== 'song') return;
   const beatsPerSec = song.bpm / 60;
-  const currentBar = engineTransport.transportSecondsLive() * beatsPerSec / 4;
   const patternById = new Map(song.patterns.map(p => [p.id, p]));
+
+  if (song.transportMode === 'pat') {
+    // PAT mode: only the currently-selected MIDI pattern's baked
+    // automation plays. Free-floating automation clips on the playlist
+    // are ignored here — they belong to SONG.
+    const pat = patternById.get(currentPatternId);
+    if (!pat || pat.__automation) return;
+    if (!Array.isArray(pat.automation) || !pat.automation.length) return;
+    const elapsedBars = engineTransport.elapsedSecondsLive() * beatsPerSec / 4;
+    const patternBar = ((elapsedBars % pat.lengthBars) + pat.lengthBars) % pat.lengthBars;
+    for (const entry of pat.automation) {
+      const v = interpolateAutomationPoints(entry.points, patternBar);
+      applyAutomationValue(entry.target, v);
+    }
+    return;
+  }
+
+  // SONG mode: iterate playlist clips. Order matters — baked automation
+  // fires AFTER free-floating for the same target so a MIDI pattern's
+  // baked curve wins over a competing free-floating clip.
+  const currentBar = engineTransport.transportSecondsLive() * beatsPerSec / 4;
+  const bakedApplications = [];
   for (const track of song.tracks) {
     if (track.muted) continue;
     for (const clip of track.clips) {
       if (clip.type !== 'pattern') continue;
       const pattern = patternById.get(clip.patternId);
-      if (!pattern || !pattern.__automation) continue;
+      if (!pattern) continue;
       if (currentBar < clip.startBar) continue;
       if (currentBar > clip.startBar + clip.lengthBars) continue;
       const localClipBar = currentBar - clip.startBar;
       const stretch = pattern.lengthBars / clip.lengthBars;
       const patternBar = localClipBar * stretch;
-      const v = interpolateAutomationPoints(pattern.points, patternBar);
-      applyAutomationValue(pattern.target, v);
+      if (pattern.__automation) {
+        // Free-floating automation pattern — dispatch immediately.
+        const v = interpolateAutomationPoints(pattern.points, patternBar);
+        applyAutomationValue(pattern.target, v);
+      } else if (Array.isArray(pattern.automation) && pattern.automation.length) {
+        // MIDI pattern with baked automation — defer to a second pass.
+        for (const entry of pattern.automation) {
+          bakedApplications.push({ target: entry.target, points: entry.points, patternBar });
+        }
+      }
     }
+  }
+  // Second pass — baked wins over free-floating for the same target.
+  for (const a of bakedApplications) {
+    const v = interpolateAutomationPoints(a.points, a.patternBar);
+    applyAutomationValue(a.target, v);
   }
 }, 16);
 
