@@ -80,6 +80,7 @@ static bool commandMutatesGraph(const juce::String& cmd) {
         || cmd == "remove_effect"
         || cmd == "reorder_effects"
         || cmd == "bypass_effect"
+        || cmd == "set_wet_dry"
         || cmd == "set_channel_target"
         || cmd == "create_bus"
         || cmd == "reset_graph"
@@ -305,6 +306,16 @@ juce::var StdioBridge::handleCommand(const juce::var& msg) {
         host.setParam(msg["channelId"].toString(),
                       msg["slotId"].toString(),
                       (int) msg["paramIndex"], (float) msg["value"]);
+        return {};
+    }
+
+    if (cmd == "set_wet_dry") {
+        // FLOW-owned wet/dry wrap for an effect slot. Sets wetGain/dryGain
+        // on the pair of gain nodes the engine created around the plugin,
+        // plugin-agnostic — no plugin param routing required.
+        host.setEffectWetDry(msg["channelId"].toString(),
+                             msg["slotId"].toString(),
+                             (float) msg["value"]);
         return {};
     }
 

@@ -117,6 +117,10 @@ public:
     void removeEffect(const juce::String& channelId, const juce::String& slotId);
     void reorderEffects(const juce::String& channelId, const juce::StringArray& newOrder);
     void bypassEffect(const juce::String& channelId, const juce::String& slotId, bool bypassed);
+    // FLOW-owned wet/dry mix for the effect at (channelId, slotId). Value is
+    // clamped to [0, 1]. Sets wetGain to `value` and dryGain to `1 - value`.
+    // Plugin-agnostic — the plugin doesn't need to expose a mix param.
+    void setEffectWetDry(const juce::String& channelId, const juce::String& slotId, float value);
     void showEffectUI(const juce::String& channelId, const juce::String& slotId);
     void hideEffectUI(const juce::String& channelId, const juce::String& slotId);
 
@@ -313,8 +317,16 @@ private:
 
     struct EffectSlot {
         juce::String slotId;
-        juce::AudioProcessorGraph::NodeID nodeId;
+        juce::AudioProcessorGraph::NodeID nodeId;         // plugin node
+        // FLOW-owned wet/dry wrap. Two gain nodes in the graph form a parallel
+        // topology: prev → plugin → wetGain and prev → dryGain, both feeding
+        // the next stage's input where JUCE auto-sums them. Linear mix:
+        // wetGain.gain = wetDry, dryGain.gain = 1 - wetDry. Plugin-agnostic,
+        // works even when the plugin exposes no mix param.
+        juce::AudioProcessorGraph::NodeID wetGainNodeId;
+        juce::AudioProcessorGraph::NodeID dryGainNodeId;
         bool bypassed = false;
+        float wetDry = 1.0f;  // 0 = fully dry (bypass-like), 1 = fully wet
     };
 
     // One outgoing signal send. Stored on the source ChannelSlot. General

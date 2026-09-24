@@ -6684,51 +6684,24 @@ function renderMixerSlots() {
       removeEffectFromChannel(owner.id, fx.slotId);
     });
     // Wet/dry knob per FL Studio slot. Only rendered for filled slots.
-    // Routes to the plugin's own "Dry/Wet Mix" (or Mix) parameter if it
-    // exposes one; otherwise the value still persists to fx.wetDry so the
-    // AI sees the intent — the plugin just can't act on it. Zero engine
-    // work: uses the same set_param path the AI already uses.
+    // Routes to the engine's FLOW-owned wet/dry wrap around this effect —
+    // plugin-agnostic. Every effect gets a working mix regardless of what
+    // params the plugin exposes. Linear mix: 100% wet by default.
     const wetdrySlot = row.querySelector('.mslot-wetdry');
     if (wetdrySlot && fx && owner) {
-      const params = Array.isArray(fx.params) ? fx.params : null;
-      // Priority order: real mix params first, then wet-alone fallbacks
-      // (e.g. reverbs that expose "Wet Level" instead of a single mix).
-      // Fallbacks are a proxy — they push wet toward the intended blend
-      // but don't touch the plugin's dry level.
-      const findParam = (preds) => params && params.find(p => {
-        const n = (p.name || '').toLowerCase();
-        return preds.some(fn => fn(n));
-      });
-      const wetDryParam = findParam([
-        n => n === 'mix' || n === 'dry/wet' || n === 'wet/dry' || n === 'drywet' || n === 'wetdry',
-        n => n.includes('dry/wet') || n.includes('wet/dry'),
-        n => n.includes('dry wet') || n.includes('wet dry'),
-        n => n.includes('drywet') || n.includes('wetdry'),
-        n => n.includes('mix') && !n.includes('mixer'),
-        n => n === 'wet' || n === 'wetness' || n === 'blend' || n === 'balance',
-        n => n.includes('wet level') || n.includes('wet gain') || n.includes('wet amount'),
-      ]);
-      const noMatchTip = params && params.length
-        ? `Wet/dry: ${Math.round((fx.wetDry ?? 1) * 100)}% — this plugin has ${params.length} params but none look like wet/dry. Click the effect to open its UI and adjust manually.`
-        : `Wet/dry: ${Math.round((fx.wetDry ?? 1) * 100)}% — plugin params not loaded yet, try after playing once`;
       const wetKnob = makeKnob({
         value: fx.wetDry ?? 1, min: 0, max: 1, defaultValue: 1,
         sensitivity: 0.005,
-        title: wetDryParam
-          ? `Wet/dry: ${Math.round((fx.wetDry ?? 1) * 100)}% — routed to plugin "${wetDryParam.name}"`
-          : noMatchTip,
+        title: `Wet/dry: ${Math.round((fx.wetDry ?? 1) * 100)}% — drag to blend, dbl-click for 100% wet`,
         onChange: (v) => {
           fx.wetDry = v;
-          if (wetDryParam && window.nasty && window.nasty.engine) {
+          if (window.nasty && window.nasty.engine) {
             window.nasty.engine.send({
-              cmd: 'set_param', channelId: engineOwnerId(owner.id),
-              slotId: fx.slotId, paramIndex: wetDryParam.index, value: v,
+              cmd: 'set_wet_dry', channelId: engineOwnerId(owner.id),
+              slotId: fx.slotId, value: v,
             });
-            wetDryParam.value = v;
           }
-          wetKnob.title = wetDryParam
-            ? `Wet/dry: ${Math.round(v * 100)}% — routed to plugin "${wetDryParam.name}"`
-            : noMatchTip.replace(/\d+%/, Math.round(v * 100) + '%');
+          wetKnob.title = `Wet/dry: ${Math.round(v * 100)}% — drag to blend, dbl-click for 100% wet`;
           persist();
         },
       });
@@ -10957,6 +10930,13 @@ async function hydratePluginChannels() {
       if (fx.bypassed) {
         window.nasty.engine.send({
           cmd: 'bypass_effect', channelId: engineId, slotId: fx.slotId, bypassed: true,
+        });
+      }
+      // Restore FLOW-owned wet/dry wrap value. Engine defaults to 1.0 (all
+      // wet) on add, so only send when the persisted value differs.
+      if (fx.wetDry != null && fx.wetDry !== 1) {
+        window.nasty.engine.send({
+          cmd: 'set_wet_dry', channelId: engineId, slotId: fx.slotId, value: fx.wetDry,
         });
       }
     }

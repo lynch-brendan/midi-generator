@@ -1155,7 +1155,11 @@ void PluginHost::rewireChannelUnlocked(ChannelSlot& slot) {
     auto isChannelNode = [&](Graph::NodeID nid) {
         if (nid == slot.pluginNodeId) return true;
         if (nid == slot.gainNodeId)   return true;
-        for (const auto& e : slot.effects) if (nid == e.nodeId) return true;
+        for (const auto& e : slot.effects) {
+            if (nid == e.nodeId) return true;
+            if (nid == e.wetGainNodeId) return true;
+            if (nid == e.dryGainNodeId) return true;
+        }
         return false;
     };
 
@@ -1219,23 +1223,55 @@ void PluginHost::rewireChannelUnlocked(ChannelSlot& slot) {
         graph.removeConnection(c);
     }
 
-    // Reconnect: source (instrument or bus input) → each active effect → gain → target.
-    Graph::NodeID prev = slot.pluginNodeId;
+    // Reconnect: source → each active effect (via wet/dry wrap) → gain → target.
+    // Each active effect uses parallel routing: prev feeds both the plugin
+    // (wet path) and the dryGain node (dry path). Both wetGain and dryGain
+    // outputs then feed the NEXT stage's input, where JUCE's graph auto-sums
+    // multiple inputs into one target. `prevs` tracks the current set of
+    // outputs — usually one, but two while walking between wet/dry-wrapped
+    // effects. Legacy effects with no wet/dry nodes fall back to serial.
+    std::vector<Graph::NodeID> prevs = { slot.pluginNodeId };
     for (auto& e : slot.effects) {
         if (e.bypassed) continue;
-        for (int ch = 0; ch < 2; ++ch) {
-            graph.addConnection({{prev, ch}, {e.nodeId, ch}});
+        const bool hasWrap = (e.wetGainNodeId != Graph::NodeID{}
+                           && e.dryGainNodeId != Graph::NodeID{});
+        for (auto srcId : prevs) {
+            for (int ch = 0; ch < 2; ++ch) {
+                // Wet path: prev → plugin input
+                graph.addConnection({{srcId, ch}, {e.nodeId, ch}});
+                // Dry path (only if wrap is present): prev → dryGain input
+                if (hasWrap) {
+                    graph.addConnection({{srcId, ch}, {e.dryGainNodeId, ch}});
+                }
+            }
         }
-        prev = e.nodeId;
+        if (hasWrap) {
+            // Wet path continues: plugin output → wetGain
+            for (int ch = 0; ch < 2; ++ch) {
+                graph.addConnection({{e.nodeId, ch}, {e.wetGainNodeId, ch}});
+            }
+            prevs = { e.wetGainNodeId, e.dryGainNodeId };
+        } else {
+            prevs = { e.nodeId };
+        }
     }
     // Route through the channel's own audio gain stage before the target so
     // setChannelGain applies to actual audio samples. Legacy slots without a
     // gain node fall back to direct-to-target wiring.
+    Graph::NodeID prev;
     if (slot.gainNodeId != Graph::NodeID{}) {
-        for (int ch = 0; ch < 2; ++ch) {
-            graph.addConnection({{prev, ch}, {slot.gainNodeId, ch}});
+        for (auto srcId : prevs) {
+            for (int ch = 0; ch < 2; ++ch) {
+                graph.addConnection({{srcId, ch}, {slot.gainNodeId, ch}});
+            }
         }
         prev = slot.gainNodeId;
+    } else {
+        // No gain node — very legacy path. Sends and target routing below
+        // want a single scalar `prev`; if we have multiple parallel outputs
+        // here we collapse by using the first (works but bypasses summing).
+        // In practice every channel has a gain node.
+        prev = prevs.empty() ? slot.pluginNodeId : prevs.front();
     }
     // Only wire the main output if we actually resolved a target. When the
     // user has explicitly emptied their main sends, targetNodeId stays
@@ -1479,25 +1515,68 @@ juce::String PluginHost::addEffect(const juce::String& channelId,
     }
     std::cerr << "[addEffect] step4 added node to graph" << std::endl;
 
+    // Create the FLOW-owned wet/dry wrap for this slot. Two gain nodes in
+    // parallel — wetGain multiplied by wetDry, dryGain by 1 - wetDry. The
+    // rewire pass reads both to build the parallel topology. Default is 100%
+    // wet, matching the previous no-wrap behaviour so nothing changes
+    // audibly until the user turns the knob down.
+    auto wetGainNode = addGainNode();
+    auto dryGainNode = addGainNode();
+    if (wetGainNode == nullptr || dryGainNode == nullptr) {
+        std::cerr << "[addEffect] FAIL: graph rejected wet/dry gain nodes" << std::endl;
+        if (wetGainNode) graph.removeNode(wetGainNode->nodeID);
+        if (dryGainNode) graph.removeNode(dryGainNode->nodeID);
+        graph.removeNode(effectNode->nodeID);
+        return juce::String("graph rejected wet/dry gain nodes");
+    }
+    if (auto* wp = dynamic_cast<AudioGain*>(wetGainNode->getProcessor()))
+        wp->gain.store(1.0f);
+    if (auto* dp = dynamic_cast<AudioGain*>(dryGainNode->getProcessor()))
+        dp->gain.store(0.0f);
+
     std::lock_guard<std::mutex> lock(mutex);
     auto it = channels.find(channelId);
     if (it == channels.end()) {
         std::cerr << "[addEffect] FAIL: channel not found: " << channelId << std::endl;
         graph.removeNode(effectNode->nodeID);
+        graph.removeNode(wetGainNode->nodeID);
+        graph.removeNode(dryGainNode->nodeID);
         return "Channel not found: " + channelId;
     }
-    // Replace if a slot with this id already exists (idempotent add).
+    // Replace if a slot with this id already exists (idempotent add). Keep
+    // the existing wet/dry gain nodes if the slot already had them so the
+    // user's chosen mix survives a plugin swap; only create new wrap nodes
+    // for legacy slots (pre-wet/dry-wrap era) that lack them.
     for (auto& e : it->second.effects) {
         if (e.slotId == slotId) {
             graph.removeNode(e.nodeId);
             e.nodeId = effectNode->nodeID;
             e.bypassed = false;
+            if (e.wetGainNodeId == Graph::NodeID{} || e.dryGainNodeId == Graph::NodeID{}) {
+                // Adopt the freshly-created wrap nodes and seed them from
+                // whatever wetDry the slot already had (defaults to 1.0).
+                e.wetGainNodeId = wetGainNode->nodeID;
+                e.dryGainNodeId = dryGainNode->nodeID;
+                if (auto* wp = dynamic_cast<AudioGain*>(wetGainNode->getProcessor()))
+                    wp->gain.store(e.wetDry);
+                if (auto* dp = dynamic_cast<AudioGain*>(dryGainNode->getProcessor()))
+                    dp->gain.store(1.0f - e.wetDry);
+            } else {
+                // Slot already had wrap nodes — discard the freshly-created
+                // spares so we don't leak them into the graph.
+                graph.removeNode(wetGainNode->nodeID);
+                graph.removeNode(dryGainNode->nodeID);
+            }
             rewireChannelUnlocked(it->second);
             std::cerr << "[addEffect] DONE (replaced existing slot)" << std::endl;
             return {};
         }
     }
-    it->second.effects.push_back({ slotId, effectNode->nodeID, false });
+    it->second.effects.push_back({
+        slotId, effectNode->nodeID,
+        wetGainNode->nodeID, dryGainNode->nodeID,
+        false, 1.0f
+    });
     rewireChannelUnlocked(it->second);
     // Loading a new effect on this bus may have introduced a 4-in plugin
     // (compressor with sidechain). Any deferred sidechain sends into this
@@ -1516,6 +1595,8 @@ void PluginHost::removeEffect(const juce::String& channelId, const juce::String&
     auto found = std::find_if(fx.begin(), fx.end(),
                               [&](const EffectSlot& e) { return e.slotId == slotId; });
     if (found == fx.end()) return;
+    if (found->wetGainNodeId != Graph::NodeID{}) graph.removeNode(found->wetGainNodeId);
+    if (found->dryGainNodeId != Graph::NodeID{}) graph.removeNode(found->dryGainNodeId);
     graph.removeNode(found->nodeId);
     fx.erase(found);
     rewireChannelUnlocked(it->second);
@@ -1547,6 +1628,31 @@ void PluginHost::reorderEffects(const juce::String& channelId, const juce::Strin
     it->second.effects = std::move(reordered);
     rewireChannelUnlocked(it->second);
     rewireSendSourcesToUnlocked(channelId);
+}
+
+void PluginHost::setEffectWetDry(const juce::String& channelId, const juce::String& slotId, float value) {
+    value = juce::jlimit(0.0f, 1.0f, value);
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = channels.find(channelId);
+    if (it == channels.end()) return;
+    for (auto& e : it->second.effects) {
+        if (e.slotId != slotId) continue;
+        e.wetDry = value;
+        // Atomic stores on AudioGain — the audio thread picks these up on
+        // its next processBlock. No rewire needed; we're only changing gain
+        // values, not the graph topology.
+        if (e.wetGainNodeId != Graph::NodeID{}) {
+            if (auto node = graph.getNodeForId(e.wetGainNodeId))
+                if (auto* p = dynamic_cast<AudioGain*>(node->getProcessor()))
+                    p->gain.store(value);
+        }
+        if (e.dryGainNodeId != Graph::NodeID{}) {
+            if (auto node = graph.getNodeForId(e.dryGainNodeId))
+                if (auto* p = dynamic_cast<AudioGain*>(node->getProcessor()))
+                    p->gain.store(1.0f - value);
+        }
+        return;
+    }
 }
 
 void PluginHost::bypassEffect(const juce::String& channelId, const juce::String& slotId, bool bypassed) {
