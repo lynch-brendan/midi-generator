@@ -512,6 +512,9 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .channel-row .ch-left .cvol { width: 130px; }
+  .channel-row .ch-left .cpan-slot {
+    display: inline-flex; align-items: center; padding: 0 2px;
+  }
   .channel-row .ch-left .chnum {
     display: inline-block; min-width: 22px; padding: 2px 5px;
     background: #1a1d22; border: 1px solid #333; border-radius: 2px;
@@ -5834,6 +5837,7 @@ function renderChannelRack() {
       <span class="swatch" style="background:${ch.color}"></span>
       <span class="cname" title="${escapeHtml(ch.instrument)}${ch.drumPitch != null ? ' · pitch ' + ch.drumPitch : ''}">${escapeHtml(ch.name)}</span>
       <input class="cvol" type="range" min="0" max="1" step="0.001" value="${faderGainToPosition(ch.volume)}" data-ch="${ch.id}" title="volume · ${volToDb(ch.volume)} dB" />
+      <span class="cpan-slot" data-ch="${ch.id}"></span>
       <span class="cbtns">
         <button class="${ch.muted?'on-mute':''}" data-a="mute" data-ch="${ch.id}">M</button>
         <button class="${ch.solo?'on-solo':''}" data-a="solo" data-ch="${ch.id}">S</button>
@@ -5841,6 +5845,23 @@ function renderChannelRack() {
       </span>
     `;
     wireChannelNumRouting(left.querySelector('.chnum'), ch);
+    // Pan knob (-1..+1). Visual-only persistence for now; engine pan-node
+    // routing lands in a later piece (T1P5).
+    const panSlot = left.querySelector('.cpan-slot');
+    if (panSlot) {
+      const displayPan = (v) => v === 0 ? 'C' : (v < 0 ? Math.round(-v * 100) + 'L' : Math.round(v * 100) + 'R');
+      const panKnob = makeKnob({
+        value: ch.pan ?? 0, min: -1, max: 1, defaultValue: 0,
+        sensitivity: 0.01,
+        title: 'Pan: ' + displayPan(ch.pan ?? 0) + ' — drag to change, dbl-click centers',
+        onChange: (v) => {
+          ch.pan = v;
+          panKnob.title = 'Pan: ' + displayPan(v) + ' — drag to change, dbl-click centers';
+          persist();
+        },
+      });
+      panSlot.appendChild(panKnob);
+    }
     row.appendChild(left);
 
     // Step grid — OR piano-roll preview if the channel has been painted
