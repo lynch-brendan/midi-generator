@@ -2554,7 +2554,7 @@ const PR_BEAT_WIDTH = 96; // fixed zoom — pattern scrolls horizontally if it's
 const PR_PITCH_MIN = 24;
 const PR_PITCH_MAX = 108;
 const STORAGE_KEY = 'nasty.song.fl.v1';
-const SONG_SCHEMA_VERSION = 8;
+const SONG_SCHEMA_VERSION = 9;
 const PALETTE = ['#ff5c93','#6b7cff','#33c58a','#ffb020','#a95cff','#ff7c47','#42c8e0','#e05cff','#ffdd57','#5cff8f'];
 
 let song = { version: SONG_SCHEMA_VERSION, bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] }, sections: [], transportMode: 'pat' };
@@ -2986,7 +2986,18 @@ function ensureShape(s) {
   s.patterns.forEach((p, i) => {
     p.notes = p.notes || [];
     p.color = p.color || PALETTE[i % PALETTE.length];
-    recomputePatternLength(p); // fit-to-notes on load
+    // Automation patterns carry a target + points array. `notes` stays as
+    // an empty array so any generic note-reading code doesn't crash on
+    // them. Length is defined by the pattern; clips referencing it can
+    // stretch/repeat.
+    if (p.__automation) {
+      p.target = p.target || { kind: 'channel_volume', ownerId: '' };
+      p.points = Array.isArray(p.points) ? p.points : [];
+      p.points.sort((a, b) => a.bar - b.bar);
+      p.lengthBars = Math.max(0.25, Number.isFinite(p.lengthBars) ? p.lengthBars : 4);
+    } else {
+      recomputePatternLength(p); // fit-to-notes on load
+    }
   });
   s.tracks.forEach(t => {
     t.muted = !!t.muted;
@@ -3020,11 +3031,34 @@ function ensureShape(s) {
   // absence of automation clips is fine for pre-v8 songs. Structure:
   //   { type:"automation", id, target:{kind, ownerId, slotId?, paramIndex?},
   //     startBar, lengthBars, points:[{bar, value}] }
-  // target.kind: channel_volume | channel_pan | bus_volume | bus_pan
-  //            | bus_stereo_width | effect_wetdry | plugin_param
-  // Points are linear breakpoints in clip-local bar coords. Client walks
-  // them at ~60Hz during playback and dispatches through existing engine
-  // commands (set_channel_gain / set_channel_pan / set_wet_dry / set_param).
+  // v8 → v9: automation goes FL-style. Instead of inline data on the clip,
+  // every automation clip is a pattern (in song.patterns, appears in the
+  // patterns list), and playlist clips are all type "pattern" referencing
+  // patternId. Migration extracts inline data from any v8 automation clips
+  // into new automation patterns, then rewrites the clip to point at them.
+  if ((s.version || 1) < 9) {
+    for (const t of (s.tracks || [])) {
+      if (!Array.isArray(t.clips)) continue;
+      for (const c of t.clips) {
+        if (!c || c.type !== 'automation') continue;
+        const patId = 'pat_auto_' + Math.random().toString(36).slice(2, 8);
+        s.patterns.push({
+          id: patId,
+          name: describeAutomationTarget(c.target) || 'Automation',
+          lengthBars: c.lengthBars,
+          color: '#ff2d9c',
+          notes: [],
+          __automation: true,
+          target: c.target,
+          points: c.points || [],
+        });
+        c.type = 'pattern';
+        c.patternId = patId;
+        delete c.target;
+        delete c.points;
+      }
+    }
+  }
   // v6 → v7: master insert gets a NastyMasterLimiter effect by default so
   // FLOW output loudness is competitive with mastered media at the same
   // system volume. Only runs once — if the user removes the limiter, the
@@ -3647,8 +3681,12 @@ function playSong() {
       const sr = engineTransport.sampleRate || 48000;
       const secPerBeat = 60 / song.bpm;
       const countInSamples = Math.round(4 * secPerBeat * sr);
+      // Only the SESSION seeks negative for count-in. Pattern position
+      // must stay at 0 — some engine paths gate on pattern position ≥ 0,
+      // and driving the pattern negative was causing an extra pause
+      // between the last count-in beat and the first pattern note firing.
       engineTransport.seek(startSample - countInSamples);
-      engineTransport.seekPattern(startSample - countInSamples);
+      engineTransport.seekPattern(0);
       engineTransport.setMetronomeEnabled(true);
       setTimeout(() => {
         engineTransport.setMetronomeEnabled(metronomeChecked);
@@ -5549,45 +5587,42 @@ function renderPlaylist() {
       if (clip.id === selectedClipId || selectedClipIds.has(clip.id)) el.classList.add('selected');
       el.style.left = (clip.startBar * BAR_WIDTH) + 'px';
       el.style.width = (clip.lengthBars * BAR_WIDTH) + 'px';
-      if (clip.type === 'automation') {
-        // Colored block + SVG polyline connecting the breakpoints. Curve is
-        // in clip-local space (bar 0 → left, bar lengthBars → right; value
-        // normalized via normalizeAutomationDisplay so different target
-        // ranges all draw within the block). Bright pink + thick border so
-        // it's visually distinct from pattern (magenta) and audio (green).
-        el.style.background = 'linear-gradient(135deg, #ff2d9c, #ff2d9cee)';
-        el.style.border = '2px solid #ff88bb';
-        el.style.boxShadow = '0 0 8px rgba(255, 45, 156, 0.6)';
-        el.title = describeAutomationTarget(clip.target) + ' · '
-          + clip.points.length + ' points · drag to move · delete to remove';
-        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        svg.setAttribute('preserveAspectRatio', 'none');
-        svg.setAttribute('viewBox', '0 0 100 100');
-        svg.style.cssText =
-          'position:absolute; left:0; top:0; width:100%; height:100%;' +
-          ' pointer-events:none; opacity:0.9;';
-        const pts = (clip.points || []).map(p => {
-          const x = clip.lengthBars > 0 ? (p.bar / clip.lengthBars) * 100 : 0;
-          const y = 100 - normalizeAutomationDisplay(clip.target, p.value) * 100;
-          return `${x.toFixed(2)},${y.toFixed(2)}`;
-        }).join(' ');
-        const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-        poly.setAttribute('points', pts);
-        poly.setAttribute('fill', 'none');
-        poly.setAttribute('stroke', '#fff');
-        poly.setAttribute('stroke-width', '1.5');
-        poly.setAttribute('vector-effect', 'non-scaling-stroke');
-        svg.appendChild(poly);
-        el.appendChild(svg);
-        const label = document.createElement('div');
-        label.textContent = describeAutomationTarget(clip.target);
-        label.style.cssText =
-          'position:relative; z-index:1; pointer-events:none;' +
-          ' font-size:10px; padding:2px 4px; text-shadow: 0 1px 1px rgba(0,0,0,0.5);';
-        el.appendChild(label);
-      } else if (clip.type === 'pattern') {
+      if (clip.type === 'pattern') {
         const p = patternById.get(clip.patternId);
-        if (p) {
+        if (p && p.__automation) {
+          // Automation pattern clip — pink block with curve inside.
+          el.classList.add('automation');
+          el.style.background = 'linear-gradient(135deg, #ff2d9c, #ff2d9cee)';
+          el.style.border = '2px solid #ff88bb';
+          el.style.boxShadow = '0 0 8px rgba(255, 45, 156, 0.6)';
+          el.title = describeAutomationTarget(p.target) + ' · '
+            + p.points.length + ' points · drag to move · delete to remove';
+          const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+          svg.setAttribute('preserveAspectRatio', 'none');
+          svg.setAttribute('viewBox', '0 0 100 100');
+          svg.style.cssText =
+            'position:absolute; left:0; top:0; width:100%; height:100%;' +
+            ' pointer-events:none; opacity:0.9;';
+          const pts = (p.points || []).map(pt => {
+            const x = p.lengthBars > 0 ? (pt.bar / p.lengthBars) * 100 : 0;
+            const y = 100 - normalizeAutomationDisplay(p.target, pt.value) * 100;
+            return `${x.toFixed(2)},${y.toFixed(2)}`;
+          }).join(' ');
+          const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+          poly.setAttribute('points', pts);
+          poly.setAttribute('fill', 'none');
+          poly.setAttribute('stroke', '#fff');
+          poly.setAttribute('stroke-width', '1.5');
+          poly.setAttribute('vector-effect', 'non-scaling-stroke');
+          svg.appendChild(poly);
+          el.appendChild(svg);
+          const label = document.createElement('div');
+          label.textContent = describeAutomationTarget(p.target);
+          label.style.cssText =
+            'position:relative; z-index:1; pointer-events:none;' +
+            ' font-size:10px; padding:2px 4px; text-shadow: 0 1px 1px rgba(0,0,0,0.5);';
+          el.appendChild(label);
+        } else if (p) {
           el.style.background = `linear-gradient(135deg, ${p.color}, ${p.color}cc)`;
           el.textContent = p.name;
           el.title = `${p.name} · ${p.notes.length} notes · drag to move · alt-drag to copy · click to edit`;
@@ -6144,24 +6179,39 @@ function renderPatternList() {
   const channelById = new Map(song.channels.map(c => [c.id, c]));
   for (const p of song.patterns) {
     const row = document.createElement('div');
-    row.className = 'pattern-row' + (p.id === currentPatternId ? ' current' : '');
+    row.className = 'pattern-row'
+      + (p.id === currentPatternId ? ' current' : '')
+      + (p.__automation ? ' automation' : '');
     row.draggable = true;
     row.dataset.patId = p.id;
-    const chSet = new Set(p.notes.map(n => n.channelId));
-    const chDots = [...chSet].map(cid => {
-      const c = channelById.get(cid);
-      return c ? `<span class="ch-dot" style="background:${c.color}" title="${escapeHtml(c.name)}"></span>` : '';
-    }).join('');
-    row.innerHTML = `
-      <span class="swatch" style="background:${p.color}"></span>
-      <span class="pname">${escapeHtml(p.name)}</span>
-      <span class="chs">${chDots}</span>
-      <span class="pinfo">${p.notes.length} notes · ${p.lengthBars} bars</span>
-      <span class="pbtns">
-        <button data-a="edit" data-pid="${p.id}" title="Open piano roll">edit</button>
-        <button data-a="del" data-pid="${p.id}" title="Delete pattern">✕</button>
-      </span>
-    `;
+    // Automation patterns show target name instead of channel dots + note
+    // count. Edit button hidden for now (curve editing lands later).
+    if (p.__automation) {
+      row.innerHTML = `
+        <span class="swatch" style="background:${p.color}"></span>
+        <span class="pname">${escapeHtml(p.name)}</span>
+        <span class="pinfo">${(p.points || []).length} points · ${p.lengthBars} bars · auto</span>
+        <span class="pbtns">
+          <button data-a="del" data-pid="${p.id}" title="Delete pattern">✕</button>
+        </span>
+      `;
+    } else {
+      const chSet = new Set(p.notes.map(n => n.channelId));
+      const chDots = [...chSet].map(cid => {
+        const c = channelById.get(cid);
+        return c ? `<span class="ch-dot" style="background:${c.color}" title="${escapeHtml(c.name)}"></span>` : '';
+      }).join('');
+      row.innerHTML = `
+        <span class="swatch" style="background:${p.color}"></span>
+        <span class="pname">${escapeHtml(p.name)}</span>
+        <span class="chs">${chDots}</span>
+        <span class="pinfo">${p.notes.length} notes · ${p.lengthBars} bars</span>
+        <span class="pbtns">
+          <button data-a="edit" data-pid="${p.id}" title="Open piano roll">edit</button>
+          <button data-a="del" data-pid="${p.id}" title="Delete pattern">✕</button>
+        </span>
+      `;
+    }
     row.addEventListener('click', (e) => {
       // Let the row's own buttons (edit / delete) handle their own clicks.
       if (e.target.closest('button')) return;
@@ -6617,7 +6667,7 @@ function openKnobMenu(target, currentValue, x, y) {
   setTimeout(() => document.addEventListener('mousedown', onDocMouseDown), 0);
   const item = document.getElementById('km-create-auto');
   if (item) item.addEventListener('click', () => {
-    createAutomationClip(target, currentValue);
+    createAutomationPattern(target, currentValue);
     closeMenu();
   });
 }
@@ -6667,40 +6717,48 @@ function normalizeAutomationDisplay(target, value) {
   }
 }
 
-function createAutomationClip(target, initialValue) {
-  // Auto-create a dedicated Automation track if one doesn't exist yet. All
-  // automation clips go here for now — one shared lane keeps the initial
-  // UX simple. Later we can split into one track per unique target.
+// Create-or-reuse an automation pattern for `target` (FL model: every
+// automation clip is a pattern in the patterns list). One pattern per
+// unique target — reused if right-clicked twice on the same knob. Drops
+// a playlist clip pointing at the pattern on the shared Automation track.
+function createAutomationPattern(target, initialValue) {
+  let pattern = song.patterns.find(p =>
+    p.__automation && targetsMatch(p.target, target));
+  if (!pattern) {
+    const curMidiPat = song.patterns.find(p => p.id === currentPatternId && !p.__automation);
+    const lengthBars = Math.max(4, curMidiPat ? (curMidiPat.lengthBars || 4) : 4);
+    pattern = {
+      id: 'pat_auto_' + Math.random().toString(36).slice(2, 8),
+      name: describeAutomationTarget(target),
+      lengthBars,
+      color: '#ff2d9c',
+      notes: [],
+      __automation: true,
+      target: JSON.parse(JSON.stringify(target)),
+      points: [
+        { bar: 0, value: initialValue },
+        { bar: lengthBars, value: initialValue },
+      ],
+    };
+    song.patterns.push(pattern);
+  }
+  // Automation track: one dedicated track at the top of the playlist that
+  // holds every automation clip. Keeps them out of the way of your MIDI
+  // arrangement lanes.
   let autoTrack = song.tracks.find(t => t.__automation === true);
   if (!autoTrack) {
     autoTrack = {
-      id: 'track_auto',
-      name: 'Automation',
-      __automation: true,
-      clips: [],
-      muted: false,
-      solo: false,
+      id: 'track_auto', name: 'Automation', __automation: true,
+      clips: [], muted: false, solo: false,
     };
-    // Unshift so the automation track sits at the TOP of the playlist —
-    // impossible to miss when you scroll to your visible bars.
     song.tracks.unshift(autoTrack);
   }
-  // Length: fit the current pattern if PAT mode, else 4 bars. Two
-  // breakpoints at the same value = flat clip; user then either records
-  // over it (moves the knob during record-mode play) or the curve editor
-  // (later) reshapes it.
-  const curPat = song.patterns.find(p => p.id === currentPatternId);
-  const lengthBars = curPat ? (curPat.lengthBars || 4) : 4;
   const clip = {
-    id: 'clip_auto_' + Math.random().toString(36).slice(2, 10),
-    type: 'automation',
-    target: JSON.parse(JSON.stringify(target)), // defensive copy
+    id: 'clip_' + Math.random().toString(36).slice(2, 10),
+    type: 'pattern',
+    patternId: pattern.id,
     startBar: 0,
-    lengthBars,
-    points: [
-      { bar: 0, value: initialValue },
-      { bar: lengthBars, value: initialValue },
-    ],
+    lengthBars: pattern.lengthBars,
   };
   autoTrack.clips.push(clip);
   render();
@@ -6790,35 +6848,53 @@ function targetsMatch(a, b) {
 }
 
 // Direct SVG update — cheap enough to run every capture tick without a
-// full playlist re-render.
-function refreshClipCurve(clip) {
+// full playlist re-render. Reads points from the pattern the clip points at.
+function refreshClipCurve(clip, pattern) {
   const el = document.querySelector(`.clip[data-clip-id="${clip.id}"]`);
   if (!el) return;
   const poly = el.querySelector('svg polyline');
   if (!poly) return;
-  const pts = (clip.points || []).map(p => {
-    const x = clip.lengthBars > 0 ? (p.bar / clip.lengthBars) * 100 : 0;
-    const y = 100 - normalizeAutomationDisplay(clip.target, p.value) * 100;
+  const pts = (pattern.points || []).map(p => {
+    const x = pattern.lengthBars > 0 ? (p.bar / pattern.lengthBars) * 100 : 0;
+    const y = 100 - normalizeAutomationDisplay(pattern.target, p.value) * 100;
     return `${x.toFixed(2)},${y.toFixed(2)}`;
   }).join(' ');
   poly.setAttribute('points', pts);
 }
 
-// Record-mode capture. Called from the wrapped onChange inside makeKnob
-// whenever the user drags a knob during record+play. Finds or auto-creates
-// an automation clip covering the current playhead bar and appends the
-// point. Uses direct SVG update to avoid full re-renders per drag frame.
+// Record-mode capture. FL model: append the point to the automation
+// PATTERN for this target (one pattern per unique target). Auto-create
+// pattern + playlist clip on first touch if either is missing; every
+// subsequent drag during the same record session lands in the same
+// pattern, so no runaway clip proliferation.
 function captureAutomationPoint(target, value) {
-  if (song.transportMode !== 'song') return; // automation runs on the playlist
+  if (song.transportMode !== 'song') return;
   const beatsPerSec = song.bpm / 60;
   const currentBar = engineTransport.transportSecondsLive() * beatsPerSec / 4;
-  // Look for an existing clip on any track that (a) matches this target
-  // and (b) covers the current playhead bar.
+  // Find or create the automation pattern for this target.
+  let pattern = song.patterns.find(p =>
+    p.__automation && targetsMatch(p.target, target));
+  let createdPattern = false;
+  if (!pattern) {
+    pattern = {
+      id: 'pat_auto_' + Math.random().toString(36).slice(2, 8),
+      name: describeAutomationTarget(target),
+      lengthBars: Math.max(4, song.bars || 32),
+      color: '#ff2d9c',
+      notes: [],
+      __automation: true,
+      target: JSON.parse(JSON.stringify(target)),
+      points: [],
+    };
+    song.patterns.push(pattern);
+    createdPattern = true;
+  }
+  // Find a playlist clip pointing at this pattern that covers the current
+  // bar. If none, drop a fresh one on the automation track.
   let clip = null;
   for (const t of song.tracks) {
-    for (const c of t.clips || []) {
-      if (c.type !== 'automation') continue;
-      if (!targetsMatch(c.target, target)) continue;
+    for (const c of (t.clips || [])) {
+      if (c.type !== 'pattern' || c.patternId !== pattern.id) continue;
       if (currentBar < c.startBar) continue;
       if (currentBar > c.startBar + c.lengthBars) continue;
       clip = c;
@@ -6826,11 +6902,7 @@ function captureAutomationPoint(target, value) {
     }
     if (clip) break;
   }
-  // No matching clip → auto-create one on the shared Automation track,
-  // spanning bars [0, currentBar + some room]. Simpler than tracking
-  // "session started at bar N" — the clip covers everything from the
-  // playlist origin so subsequent captures during this session land in
-  // the same clip.
+  let createdClip = false;
   if (!clip) {
     let autoTrack = song.tracks.find(t => t.__automation === true);
     if (!autoTrack) {
@@ -6840,29 +6912,32 @@ function captureAutomationPoint(target, value) {
       };
       song.tracks.unshift(autoTrack);
     }
-    const lengthBars = Math.max(4, Math.ceil(currentBar) + 4);
     clip = {
-      id: 'clip_auto_' + Math.random().toString(36).slice(2, 10),
-      type: 'automation',
-      target: JSON.parse(JSON.stringify(target)),
+      id: 'clip_' + Math.random().toString(36).slice(2, 10),
+      type: 'pattern',
+      patternId: pattern.id,
       startBar: 0,
-      lengthBars,
-      points: [{ bar: 0, value }],
+      lengthBars: pattern.lengthBars,
     };
     autoTrack.clips.push(clip);
-    // Only re-render the playlist — a full render() would rebuild the
-    // mixer and channel rack, destroying the knob element the user is
-    // currently dragging. That was the "first drag doesn't budge until
-    // I release and re-grab" bug.
-    renderPlaylist();
-    persist();
-    return;
+    createdClip = true;
   }
-  const localBar = currentBar - clip.startBar;
-  const clamped = Math.max(0, Math.min(clip.lengthBars, localBar));
-  clip.points.push({ bar: clamped, value });
-  clip.points.sort((a, b) => a.bar - b.bar);
-  refreshClipCurve(clip);
+  // Local bar in clip time → local bar in pattern time (clip may be
+  // stretched vs pattern, though for MVP they match 1:1).
+  const localClipBar = currentBar - clip.startBar;
+  const stretch = pattern.lengthBars / clip.lengthBars;
+  const patternBar = Math.max(0, Math.min(pattern.lengthBars, localClipBar * stretch));
+  pattern.points.push({ bar: patternBar, value });
+  pattern.points.sort((a, b) => a.bar - b.bar);
+  if (createdPattern || createdClip) {
+    // Only re-render the playlist + pattern list. A full render() would
+    // rebuild the mixer + channel rack and destroy the knob the user is
+    // dragging — that was the "first drag doesn't budge" bug.
+    renderPlaylist();
+    renderPatternList();
+  } else {
+    refreshClipCurve(clip, pattern);
+  }
 }
 
 // Curve walker. Permanent 60 Hz tick — checks transport state itself so no
@@ -6873,15 +6948,20 @@ setInterval(() => {
   if (song.transportMode !== 'song') return;
   const beatsPerSec = song.bpm / 60;
   const currentBar = engineTransport.transportSecondsLive() * beatsPerSec / 4;
+  const patternById = new Map(song.patterns.map(p => [p.id, p]));
   for (const track of song.tracks) {
     if (track.muted) continue;
     for (const clip of track.clips) {
-      if (clip.type !== 'automation') continue;
+      if (clip.type !== 'pattern') continue;
+      const pattern = patternById.get(clip.patternId);
+      if (!pattern || !pattern.__automation) continue;
       if (currentBar < clip.startBar) continue;
       if (currentBar > clip.startBar + clip.lengthBars) continue;
-      const local = currentBar - clip.startBar;
-      const v = interpolateAutomationPoints(clip.points, local);
-      applyAutomationValue(clip.target, v);
+      const localClipBar = currentBar - clip.startBar;
+      const stretch = pattern.lengthBars / clip.lengthBars;
+      const patternBar = localClipBar * stretch;
+      const v = interpolateAutomationPoints(pattern.points, patternBar);
+      applyAutomationValue(pattern.target, v);
     }
   }
 }, 16);
