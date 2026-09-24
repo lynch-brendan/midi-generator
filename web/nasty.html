@@ -6302,6 +6302,7 @@ function renderPatternList() {
         <span class="pname">${escapeHtml(p.name)}</span>
         <span class="pinfo">${(p.points || []).length} points · ${p.lengthBars} bars · auto</span>
         <span class="pbtns">
+          <button data-a="edit-auto" data-pid="${p.id}" title="Open curve editor">edit</button>
           <button data-a="del" data-pid="${p.id}" title="Delete pattern">✕</button>
         </span>
       `;
@@ -9046,6 +9047,15 @@ function onPatternBtn(e) {
   const p = song.patterns.find(pt => pt.id === pid);
   if (!p) return;
   if (a === 'edit') { currentPatternId = pid; hotSwapCurrentPatternIfPlaying(); openPianoRoll(pid); }
+  else if (a === 'edit-auto') {
+    openAutomationEditor({
+      target: p.target,
+      points: p.points,
+      lengthBars: p.lengthBars,
+      label: p.name || describeAutomationTarget(p.target),
+      onEdit: () => { renderPlaylist(); persist(); },
+    });
+  }
   else if (a === 'del') {
     if (confirm('Delete pattern "' + p.name + '"?')) {
       song.patterns = song.patterns.filter(pt => pt !== p);
