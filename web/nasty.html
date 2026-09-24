@@ -1035,6 +1035,34 @@
     font-variant-numeric: tabular-nums;
     padding: 1px 0;
   }
+  /* Small FL-style knob for pan / stereo-width / wet-dry. Vertical drag to
+     change (matches BPM readout drag). Shift-drag for fine control.
+     Double-click resets to default. Grouped in a `.knob-row` on each strip. */
+  .mixer-strip .knob-row {
+    display: flex; justify-content: center; gap: 4px;
+    padding: 2px 0;
+  }
+  .knob {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #4a5058, #24272c 70%, #14171c);
+    border: 1px solid #14171c;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.08);
+    position: relative; cursor: ns-resize;
+    flex-shrink: 0;
+  }
+  .knob::before {
+    content: ""; position: absolute;
+    left: 50%; top: 2px;
+    width: 2px; height: 6px; background: #d6dae0;
+    border-radius: 1px;
+    transform-origin: 50% 8px;
+    transform: translateX(-50%) rotate(var(--knob-angle, 0deg));
+    box-shadow: 0 0 2px rgba(255,255,255,0.4);
+  }
+  .knob:hover { filter: brightness(1.15); }
+  .knob.disabled {
+    opacity: 0.35; cursor: not-allowed;
+  }
 
   /* Slot panel — right side, FL-style effect chain for the selected strip. */
   #mixer-slots-panel {
@@ -6051,6 +6079,7 @@ function renderMixer() {
     id: 'master', name: 'Master', volume: master.volume,
     color: null, kind: 'master', fxCount: 0,
     muted: false, solo: false,
+    pan: master.pan ?? 0, stereoWidth: master.stereoWidth ?? 1,
   }));
 
   // Insert bus strips (Insert 1..20). This is where all effects live.
@@ -6089,6 +6118,7 @@ function renderMixer() {
       recArmed: !!b.recArmed,
       sidechainActive: !!scSend,
       sidechainLabel: scTargetLabel,
+      pan: b.pan ?? 0, stereoWidth: b.stereoWidth ?? 1,
     }));
   }
 
@@ -6260,7 +6290,57 @@ document.addEventListener('DOMContentLoaded', () => {
   window.addEventListener('resize', drawMixerWires);
 });
 
-function buildStrip({ id, name, volume, color, kind, fxCount, muted, solo, num, audioInputEnabled, recArmed, sidechainActive, sidechainLabel }) {
+// Small FL-style rotary knob. Vertical drag = value change (up increases,
+// down decreases). Shift-drag for fine control. Double-click resets to
+// `defaultValue`. `min`/`max` bound the value; `sensitivity` is the units
+// changed per pixel of drag. Returns the DOM element.
+function makeKnob({ value, min, max, defaultValue, sensitivity, title, onChange, disabled }) {
+  const el = document.createElement('div');
+  el.className = 'knob' + (disabled ? ' disabled' : '');
+  el.title = title || '';
+  const setAngle = (v) => {
+    const t = (v - min) / (max - min); // 0..1
+    // -135° at min, +135° at max — leaves the top-facing gap FL-style.
+    const angle = -135 + t * 270;
+    el.style.setProperty('--knob-angle', angle + 'deg');
+  };
+  setAngle(value);
+  if (disabled) return el;
+  el.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startY = e.clientY;
+    const startVal = value;
+    el.setPointerCapture(e.pointerId);
+    const onMove = (ev) => {
+      const dy = startY - ev.clientY; // up = positive
+      const step = ev.shiftKey ? sensitivity * 0.2 : sensitivity;
+      let v = startVal + dy * step;
+      if (v < min) v = min;
+      if (v > max) v = max;
+      value = v;
+      setAngle(v);
+      onChange(v);
+    };
+    const onUp = (ev) => {
+      el.releasePointerCapture(e.pointerId);
+      el.removeEventListener('pointermove', onMove);
+      el.removeEventListener('pointerup', onUp);
+    };
+    el.addEventListener('pointermove', onMove);
+    el.addEventListener('pointerup', onUp);
+  });
+  el.addEventListener('dblclick', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    value = defaultValue;
+    setAngle(defaultValue);
+    onChange(defaultValue);
+  });
+  return el;
+}
+
+function buildStrip({ id, name, volume, color, kind, fxCount, muted, solo, num, audioInputEnabled, recArmed, sidechainActive, sidechainLabel, pan, stereoWidth }) {
   const strip = document.createElement('div');
   strip.className = 'mixer-strip' + (kind === 'master' ? ' master' : '');
   strip.dataset.id = id;
@@ -6276,6 +6356,7 @@ function buildStrip({ id, name, volume, color, kind, fxCount, muted, solo, num, 
     <div class="mstate">
       <div class="led ${muted ? '' : 'on'}" title="active"></div>
     </div>
+    <div class="knob-row" data-knob-row="${id}"></div>
     ${isBus ? `<div class="mixin ${audioInputEnabled ? 'on' : ''}" data-mixin-id="${id}" title="${audioInputEnabled ? 'Mic feeding this insert — click to remove' : 'Route a mic / audio input into this insert'}"><span class="mixin-led"></span>IN</div>` : ''}
     ${isBus && audioInputEnabled ? `<div class="mixarm ${recArmed ? 'on' : ''}" data-arm-id="${id}" title="${recArmed ? 'Armed — recording will capture this input' : 'Arm for recording'}"><span class="mixarm-disc"></span></div>` : ''}
     <div class="fxcount">${fxCount ? fxCount + ' FX' : '·'}</div>
@@ -6328,6 +6409,33 @@ function buildStrip({ id, name, volume, color, kind, fxCount, muted, solo, num, 
   fader.addEventListener('input', () => onStripFader(id, kind, faderPositionToGain(parseFloat(fader.value))));
   const nameEl = strip.querySelector('.mname');
   if (!isMaster) nameEl.addEventListener('blur', () => onStripRename(id, nameEl.textContent.trim()));
+  // Pan (-1..+1) and stereo/mono width (0..1) knobs. Visual-only for now —
+  // stored in song JSON but engine audio routing lands in a later piece.
+  const knobRow = strip.querySelector('.knob-row');
+  if (knobRow) {
+    const displayPan = (v) => v === 0 ? 'C' : (v < 0 ? Math.round(-v * 100) + 'L' : Math.round(v * 100) + 'R');
+    const displayWidth = (v) => v <= 0.005 ? 'MONO' : Math.round(v * 100) + '%';
+    const panKnob = makeKnob({
+      value: pan ?? 0, min: -1, max: 1, defaultValue: 0,
+      sensitivity: 0.01,
+      title: 'Pan: ' + displayPan(pan ?? 0) + ' — drag to change, dbl-click centers',
+      onChange: (v) => {
+        onStripPan(id, kind, v);
+        panKnob.title = 'Pan: ' + displayPan(v) + ' — drag to change, dbl-click centers';
+      },
+    });
+    const widthKnob = makeKnob({
+      value: stereoWidth ?? 1, min: 0, max: 1, defaultValue: 1,
+      sensitivity: 0.005,
+      title: 'Stereo width: ' + displayWidth(stereoWidth ?? 1) + ' — drag down for mono',
+      onChange: (v) => {
+        onStripStereoWidth(id, kind, v);
+        widthKnob.title = 'Stereo width: ' + displayWidth(v) + ' — drag down for mono';
+      },
+    });
+    knobRow.appendChild(panKnob);
+    knobRow.appendChild(widthKnob);
+  }
   return strip;
 }
 
@@ -6385,6 +6493,30 @@ function onStripFader(id, kind, value) {
 function onStripRename(id, name) {
   const ch = song.channels.find(c => c.id === id);
   if (ch && name) { ch.name = name; render(); }
+}
+
+// Pan / stereo-width persist to song JSON. Engine audio routing lands in a
+// later piece — until then these knobs are visual state that the AI can also
+// read from song context, and that survives save/reload.
+function onStripPan(id, kind, value) {
+  if (kind === 'master') {
+    const m = song.mixer.inserts.find(i => i.id === 'master');
+    if (m) m.pan = value;
+  } else if (kind === 'bus') {
+    const bus = (song.mixer.busses || []).find(b => b.id === id);
+    if (bus) bus.pan = value;
+  }
+  persist();
+}
+function onStripStereoWidth(id, kind, value) {
+  if (kind === 'master') {
+    const m = song.mixer.inserts.find(i => i.id === 'master');
+    if (m) m.stereoWidth = value;
+  } else if (kind === 'bus') {
+    const bus = (song.mixer.busses || []).find(b => b.id === id);
+    if (bus) bus.stereoWidth = value;
+  }
+  persist();
 }
 
 function renderMixerSlots() {
