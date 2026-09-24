@@ -1111,6 +1111,10 @@
     color: var(--dim); font-size: 10px; padding: 0 4px;
     opacity: 0; transition: opacity 0.1s;
   }
+  .mslot .mslot-wetdry {
+    display: inline-flex; align-items: center; padding: 0 2px;
+    flex-shrink: 0;
+  }
   .mslot:hover .mslot-x { opacity: 1; }
   .mslot .mslot-x:hover { color: var(--record); }
 
@@ -6597,6 +6601,7 @@ function renderMixerSlots() {
       <span class="mslot-idx">${i + 1}</span>
       <span class="mslot-led" title="bypass"></span>
       <span class="mslot-name">${fx ? escapeHtml(fx.name || fx.pluginId) : '—'}</span>
+      <span class="mslot-wetdry" data-slot-idx="${i}"></span>
       <span class="mslot-x" title="remove">✕</span>
     `;
     // Drop target for a plugin dragged from the Browser.
@@ -6655,6 +6660,47 @@ function renderMixerSlots() {
       e.stopPropagation();
       removeEffectFromChannel(owner.id, fx.slotId);
     });
+    // Wet/dry knob per FL Studio slot. Only rendered for filled slots.
+    // Routes to the plugin's own "Dry/Wet Mix" (or Mix) parameter if it
+    // exposes one; otherwise the value still persists to fx.wetDry so the
+    // AI sees the intent — the plugin just can't act on it. Zero engine
+    // work: uses the same set_param path the AI already uses.
+    const wetdrySlot = row.querySelector('.mslot-wetdry');
+    if (wetdrySlot && fx && owner) {
+      const params = Array.isArray(fx.params) ? fx.params : null;
+      const wetDryParam = params ? params.find(p => {
+        const n = (p.name || '').toLowerCase();
+        return n === 'mix' || n === 'dry/wet' || n === 'wet/dry'
+            || n.includes('dry/wet') || n.includes('wet/dry')
+            || n.includes('dry wet') || n.includes('wet dry')
+            || (n.includes('mix') && !n.includes('mixer'));
+      }) : null;
+      const wetKnob = makeKnob({
+        value: fx.wetDry ?? 1, min: 0, max: 1, defaultValue: 1,
+        sensitivity: 0.005,
+        title: wetDryParam
+          ? `Wet/dry: ${Math.round((fx.wetDry ?? 1) * 100)}% — routed to plugin "${wetDryParam.name}"`
+          : `Wet/dry: ${Math.round((fx.wetDry ?? 1) * 100)}% — this plugin doesn't expose a wet/dry param, value stored but silent`,
+        onChange: (v) => {
+          fx.wetDry = v;
+          if (wetDryParam && window.nasty && window.nasty.engine) {
+            window.nasty.engine.send({
+              cmd: 'set_param', channelId: engineOwnerId(owner.id),
+              slotId: fx.slotId, paramIndex: wetDryParam.index, value: v,
+            });
+            wetDryParam.value = v;
+          }
+          wetKnob.title = wetDryParam
+            ? `Wet/dry: ${Math.round(v * 100)}% — routed to plugin "${wetDryParam.name}"`
+            : `Wet/dry: ${Math.round(v * 100)}% — this plugin doesn't expose a wet/dry param, value stored but silent`;
+          persist();
+        },
+      });
+      // Stop propagation so clicking the knob doesn't open the plugin UI.
+      wetKnob.addEventListener('click', (e) => e.stopPropagation());
+      wetKnob.addEventListener('dblclick', (e) => e.stopPropagation());
+      wetdrySlot.appendChild(wetKnob);
+    }
     list.appendChild(row);
   }
 }
