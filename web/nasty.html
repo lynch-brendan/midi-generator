@@ -3636,15 +3636,32 @@ function playSong() {
     // edits during playback are a later delta-push optimisation.
     engineTransport.pushSongArrangement();
     const lenBeats = engineTransport.songLengthBeats();
-    // Honor a ruler-click seek made while stopped. Falls back to 0 when the
-    // user hasn't manually placed the playhead since the last full reset.
-    engineTransport.seek(pendingStartSample || 0);
-    engineTransport.seekPattern(pendingStartSample || 0);
+    // Count-in when RECORD is armed and the checkbox is on. Same shape as
+    // the MIDI record path: seek to a negative session sample so the
+    // engine's metronome fires the 4 lead-in beats before hitting bar 0,
+    // then restore the user's metronome preference once count-in ends.
+    const wantCountIn = recArmed && !!document.getElementById('count-in')?.checked;
+    const metronomeChecked = !!document.getElementById('metronome')?.checked;
+    const startSample = pendingStartSample || 0;
+    if (wantCountIn) {
+      const sr = engineTransport.sampleRate || 48000;
+      const secPerBeat = 60 / song.bpm;
+      const countInSamples = Math.round(4 * secPerBeat * sr);
+      engineTransport.seek(startSample - countInSamples);
+      engineTransport.seekPattern(startSample - countInSamples);
+      engineTransport.setMetronomeEnabled(true);
+      setTimeout(() => {
+        engineTransport.setMetronomeEnabled(metronomeChecked);
+      }, 4 * secPerBeat * 1000 + 60);
+    } else {
+      engineTransport.seek(startSample);
+      engineTransport.seekPattern(startSample);
+      engineTransport.setMetronomeEnabled(metronomeChecked);
+    }
     // setLoopBeats sizes the PatternPlayer loop — not what SONG uses for
     // playback, but keeps the "pattern position" state consistent and lets
     // animatePlayhead's SONG branch use songLengthBeats for its own wrap.
     engineTransport.setLoopBeats(lenBeats);
-    engineTransport.setMetronomeEnabled(!!document.getElementById('metronome')?.checked);
     engineTransport.play();
     document.getElementById('playhead').style.display = 'block';
     animatePlayhead();
@@ -6833,7 +6850,12 @@ function captureAutomationPoint(target, value) {
       points: [{ bar: 0, value }],
     };
     autoTrack.clips.push(clip);
-    render();
+    // Only re-render the playlist — a full render() would rebuild the
+    // mixer and channel rack, destroying the knob element the user is
+    // currently dragging. That was the "first drag doesn't budge until
+    // I release and re-grab" bug.
+    renderPlaylist();
+    persist();
     return;
   }
   const localBar = currentBar - clip.startBar;
