@@ -477,7 +477,17 @@
   .channel-row .cbtns button.on-arm { background: var(--arm); border-color: var(--arm); color: white; }
   .pattern-row.current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
   .pattern-row[draggable=true] { cursor: grab; }
-  .pattern-row .pinfo { color: var(--dim); font-size: 9px; }
+  .pattern-row .pinfo {
+    color: var(--dim); font-size: 9px;
+    flex-shrink: 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  /* Row-name column shrinks before the buttons do — buttons must always
+     stay visible even in a narrow sidebar. */
+  .pattern-row .pname {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .pattern-row .pbtns { flex-shrink: 0; }
   .ch-dot {
     display: inline-block; width: 8px; height: 8px; border-radius: 50%;
     margin-right: 2px; vertical-align: middle;
@@ -6325,8 +6335,8 @@ function renderPatternList() {
         <span class="chs">${chDots}</span>
         <span class="pinfo">${p.notes.length} notes · ${p.lengthBars} bars</span>
         <span class="pbtns">
-          <button data-a="edit" data-pid="${p.id}" title="Open piano roll">edit</button>
           <button data-a="edit-baked" data-pid="${p.id}" title="${autoTitle}">auto</button>
+          <button data-a="edit" data-pid="${p.id}" title="Open piano roll">edit</button>
           <button data-a="del" data-pid="${p.id}" title="Delete pattern">✕</button>
         </span>
       `;
