@@ -6312,13 +6312,13 @@ function renderPatternList() {
         const c = channelById.get(cid);
         return c ? `<span class="ch-dot" style="background:${c.color}" title="${escapeHtml(c.name)}"></span>` : '';
       }).join('');
-      // Show "auto" button when the MIDI pattern has any baked automation.
-      // Click opens the curve editor for it (or a picker if there are
-      // multiple baked entries).
+      // Auto button always shown on MIDI pattern rows. Click opens a
+      // picker of baked automation entries; if empty, the picker shows a
+      // hint on how to add one (RECORD + play + drag a knob).
       const bakedCount = Array.isArray(p.automation) ? p.automation.length : 0;
-      const autoBtn = bakedCount > 0
-        ? `<button data-a="edit-baked" data-pid="${p.id}" title="Edit this pattern's ${bakedCount} baked automation${bakedCount > 1 ? 's' : ''}">auto</button>`
-        : '';
+      const autoTitle = bakedCount > 0
+        ? `${bakedCount} baked automation${bakedCount > 1 ? 's' : ''} · click to edit`
+        : 'No automation yet · click for how to record one';
       row.innerHTML = `
         <span class="swatch" style="background:${p.color}"></span>
         <span class="pname">${escapeHtml(p.name)}</span>
@@ -6326,7 +6326,7 @@ function renderPatternList() {
         <span class="pinfo">${p.notes.length} notes · ${p.lengthBars} bars</span>
         <span class="pbtns">
           <button data-a="edit" data-pid="${p.id}" title="Open piano roll">edit</button>
-          ${autoBtn}
+          <button data-a="edit-baked" data-pid="${p.id}" title="${autoTitle}">auto</button>
           <button data-a="del" data-pid="${p.id}" title="Delete pattern">✕</button>
         </span>
       `;
@@ -6789,12 +6789,22 @@ function openBakedPicker(anchorEl, pattern) {
   if (!menu) return;
   const rect = anchorEl.getBoundingClientRect();
   let html = `<div class="rm-header">${escapeHtml(pattern.name)} · automations</div>`;
-  for (const entry of pattern.automation) {
-    const label = describeAutomationTarget(entry.target);
-    html += `<div class="rm-item" data-entry-id="${entry.id}">${escapeHtml(label)} · ${entry.points.length} pts</div>`;
+  const entries = Array.isArray(pattern.automation) ? pattern.automation : [];
+  if (entries.length === 0) {
+    // Empty state — teach the user how to add one instead of just an
+    // empty menu.
+    html += `<div class="rm-item" style="cursor:default;color:var(--dim);font-style:italic;white-space:normal;line-height:1.4">
+      No automation yet.<br>
+      Select this pattern, turn on RECORD (●), hit play, and drag any knob during playback. The curve will bake into this pattern.
+    </div>`;
+  } else {
+    for (const entry of entries) {
+      const label = describeAutomationTarget(entry.target);
+      html += `<div class="rm-item" data-entry-id="${entry.id}">${escapeHtml(label)} · ${entry.points.length} pts</div>`;
+    }
+    html += `<div class="rm-sep"></div>`;
+    html += `<div class="rm-item destructive" data-clear-baked="1">Delete ALL automation on this pattern</div>`;
   }
-  html += `<div class="rm-sep"></div>`;
-  html += `<div class="rm-item destructive" data-clear-baked="1">Delete ALL automation on this pattern</div>`;
   menu.innerHTML = html;
   menu.style.left = rect.left + 'px';
   menu.style.top  = (rect.bottom + 4) + 'px';
@@ -9120,12 +9130,12 @@ function onPatternBtn(e) {
   }
   else if (a === 'edit-baked') {
     // MIDI pattern with baked automation. One entry → open its editor
-    // directly. Multiple → popup a picker menu at the button so the user
-    // can choose which target to edit.
+    // directly. Multiple → popup a picker. Zero → picker with a hint
+    // (so the button is discoverable BEFORE the user has recorded).
     const entries = Array.isArray(p.automation) ? p.automation : [];
     if (entries.length === 1) {
       openBakedEntryEditor(p, entries[0]);
-    } else if (entries.length > 1) {
+    } else {
       openBakedPicker(e.currentTarget, p);
     }
   }
