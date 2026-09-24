@@ -3732,11 +3732,27 @@ function playSong() {
   // fresh position — otherwise transitioning out of linear-record mode
   // (loop=1e12) would defer the new smaller loop as pending forever.
   engineTransport.pushPattern(pat);
-  engineTransport.seek(0);
-  // Honor a channel-rack-ruler seek made while stopped.
-  engineTransport.seekPattern(pendingPatternStartSample || 0);
+  const wantCountInPat = recArmed && !!document.getElementById('count-in')?.checked;
+  const metronomeCheckedPat = !!document.getElementById('metronome')?.checked;
+  if (wantCountInPat) {
+    const sr = engineTransport.sampleRate || 48000;
+    const secPerBeat = 60 / song.bpm;
+    const countInSamples = Math.round(4 * secPerBeat * sr);
+    // Session time seeks negative for count-in; pattern position stays at 0
+    // so the pattern doesn't start advancing until the count-in clicks are
+    // done. Matches the MIDI-record path.
+    engineTransport.seek(-countInSamples);
+    engineTransport.seekPattern(0);
+    engineTransport.setMetronomeEnabled(true);
+    setTimeout(() => {
+      engineTransport.setMetronomeEnabled(metronomeCheckedPat);
+    }, 4 * secPerBeat * 1000 + 60);
+  } else {
+    engineTransport.seek(0);
+    engineTransport.seekPattern(pendingPatternStartSample || 0);
+    engineTransport.setMetronomeEnabled(metronomeCheckedPat);
+  }
   engineTransport.setLoopBeats(pat.lengthBars * 4);
-  engineTransport.setMetronomeEnabled(!!document.getElementById('metronome')?.checked);
   engineTransport.play();
   // In PAT mode we're looping the pattern, not scrubbing the playlist — hide
   // the playlist playhead so it doesn't confusingly march across the timeline.
@@ -6568,6 +6584,9 @@ function makeKnob({ value, min, max, defaultValue, sensitivity, title, onChange,
   const el = document.createElement('div');
   el.className = 'knob' + (disabled ? ' disabled' : '');
   el.title = title || '';
+  // Automation address: the walker looks up knobs by this data attribute
+  // to move them visually while playback drives their target parameter.
+  if (target) el.dataset.targetSig = targetSig(target);
   // Wrap onChange so record-mode drags automatically append a breakpoint
   // to the target's automation clip. When record isn't on, the wrapper is
   // just a pass-through — no extra cost.
@@ -6575,6 +6594,19 @@ function makeKnob({ value, min, max, defaultValue, sensitivity, title, onChange,
   onChange = (v) => {
     if (target && isRecordingAutomation()) captureAutomationPoint(target, v);
     rawOnChange(v);
+  };
+  // Automation → visual: the walker calls this to move the knob to match
+  // the target parameter's automated value each tick. Volume knobs live
+  // in fader-position space (0..1) while the parameter itself is gain
+  // (0..~2), so we translate; every other target maps 1:1 to the knob.
+  el._setDisplay = (v) => {
+    let displayV = v;
+    if (target && (target.kind === 'channel_volume' || target.kind === 'bus_volume')) {
+      displayV = faderGainToPosition(v);
+    }
+    if (displayV < min) displayV = min;
+    if (displayV > max) displayV = max;
+    setAngle(displayV);
   };
   const setAngle = (v) => {
     const t = (v - min) / (max - min); // 0..1
@@ -6825,11 +6857,15 @@ function interpolateAutomationPoints(points, bar) {
 }
 
 // Send a single automation value through to the engine via the same
-// command the user's knob would have fired. Does not touch song state —
-// stops leaving the state modified means the UI knob returns to its
-// user-set value on the next render, and persist doesn't fire on every
-// walker tick.
+// command the user's knob would have fired. Also nudges the visible knob
+// so it visually follows the automated value while the walker runs. Does
+// not touch song state — persist doesn't fire on every walker tick.
 function applyAutomationValue(target, value) {
+  // Move the knob visual to match the automated value. Cheap DOM query per
+  // tick — targetSig is small and there's usually just one knob per target.
+  const sig = targetSig(target);
+  const knob = document.querySelector(`.knob[data-target-sig="${sig}"]`);
+  if (knob && knob._setDisplay) knob._setDisplay(value);
   if (!(window.nasty && window.nasty.engine)) return;
   const engine = window.nasty.engine;
   const ownerEngineId = engineOwnerId(target.ownerId);
@@ -6887,6 +6923,12 @@ function targetsMatch(a, b) {
       && a.ownerId === b.ownerId
       && (a.slotId || '') === (b.slotId || '')
       && (a.paramIndex ?? -1) === (b.paramIndex ?? -1);
+}
+
+// Stable, CSS-selector-safe signature — indexed on the knob's data-target-sig
+// so the walker can locate a knob element for any (kind, owner, slot, param).
+function targetSig(target) {
+  return `${target.kind}|${target.ownerId||''}|${target.slotId||''}|${target.paramIndex??''}`;
 }
 
 // Direct SVG update — cheap enough to run every capture tick without a
@@ -7090,7 +7132,12 @@ setInterval(() => {
   // SONG mode: iterate playlist clips. Order matters — baked automation
   // fires AFTER free-floating for the same target so a MIDI pattern's
   // baked curve wins over a competing free-floating clip.
-  const currentBar = engineTransport.transportSecondsLive() * beatsPerSec / 4;
+  // Use elapsedSecondsLive (PatternPlayer position, which the engine wraps
+  // at song length) so the walker's bar cursor loops with the audio when
+  // the song reaches its end. transportSecondsLive is monotonic and would
+  // keep the walker past every clip forever after the first pass — that
+  // was the "loops but stays silent" bug (last value stuck at silence).
+  const currentBar = engineTransport.elapsedSecondsLive() * beatsPerSec / 4;
   const bakedApplications = [];
   for (const track of song.tracks) {
     if (track.muted) continue;
