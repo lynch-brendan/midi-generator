@@ -519,7 +519,12 @@ public:
 // volume. Users mastering their own can bypass or remove it.
 class NastyMasterLimiter : public juce::AudioProcessor {
 public:
-    std::atomic<float> makeupGain{2.0f}; // +6dB — chosen for FLOW-vs-YouTube parity
+    // 5x makeup → +14 dB of drive into the tanh saturator. Typical program
+    // content sits around -12 to -6 dBFS peak in a DAW mix; a mastered
+    // YouTube/Spotify track sits around -1 dBFS peak with limiting. The
+    // 14 dB drive + tanh soft-clip closes that loudness gap so FLOW playback
+    // feels roughly parity with mastered media at the same system volume.
+    std::atomic<float> makeupGain{5.0f};
 
     NastyMasterLimiter() : juce::AudioProcessor(BusesProperties()
         .withInput("In",  juce::AudioChannelSet::stereo(), true)

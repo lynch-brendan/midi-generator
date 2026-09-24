@@ -5536,8 +5536,11 @@ function renderPlaylist() {
         // Colored block + SVG polyline connecting the breakpoints. Curve is
         // in clip-local space (bar 0 → left, bar lengthBars → right; value
         // normalized via normalizeAutomationDisplay so different target
-        // ranges all draw within the block).
-        el.style.background = 'linear-gradient(135deg, #ff6a9c, #ff6a9ccc)';
+        // ranges all draw within the block). Bright pink + thick border so
+        // it's visually distinct from pattern (magenta) and audio (green).
+        el.style.background = 'linear-gradient(135deg, #ff2d9c, #ff2d9cee)';
+        el.style.border = '2px solid #ff88bb';
+        el.style.boxShadow = '0 0 8px rgba(255, 45, 156, 0.6)';
         el.title = describeAutomationTarget(clip.target) + ' · '
           + clip.points.length + ' points · drag to move · delete to remove';
         const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -6640,6 +6643,7 @@ function normalizeAutomationDisplay(target, value) {
 }
 
 function createAutomationClip(target, initialValue) {
+  console.log('[nasty] createAutomationClip fired for', target, 'value=', initialValue);
   // Auto-create a dedicated Automation track if one doesn't exist yet. All
   // automation clips go here for now — one shared lane keeps the initial
   // UX simple. Later we can split into one track per unique target.
@@ -6653,7 +6657,9 @@ function createAutomationClip(target, initialValue) {
       muted: false,
       solo: false,
     };
-    song.tracks.push(autoTrack);
+    // Unshift so the automation track sits at the TOP of the playlist —
+    // impossible to miss when you scroll to your visible bars.
+    song.tracks.unshift(autoTrack);
   }
   // Length: fit the current pattern if PAT mode, else 4 bars. Two
   // breakpoints at the same value = flat clip; user then either records
