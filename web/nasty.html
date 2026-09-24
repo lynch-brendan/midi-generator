@@ -477,17 +477,11 @@
   .channel-row .cbtns button.on-arm { background: var(--arm); border-color: var(--arm); color: white; }
   .pattern-row.current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
   .pattern-row[draggable=true] { cursor: grab; }
-  .pattern-row .pinfo {
-    color: var(--dim); font-size: 9px;
-    flex-shrink: 1; min-width: 0;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
-  /* Row-name column shrinks before the buttons do — buttons must always
-     stay visible even in a narrow sidebar. */
-  .pattern-row .pname {
-    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
-  .pattern-row .pbtns { flex-shrink: 0; }
+  .pattern-row .pinfo { color: var(--dim); font-size: 9px; }
+  /* Wrap when the sidebar is narrow — buttons drop to a second line
+     under the name instead of pushing it out of view. */
+  .pattern-row { flex-wrap: wrap; row-gap: 3px; }
+  .pattern-row .pbtns { flex-shrink: 0; margin-left: auto; }
   .ch-dot {
     display: inline-block; width: 8px; height: 8px; border-radius: 50%;
     margin-right: 2px; vertical-align: middle;
