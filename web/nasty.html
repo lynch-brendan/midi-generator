@@ -2554,7 +2554,7 @@ const PR_BEAT_WIDTH = 96; // fixed zoom — pattern scrolls horizontally if it's
 const PR_PITCH_MIN = 24;
 const PR_PITCH_MAX = 108;
 const STORAGE_KEY = 'nasty.song.fl.v1';
-const SONG_SCHEMA_VERSION = 6;
+const SONG_SCHEMA_VERSION = 7;
 const PALETTE = ['#ff5c93','#6b7cff','#33c58a','#ffb020','#a95cff','#ff7c47','#42c8e0','#e05cff','#ffdd57','#5cff8f'];
 
 let song = { version: SONG_SCHEMA_VERSION, bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] }, sections: [], transportMode: 'pat' };
@@ -2999,6 +2999,28 @@ function ensureShape(s) {
   // v5 → v6: pan (-1..+1) and stereoWidth (0..1) on channels + mixer strips,
   // and wetDry (0..1) per effect slot. Defaults above are additive; no data
   // migration needed. UI dials + engine routing land in later pieces.
+  // v6 → v7: master insert gets a NastyMasterLimiter effect by default so
+  // FLOW output loudness is competitive with mastered media at the same
+  // system volume. Only runs once — if the user removes the limiter, the
+  // song stamps v7 on next save and the migration doesn't re-add it.
+  if ((s.version || 1) < 7) {
+    const master = s.mixer.inserts.find(i => i.id === 'master');
+    if (master) {
+      master.effects = master.effects || [];
+      const hasLimiter = master.effects.some(e =>
+        e && e.type === 'plugin' && e.pluginId === 'nasty:master_limiter');
+      if (!hasLimiter) {
+        master.effects.push({
+          type: 'plugin',
+          slotId: 'fx_master_limiter',
+          pluginId: 'nasty:master_limiter',
+          name: 'MasterLimiter',
+          bypassed: false,
+          wetDry: 1,
+        });
+      }
+    }
+  }
   s.sections.forEach(sec => {
     sec.id = sec.id || 'sec_' + Math.random().toString(36).slice(2, 8);
     sec.name = sec.name || '';

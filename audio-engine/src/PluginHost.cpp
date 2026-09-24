@@ -510,6 +510,55 @@ public:
     void setStateInformation(const void*, int) override    {}
 };
 
+// FLOW-native master limiter. Sits on master_bus by default. Tanh saturation
+// with a fixed makeup gain — nearly linear at low signal (giving ~+6dB of
+// perceived loudness) and asymptotically limited at ±1 (no clipping, no
+// separate ceiling stage). Not a mastering limiter — no lookahead, no
+// separate attack/release. Just enough to close the loudness gap with
+// mastered media so FLOW output feels competitive at the same system
+// volume. Users mastering their own can bypass or remove it.
+class NastyMasterLimiter : public juce::AudioProcessor {
+public:
+    std::atomic<float> makeupGain{2.0f}; // +6dB — chosen for FLOW-vs-YouTube parity
+
+    NastyMasterLimiter() : juce::AudioProcessor(BusesProperties()
+        .withInput("In",  juce::AudioChannelSet::stereo(), true)
+        .withOutput("Out", juce::AudioChannelSet::stereo(), true)) {}
+    const juce::String getName() const override    { return "NastyMasterLimiter"; }
+    void prepareToPlay(double, int) override        {}
+    void releaseResources() override                {}
+    bool acceptsMidi() const override               { return false; }
+    bool producesMidi() const override              { return false; }
+    double getTailLengthSeconds() const override    { return 0.0; }
+    template <typename Sample>
+    void process(juce::AudioBuffer<Sample>& buf) {
+        auto inBus  = getBusBuffer(buf, true,  0);
+        auto outBus = getBusBuffer(buf, false, 0);
+        const int n = buf.getNumSamples();
+        const int ch = juce::jmin(inBus.getNumChannels(), outBus.getNumChannels());
+        const Sample g = (Sample) makeupGain.load(std::memory_order_relaxed);
+        for (int channel = 0; channel < ch; ++channel) {
+            const Sample* inP = inBus.getReadPointer(channel);
+            Sample* outP = outBus.getWritePointer(channel);
+            for (int s = 0; s < n; ++s) {
+                outP[s] = std::tanh(inP[s] * g);
+            }
+        }
+    }
+    void processBlock(juce::AudioBuffer<float>& buf, juce::MidiBuffer&) override  { process(buf); }
+    void processBlock(juce::AudioBuffer<double>& buf, juce::MidiBuffer&) override { process(buf); }
+    using AudioProcessor::processBlock;
+    juce::AudioProcessorEditor* createEditor() override    { return nullptr; }
+    bool hasEditor() const override                        { return false; }
+    int getNumPrograms() override                          { return 1; }
+    int getCurrentProgram() override                       { return 0; }
+    void setCurrentProgram(int) override                   {}
+    const juce::String getProgramName(int) override        { return {}; }
+    void changeProgramName(int, const juce::String&) override {}
+    void getStateInformation(juce::MemoryBlock&) override  {}
+    void setStateInformation(const void*, int) override    {}
+};
+
 class AudioGain : public juce::AudioProcessor {
 public:
     std::atomic<float> gain{1.0f};
@@ -786,6 +835,17 @@ juce::var PluginHost::pluginListAsJson() const {
         auto* d = new juce::DynamicObject();
         d->setProperty("id",           juce::var("nasty:ducker"));
         d->setProperty("name",         juce::var("NastyDucker"));
+        d->setProperty("format",       juce::var("Nasty"));
+        d->setProperty("manufacturer", juce::var("Nasty"));
+        d->setProperty("category",     juce::var("Fx|Dynamics"));
+        d->setProperty("isInstrument", juce::var(false));
+        d->setProperty("presets",      juce::var(juce::Array<juce::var>{}));
+        arr.add(juce::var(d));
+    }
+    {
+        auto* d = new juce::DynamicObject();
+        d->setProperty("id",           juce::var("nasty:master_limiter"));
+        d->setProperty("name",         juce::var("MasterLimiter"));
         d->setProperty("format",       juce::var("Nasty"));
         d->setProperty("manufacturer", juce::var("Nasty"));
         d->setProperty("category",     juce::var("Fx|Dynamics"));
@@ -1623,6 +1683,9 @@ juce::String PluginHost::addEffect(const juce::String& channelId,
         }
         std::cerr << "[addEffect] internal NastyDucker instantiated (in="
                   << instance->getTotalNumInputChannels() << ")" << std::endl;
+    } else if (pluginId == "nasty:master_limiter") {
+        instance = std::make_unique<NastyMasterLimiter>();
+        std::cerr << "[addEffect] internal NastyMasterLimiter instantiated" << std::endl;
     } else {
         const juce::PluginDescription* desc = nullptr;
         for (const auto& t : knownPlugins.getTypes()) {
