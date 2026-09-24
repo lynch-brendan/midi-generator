@@ -2519,7 +2519,7 @@ const PR_BEAT_WIDTH = 96; // fixed zoom — pattern scrolls horizontally if it's
 const PR_PITCH_MIN = 24;
 const PR_PITCH_MAX = 108;
 const STORAGE_KEY = 'nasty.song.fl.v1';
-const SONG_SCHEMA_VERSION = 5;
+const SONG_SCHEMA_VERSION = 6;
 const PALETTE = ['#ff5c93','#6b7cff','#33c58a','#ffb020','#a95cff','#ff7c47','#42c8e0','#e05cff','#ffdd57','#5cff8f'];
 
 let song = { version: SONG_SCHEMA_VERSION, bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] }, sections: [], transportMode: 'pat' };
@@ -2838,6 +2838,8 @@ function ensureShape(s) {
   }
   s.mixer.inserts.forEach(ins => {
     ins.volume = ins.volume ?? 1.0;
+    ins.pan = ins.pan ?? 0;
+    ins.stereoWidth = ins.stereoWidth ?? 1;
     ins.effects = ins.effects || [];
     if (ins.id !== 'master' && !ins.sendToId) ins.sendToId = 'master';
   });
@@ -2851,9 +2853,15 @@ function ensureShape(s) {
       s.mixer.busses.push({ id: 'bus_' + i, num: i, name: 'Insert ' + i, effects: [] });
     }
   }
-  s.mixer.busses.forEach(b => { b.effects = b.effects || []; });
+  s.mixer.busses.forEach(b => {
+    b.effects = b.effects || [];
+    b.pan = b.pan ?? 0;
+    b.stereoWidth = b.stereoWidth ?? 1;
+    b.effects.forEach(fx => { fx.wetDry = fx.wetDry ?? 1; });
+  });
   s.channels.forEach((c, i) => {
     c.volume = c.volume ?? 1.0;
+    c.pan = c.pan ?? 0;
     // Effects belonged to channels in older builds. Now they only live on
     // mixer inserts (FL model). Migrate any leftover channel effects into
     // the channel's target insert so audio still flows through them, then
@@ -2953,6 +2961,9 @@ function ensureShape(s) {
   // v4 → v5: sections[] added to top-level song. No data migration needed —
   // empty array is the correct default for any pre-v5 song. Section-scoped
   // arrangement smarts land in later pieces of the arrangement roadmap.
+  // v5 → v6: pan (-1..+1) and stereoWidth (0..1) on channels + mixer strips,
+  // and wetDry (0..1) per effect slot. Defaults above are additive; no data
+  // migration needed. UI dials + engine routing land in later pieces.
   s.sections.forEach(sec => {
     sec.id = sec.id || 'sec_' + Math.random().toString(36).slice(2, 8);
     sec.name = sec.name || '';
@@ -2983,6 +2994,7 @@ function ensureDefaults() {
     for (let i = 1; i <= 20; i++) {
       song.mixer.busses.push({
         id: 'bus_' + i, num: i, name: 'Insert ' + i, effects: [],
+        pan: 0, stereoWidth: 1,
         sends: [{
           sendId: 'send_main_' + Math.random().toString(36).slice(2, 8),
           targetChannelId: 'master_bus',
