@@ -511,7 +511,7 @@
     flex: 1; font-weight: 600; font-size: 11px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .channel-row .ch-left .cvol { width: 130px; }
+  .channel-row .ch-left .cvol-slot,
   .channel-row .ch-left .cpan-slot {
     display: inline-flex; align-items: center; padding: 0 2px;
   }
@@ -5839,9 +5839,9 @@ function renderChannelRack() {
     left.innerHTML = `
       <span class="chnum" title="Route: ${targetNum === 0 ? 'Master' : 'Insert ' + targetNum} — drag to change, click to open in mixer">${targetLabel}</span>
       <span class="swatch" style="background:${ch.color}"></span>
-      <span class="cname" title="${escapeHtml(ch.instrument)}${ch.drumPitch != null ? ' · pitch ' + ch.drumPitch : ''}">${escapeHtml(ch.name)}</span>
-      <input class="cvol" type="range" min="0" max="1" step="0.001" value="${faderGainToPosition(ch.volume)}" data-ch="${ch.id}" title="volume · ${volToDb(ch.volume)} dB" />
+      <span class="cvol-slot" data-ch="${ch.id}"></span>
       <span class="cpan-slot" data-ch="${ch.id}"></span>
+      <span class="cname" title="${escapeHtml(ch.instrument)}${ch.drumPitch != null ? ' · pitch ' + ch.drumPitch : ''}">${escapeHtml(ch.name)}</span>
       <span class="cbtns">
         <button class="${ch.muted?'on-mute':''}" data-a="mute" data-ch="${ch.id}">M</button>
         <button class="${ch.solo?'on-solo':''}" data-a="solo" data-ch="${ch.id}">S</button>
@@ -5849,6 +5849,30 @@ function renderChannelRack() {
       </span>
     `;
     wireChannelNumRouting(left.querySelector('.chnum'), ch);
+    // Volume knob — replaces the horizontal fader. Works in fader-position
+    // space (0..1) so the audio-taper curve matches every other volume
+    // control (mixer strips, master). Double-click snaps to unity.
+    const volSlot = left.querySelector('.cvol-slot');
+    if (volSlot) {
+      const unityPos = faderGainToPosition(1.0);
+      const volKnob = makeKnob({
+        value: faderGainToPosition(ch.volume),
+        min: 0, max: 1, defaultValue: unityPos,
+        sensitivity: 0.005,
+        title: 'Volume: ' + volToDb(ch.volume) + ' dB — drag to change, dbl-click resets to 0 dB',
+        onChange: (v) => {
+          ch.volume = faderPositionToGain(v);
+          const bus = (song.mixer.busses || []).find(b => b.num === (ch.targetInsertNum || 0));
+          const busVol = bus ? (bus.volume ?? 1.0) : 1.0;
+          const master = song.mixer.inserts.find(i => i.id === 'master');
+          const masterVol = master ? (master.volume ?? 1.0) : 1.0;
+          engineTransport.send({ cmd: 'set_channel_gain', channelId: ch.id, gain: ch.volume * busVol * masterVol * channelMuteFactor(ch) });
+          volKnob.title = 'Volume: ' + volToDb(ch.volume) + ' dB — drag to change, dbl-click resets to 0 dB';
+          persist();
+        },
+      });
+      volSlot.appendChild(volKnob);
+    }
     // Pan knob (-1..+1). Visual-only persistence for now; engine pan-node
     // routing lands in a later piece (T1P5).
     const panSlot = left.querySelector('.cpan-slot');
@@ -5979,7 +6003,6 @@ function renderChannelRack() {
     cell.addEventListener('contextmenu', (e) => e.preventDefault());
   });
 
-  rack.querySelectorAll('.cvol').forEach(i => i.addEventListener('input', onChannelVol));
   rack.querySelectorAll('.cbtns button').forEach(b => b.addEventListener('click', onChannelBtn));
 }
 
@@ -6668,19 +6691,32 @@ function renderMixerSlots() {
     const wetdrySlot = row.querySelector('.mslot-wetdry');
     if (wetdrySlot && fx && owner) {
       const params = Array.isArray(fx.params) ? fx.params : null;
-      const wetDryParam = params ? params.find(p => {
+      // Priority order: real mix params first, then wet-alone fallbacks
+      // (e.g. reverbs that expose "Wet Level" instead of a single mix).
+      // Fallbacks are a proxy — they push wet toward the intended blend
+      // but don't touch the plugin's dry level.
+      const findParam = (preds) => params && params.find(p => {
         const n = (p.name || '').toLowerCase();
-        return n === 'mix' || n === 'dry/wet' || n === 'wet/dry'
-            || n.includes('dry/wet') || n.includes('wet/dry')
-            || n.includes('dry wet') || n.includes('wet dry')
-            || (n.includes('mix') && !n.includes('mixer'));
-      }) : null;
+        return preds.some(fn => fn(n));
+      });
+      const wetDryParam = findParam([
+        n => n === 'mix' || n === 'dry/wet' || n === 'wet/dry' || n === 'drywet' || n === 'wetdry',
+        n => n.includes('dry/wet') || n.includes('wet/dry'),
+        n => n.includes('dry wet') || n.includes('wet dry'),
+        n => n.includes('drywet') || n.includes('wetdry'),
+        n => n.includes('mix') && !n.includes('mixer'),
+        n => n === 'wet' || n === 'wetness' || n === 'blend' || n === 'balance',
+        n => n.includes('wet level') || n.includes('wet gain') || n.includes('wet amount'),
+      ]);
+      const noMatchTip = params && params.length
+        ? `Wet/dry: ${Math.round((fx.wetDry ?? 1) * 100)}% — this plugin has ${params.length} params but none look like wet/dry. Click the effect to open its UI and adjust manually.`
+        : `Wet/dry: ${Math.round((fx.wetDry ?? 1) * 100)}% — plugin params not loaded yet, try after playing once`;
       const wetKnob = makeKnob({
         value: fx.wetDry ?? 1, min: 0, max: 1, defaultValue: 1,
         sensitivity: 0.005,
         title: wetDryParam
           ? `Wet/dry: ${Math.round((fx.wetDry ?? 1) * 100)}% — routed to plugin "${wetDryParam.name}"`
-          : `Wet/dry: ${Math.round((fx.wetDry ?? 1) * 100)}% — this plugin doesn't expose a wet/dry param, value stored but silent`,
+          : noMatchTip,
         onChange: (v) => {
           fx.wetDry = v;
           if (wetDryParam && window.nasty && window.nasty.engine) {
@@ -6692,7 +6728,7 @@ function renderMixerSlots() {
           }
           wetKnob.title = wetDryParam
             ? `Wet/dry: ${Math.round(v * 100)}% — routed to plugin "${wetDryParam.name}"`
-            : `Wet/dry: ${Math.round(v * 100)}% — this plugin doesn't expose a wet/dry param, value stored but silent`;
+            : noMatchTip.replace(/\d+%/, Math.round(v * 100) + '%');
           persist();
         },
       });
