@@ -179,6 +179,15 @@ public:
     // Empty error on success; "not recording" if nothing was active.
     juce::String stopRecording(juce::String& outPath, juce::int64& outSamples);
 
+    // Start master-output bounce to WAV. Real-time capture — the audio
+    // callback taps outputChannelData each buffer. Caller is expected to
+    // play the song from bar 0 immediately after arming and call
+    // stopBounce when playback reaches the arrangement end. Returns empty
+    // on success; outPath is set to the actual file path (~/Music/Nasty
+    // Bounces/nasty-YYYYMMDD-HHMMSS.wav) so the UI can surface it.
+    juce::String startBounce(juce::String& outPath);
+    juce::String stopBounce(juce::String& outPath, juce::int64& outSamples);
+
     // Add a WAV clip that plays back during SONG-mode transport. clipId is
     // UI-owned (used later by removeAudioClip / setAudioClipPosition).
     // path must exist. busId names the mixer bus to route into. All times in
@@ -446,6 +455,14 @@ private:
     std::unique_ptr<juce::AudioFormatWriter> recordingWriter;
     juce::File recordingFile;
     std::atomic<juce::int64> recordingSamples{0};
+
+    // Master-output bounce (Export WAV). Real-time — the audio callback taps
+    // outputChannelData after graph render. Client plays the song from bar 0,
+    // and stops the bounce when transport reaches the arrangement end.
+    std::atomic<bool> bounceActive{false};
+    std::unique_ptr<juce::AudioFormatWriter> bounceWriter;
+    juce::File bounceFile;
+    std::atomic<juce::int64> bounceSamples{0};
 
     // Loaded audio clips playing back during SONG-mode transport. Each one
     // is an AudioClipPlayer node in the graph, wired to its bus's input.

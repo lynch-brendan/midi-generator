@@ -734,6 +734,19 @@ void PluginHost::audioDeviceIOCallbackWithContext(const float* const* inputChann
                                               numSamples);
         recordingSamples.fetch_add(numSamples, std::memory_order_relaxed);
     }
+    // Master-output bounce (Export WAV). Tap the output side after the graph
+    // render — outputChannelData holds the final master mix at this point.
+    // Real-time capture, so the client plays the song at normal speed and
+    // sends stop_bounce when transport hits the end.
+    if (bounceActive.load(std::memory_order_acquire)
+        && bounceWriter != nullptr
+        && numOutputChannels > 0
+        && outputChannelData != nullptr) {
+        bounceWriter->writeFromFloatArrays(outputChannelData,
+                                           numOutputChannels,
+                                           numSamples);
+        bounceSamples.fetch_add(numSamples, std::memory_order_relaxed);
+    }
     transport.endBuffer();
     patternPlayer.endBuffer();
 }
@@ -2647,6 +2660,56 @@ juce::String PluginHost::stopRecording(juce::String& outPath, juce::int64& outSa
     outSamples = recordingSamples.load(std::memory_order_relaxed);
     recordingWriter.reset(); // flushes + closes the underlying WAV
     std::cerr << "[PluginHost] recording stopped → " << outPath
+              << " (" << outSamples << " samples)" << std::endl;
+    return {};
+}
+
+juce::String PluginHost::startBounce(juce::String& outPath) {
+    outPath = juce::String();
+    if (bounceActive.load(std::memory_order_acquire)) return "already bouncing";
+    auto* dev = deviceManager.getCurrentAudioDevice();
+    if (!dev) return "no audio device open";
+    const int numOutputCh = dev->getActiveOutputChannels().countNumberOfSetBits();
+    if (numOutputCh <= 0) return "no output channels";
+    const double sr = dev->getCurrentSampleRate();
+
+    auto dir = juce::File::getSpecialLocation(juce::File::userMusicDirectory)
+                   .getChildFile("Nasty Bounces");
+    dir.createDirectory();
+    auto ts = juce::Time::getCurrentTime().formatted("%Y%m%d-%H%M%S");
+    auto file = dir.getChildFile("nasty-" + ts + ".wav");
+
+    juce::WavAudioFormat wav;
+    std::unique_ptr<juce::FileOutputStream> stream(file.createOutputStream());
+    if (!stream || !stream->openedOk()) {
+        return "couldn't open " + file.getFullPathName() + " for writing";
+    }
+    auto* writer = wav.createWriterFor(stream.get(), sr, (unsigned) numOutputCh, 24, {}, 0);
+    if (!writer) return "couldn't create WAV writer";
+    stream.release();
+
+    bounceWriter.reset(writer);
+    bounceFile = file;
+    bounceSamples.store(0, std::memory_order_relaxed);
+    bounceActive.store(true, std::memory_order_release);
+    outPath = file.getFullPathName();
+    std::cerr << "[PluginHost] bounce started → " << outPath
+              << " sr=" << sr << " ch=" << numOutputCh << std::endl;
+    return {};
+}
+
+juce::String PluginHost::stopBounce(juce::String& outPath, juce::int64& outSamples) {
+    if (!bounceActive.load(std::memory_order_acquire)) {
+        outPath = juce::String();
+        outSamples = 0;
+        return "not bouncing";
+    }
+    bounceActive.store(false, std::memory_order_release);
+    juce::Thread::sleep(20);
+    outPath = bounceFile.getFullPathName();
+    outSamples = bounceSamples.load(std::memory_order_relaxed);
+    bounceWriter.reset();
+    std::cerr << "[PluginHost] bounce stopped → " << outPath
               << " (" << outSamples << " samples)" << std::endl;
     return {};
 }

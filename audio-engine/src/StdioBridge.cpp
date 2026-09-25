@@ -654,6 +654,29 @@ juce::var StdioBridge::handleCommand(const juce::var& msg) {
         return juce::var(o);
     }
 
+    if (cmd == "start_bounce") {
+        juce::String path;
+        auto err = host.startBounce(path);
+        auto* o = new juce::DynamicObject();
+        o->setProperty("event", err.isEmpty() ? juce::var("bounce_started") : juce::var("error"));
+        o->setProperty("path",  juce::var(path));
+        if (err.isNotEmpty()) o->setProperty("error", err);
+        return juce::var(o);
+    }
+
+    if (cmd == "stop_bounce") {
+        juce::String path;
+        juce::int64 samples = 0;
+        auto err = host.stopBounce(path, samples);
+        const bool isNoop = (err == "not bouncing");
+        auto* o = new juce::DynamicObject();
+        o->setProperty("event",   (err.isEmpty() || isNoop) ? juce::var("bounce_stopped") : juce::var("error"));
+        o->setProperty("path",    juce::var(path));
+        o->setProperty("samples", juce::var((double) samples));
+        if (err.isNotEmpty() && !isNoop) o->setProperty("error", err);
+        return juce::var(o);
+    }
+
     if (cmd == "add_audio_clip") {
         auto err = host.addAudioClip(
             msg["clipId"].toString(),

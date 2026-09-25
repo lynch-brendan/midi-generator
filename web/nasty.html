@@ -10838,10 +10838,59 @@ function downloadBlob(blob, filename) {
 }
 
 async function exportWAV() {
-  // Offline render used to walk the whole song through a WebAudio graph.
-  // With the engine owning playback that path is gone — real bounce-to-
-  // disk needs an engine-side render command, which doesn't exist yet.
-  alert('Export WAV is temporarily disabled — the audio engine bounce path is not wired up yet.');
+  // Real-time bounce: arm the engine to tap master output to a WAV file
+  // under ~/Music/Nasty Bounces/, roll the song from bar 0, wait for
+  // transport to reach the arrangement end, stop the bounce. Simple and
+  // works — offline rendering is a follow-up if the wait feels too long.
+  if (!(window.nasty && window.nasty.engine) || !engineBoot.audioReady) {
+    alert('Audio engine not ready yet — wait a moment and try again.');
+    return;
+  }
+  // Derive length from clips (patterns + audio), same math as the loop
+  // bound. Bail cleanly on empty arrangements so we don't spin forever.
+  let maxEndBar = 0;
+  for (const t of song.tracks) {
+    for (const c of (t.clips || [])) {
+      if (c.type !== 'pattern' && c.type !== 'audio') continue;
+      const end = (c.startBar || 0) + (c.lengthBars || 0);
+      if (end > maxEndBar) maxEndBar = end;
+    }
+  }
+  if (maxEndBar <= 0) {
+    alert('Nothing to export — add some clips to the arrangement first.');
+    return;
+  }
+  // Add a small tail so the last note's release / reverb tail doesn't get
+  // truncated. Two bars of extra room is usually plenty.
+  const totalBars = maxEndBar + 2;
+  const totalBeats = totalBars * 4;
+  const secPerBeat = 60 / (song.bpm || 120);
+  const totalMs = Math.ceil(totalBeats * secPerBeat * 1000);
+  // Make sure we start from a stopped state at bar 0.
+  stopSong();
+  pendingStartSample = 0;
+  if (song.transportMode !== 'song') {
+    song.transportMode = 'song';
+    if (engineTransport.available()) engineTransport.setMode('song');
+    document.querySelectorAll('.patsong .ps-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.mode === 'song');
+    });
+  }
+  // Disable count-in during bounce so the WAV starts at bar 0, not with
+  // 1 bar of silence.
+  const countInEl = document.getElementById('count-in');
+  const prevCountIn = countInEl ? countInEl.checked : false;
+  if (countInEl) countInEl.checked = false;
+  window.nasty.engine.send({ cmd: 'start_bounce' });
+  // Small delay so start_bounce's flag is set before the audio callback
+  // starts capturing the first buffer of playSong output.
+  await new Promise(r => setTimeout(r, 50));
+  playSong();
+  console.log('[nasty] bounce rolling —', totalBars, 'bars @', song.bpm, 'BPM ≈', (totalMs / 1000).toFixed(1), 's');
+  await new Promise(r => setTimeout(r, totalMs));
+  window.nasty.engine.send({ cmd: 'stop_bounce' });
+  stopSong();
+  if (countInEl) countInEl.checked = prevCountIn;
 }
 
 // ============================================================
@@ -13767,6 +13816,25 @@ if (window.nasty && window.nasty.engine) {
         console.warn('[nasty] recording_stopped with no path/samples — nothing to drop:', msg);
       }
       console.log('[nasty] saved recording →', msg.path, 'samples=', msg.samples);
+    } else if (msg.event === 'bounce_started') {
+      console.log('[nasty] bounce writing to', msg.path);
+      const status = document.getElementById('rec-status');
+      if (status) {
+        status.classList.remove('hidden');
+        status.textContent = 'BOUNCING → ' + (msg.path || '').split('/').pop();
+      }
+    } else if (msg.event === 'bounce_stopped') {
+      console.log('[nasty] bounce done —', msg.samples, 'samples →', msg.path);
+      const status = document.getElementById('rec-status');
+      const secs = (msg.samples && engineTransport.sampleRate)
+        ? (msg.samples / engineTransport.sampleRate).toFixed(1)
+        : '?';
+      const short = (msg.path || '').split('/').pop();
+      if (status && msg.path) {
+        status.classList.remove('hidden');
+        status.textContent = `Bounced ${short} (${secs}s) — in ~/Music/Nasty Bounces/`;
+        setTimeout(() => status.classList.add('hidden'), 10000);
+      }
     } else if (msg.event === 'audio_clip_added') {
       console.log('[nasty] audio clip playing:', msg.clipId);
     } else if (msg.event === 'plugin_loaded') {
