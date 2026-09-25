@@ -8796,9 +8796,23 @@ function startAudioRecording() {
   if (!(window.nasty && window.nasty.engine)) {
     return { ok: false, reason: 'audio engine not running' };
   }
-  const bus = (song.mixer.busses || []).find(b => b.audioInputEnabled);
+  let bus = (song.mixer.busses || []).find(b => b.audioInputEnabled);
   if (!bus) {
-    return { ok: false, reason: 'no mic routed — open the mixer and click IN on a strip to route your mic first' };
+    // No mic on any strip — auto-wire to the first insert so Claude can
+    // trigger recording without the user opening the mixer. Requires a
+    // device to have been picked once before (song.audioInputDevice) so
+    // the engine knows which mic to open; fresh installs still need one
+    // manual pick via the IN button.
+    const first = (song.mixer.busses || [])[0];
+    if (!first) {
+      return { ok: false, reason: 'no mixer inserts available' };
+    }
+    if (!song.audioInputDevice) {
+      return { ok: false, reason: 'no mic device selected — click IN on a mixer strip once to pick one' };
+    }
+    wireMicIntoBus(first.id);
+    window.nasty.engine.send({ cmd: 'set_input_device', name: song.audioInputDevice });
+    bus = first;
   }
   bus.recArmed = true;
   recArmed = true;

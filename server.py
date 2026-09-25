@@ -1669,11 +1669,13 @@ _NASTY_TOOLS = [
             "Start recording audio into a new take clip. Automatically "
             "switches the transport to SONG mode and rolls playback so the "
             "take lands on the arrangement at the current transport "
-            "position. Requires the user to have already routed a mic to a "
-            "mixer bus (via the mixer's IN button). If no mic is routed, "
-            "the tool will return an error telling the user to do that "
-            "first. The user can end the take by hitting the stop button "
-            "or asking you to call stop_recording (voice PTT works mid-take)."
+            "position. If no mic is routed to a mixer strip yet, this tool "
+            "will auto-wire the last-used mic device onto the first insert "
+            "and arm it — the user does not need to open the mixer. Only "
+            "fails if no mic device has ever been picked (fresh install — "
+            "user needs to click IN on a mixer strip once to pick one). The "
+            "user can end the take by hitting the stop button or asking you "
+            "to call stop_recording (voice PTT works mid-take)."
         ),
         "input_schema": {"type": "object", "properties": {}},
     },
