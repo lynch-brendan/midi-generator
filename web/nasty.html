@@ -2759,12 +2759,11 @@ let persistPendingEffectSnapshot = false;
 function writeSongToStorage() {
   try {
     const stripped = JSON.parse(JSON.stringify(song));
-    // Mic assignments don't persist across sessions — user has to click IN
-    // (or say "record me") each session to route a mic. Sitting on a
-    // "primed" strip across app launches feels unsafe and confuses the
-    // startAudioRecording auto-wire path.
+    // Mic bus itself stays across sessions (so the "IN" red state and the
+    // Audio · Mic N track keep their identity), but "armed to record" and
+    // "monitoring on" reset each launch — those are transient session
+    // states, not part of the project.
     for (const b of (stripped.mixer.busses || [])) {
-      delete b.audioInputEnabled;
       delete b.monitor;
       delete b.recArmed;
     }
@@ -3584,7 +3583,10 @@ const engineTransport = {
     let maxEndBar = 0;
     for (const t of song.tracks) {
       for (const c of (t.clips || [])) {
-        if (c.type !== 'pattern') continue;
+        // Include audio + pattern clips both — otherwise an arrangement
+        // that's just a vocal take (no MIDI patterns) collapses to the
+        // 4-beat minimum and the playhead loops on bar 1.
+        if (c.type !== 'pattern' && c.type !== 'audio') continue;
         const end = (c.startBar || 0) + (c.lengthBars || 0);
         if (end > maxEndBar) maxEndBar = end;
       }
@@ -12570,6 +12572,16 @@ async function hydratePluginChannels() {
   for (const b of (song.mixer.busses || [])) pushPanWidth(b.id, b.pan, b.stereoWidth);
   if (master) pushPanWidth('master_bus', master.pan, master.stereoWidth);
 
+  // Audio-input channels — for each mixer bus that was set up as a mic
+  // input, ensure the engine has the corresponding audio-input channel
+  // node. Without this, add_audio_clip below fails with "channel not
+  // found" because the engine doesn't know the bus exists as a routable
+  // graph destination for playback.
+  for (const b of (song.mixer.busses || [])) {
+    if (b.audioInputEnabled) {
+      window.nasty.engine.send({ cmd: 'create_audio_input_channel', channelId: b.id });
+    }
+  }
   // Audio clips — recorded WAVs that play back during SONG transport. Each
   // clip becomes an AudioClipPlayer node in the engine, wired to its bus.
   for (const t of (song.tracks || [])) {
