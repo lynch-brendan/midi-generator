@@ -2788,6 +2788,10 @@ function writeSongToStorage() {
     for (const b of (stripped.mixer.busses || [])) attachEffectStates(b);
     const masterIns = (stripped.mixer.inserts || []).find(i => i.id === 'master');
     if (masterIns) attachEffectStates(masterIns);
+    const audioClipCount = (stripped.tracks || [])
+      .flatMap(t => t.clips || [])
+      .filter(c => c.type === 'audio').length;
+    console.log('[nasty] persisting song — audio clips:', audioClipCount);
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       song: stripped, currentPatternId,
     }));
@@ -3580,6 +3584,14 @@ const engineTransport = {
   // SONG playback repeats at song end. Falls back to 1 bar so play never
   // hangs on an empty arrangement.
   songLengthBeats() {
+    // While a mic take is actively rolling, don't compute the loop from
+    // existing clips — the take hasn't landed yet, so we'd wrap the
+    // transport back to bar 1 in the middle of recording. Give the take
+    // the whole arrangement bar count to grow into. On stop the derived
+    // length takes over and matches the take's actual end.
+    if (typeof isRecordingAudio === 'function' && isRecordingAudio()) {
+      return (song.bars || 32) * 4;
+    }
     let maxEndBar = 0;
     for (const t of song.tracks) {
       for (const c of (t.clips || [])) {
@@ -9021,10 +9033,22 @@ function onMixerInputClick(busId) {
   // Toggle off if already routing a mic into this insert.
   if (bus.audioInputEnabled) {
     bus.audioInputEnabled = false;
+    bus.monitor = false;
+    bus.recArmed = false;
     if (window.nasty && window.nasty.engine) {
       window.nasty.engine.send({
         cmd: 'set_channel_audio_input', channelId: bus.id, enabled: false,
       });
+      // Release CoreAudio input if this was the last strip using it. Fixes
+      // "I clicked IN off but still hear my mic" — the graph disconnect
+      // wasn't enough; the device was still open so hardware direct-monitor
+      // or another engine path kept passing signal.
+      const stillNeedsInput = (song.mixer.busses || [])
+        .some(b => b.audioInputEnabled) || isRecordingAudio();
+      if (!stillNeedsInput) {
+        window.nasty.engine.send({ cmd: 'set_input_device', name: '' });
+        engineBoot.inputOpen = false;
+      }
     }
     renderMixer();
     persist();
@@ -10765,7 +10789,10 @@ async function sendMessage(overrideText, opts) {
 // ============================================================
 function saveToFile() {
   const stripped = JSON.parse(JSON.stringify(song));
-  for (const t of stripped.tracks) t.clips = t.clips.filter(c => c.type !== 'audio');
+  // Audio clips reference absolute WAV paths in ~/Music/Nasty Recordings —
+  // if the receiving machine has those files at the same paths they play
+  // back; otherwise they're just harmless empty clips. Persisting them is
+  // strictly better than dropping them.
   const blob = new Blob([JSON.stringify(stripped, null, 2)], { type: 'application/json' });
   downloadBlob(blob, 'nasty-song.json');
 }
@@ -12584,6 +12611,10 @@ async function hydratePluginChannels() {
   }
   // Audio clips — recorded WAVs that play back during SONG transport. Each
   // clip becomes an AudioClipPlayer node in the engine, wired to its bus.
+  const audioClipCount = (song.tracks || [])
+    .flatMap(t => t.clips || [])
+    .filter(c => c.type === 'audio' && c.path).length;
+  console.log('[nasty] hydrating audio clips: found', audioClipCount);
   for (const t of (song.tracks || [])) {
     for (const clip of (t.clips || [])) {
       if (clip.type !== 'audio' || !clip.path) continue;
