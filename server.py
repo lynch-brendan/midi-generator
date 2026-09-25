@@ -2491,6 +2491,97 @@ _NASTY_TOOLS = [
             "required": ["kind", "instruments"],
         },
     },
+    {
+        "name": "create_automation",
+        "description": (
+            "Create an automation clip on the playlist that moves a FLOW-owned "
+            "parameter over time. Use for producer-language asks like 'filter "
+            "opens into the chorus,' 'reverb swells into the drop,' 'volume "
+            "fade-in on the bass,' 'pan the lead across the second half,' "
+            "'kill the kick for the last two bars.' The clip lives on a "
+            "dedicated Automation track at `start_bar` for `length_bars`. "
+            "`points` is an array of {bar, value} breakpoints in CLIP-local "
+            "coordinates (bar 0 = clip start, bar length_bars = clip end); "
+            "linear interpolation between them.\n\n"
+            "TARGETS. `target.kind` is one of: `channel_volume`, `channel_pan`, "
+            "`bus_volume`, `bus_pan`, `bus_stereo_width`, `effect_wetdry`. "
+            "`target.owner_id` is the id of the channel/bus/master (look at "
+            "song.channels[*].id, song.mixer.busses[*].id, or 'master'). For "
+            "`effect_wetdry` also pass `target.slot_id` (from "
+            "song.mixer.busses[*].effects[*].slotId — the FLOW-owned wet/dry "
+            "wrap works on every effect regardless of what params the plugin "
+            "exposes).\n\n"
+            "VALUE RANGES (raw parameter values, NOT normalised 0-1):\n"
+            "  channel_volume / bus_volume: 0.0-2.0 (1.0 = unity, 0 = silent, "
+            "2.0 = +6 dB)\n"
+            "  channel_pan / bus_pan:       -1.0 to 1.0 (-1 = full left, "
+            "0 = center, 1 = full right)\n"
+            "  bus_stereo_width:            0.0-1.0 (0 = mono, 1 = full "
+            "stereo)\n"
+            "  effect_wetdry:               0.0-1.0 (0 = fully dry, 1 = "
+            "fully wet)\n\n"
+            "COMMON SHAPES — 2 points is usually enough:\n"
+            "  Fade in:     [{bar:0, value:0}, {bar:length_bars, value:1}]\n"
+            "  Fade out:    [{bar:0, value:1}, {bar:length_bars, value:0}]\n"
+            "  Sweep L→R:   [{bar:0, value:-1}, {bar:length_bars, value:1}]\n"
+            "  Sharp drop:  [{bar:0, value:1}, {bar:half, value:1}, "
+            "{bar:half, value:0}, {bar:length_bars, value:0}] (repeat the "
+            "same bar with different values = step / cliff)\n"
+            "  S-curve:     multiple points along an exponential-ish path.\n\n"
+            "SECTION-ANCHORED USE. When the user asks for something 'in the "
+            "chorus' or 'across the drop,' look up the section in "
+            "song.sections[*], use its startBar for start_bar and its "
+            "lengthBars for length_bars — the clip will cover exactly that "
+            "section on the playlist.\n\n"
+            "One target per call. For multiple parameters (e.g. filter opens "
+            "AND reverb swells into the chorus), call create_automation twice."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": (
+                        "Human-readable label for this automation pattern "
+                        "(e.g. 'Kick fade-out', 'Filter into chorus'). "
+                        "Shows in the patterns sidebar. Optional — a default "
+                        "is derived from the target if omitted."
+                    ),
+                },
+                "target": {
+                    "type": "object",
+                    "properties": {
+                        "kind": {
+                            "type": "string",
+                            "enum": [
+                                "channel_volume", "channel_pan",
+                                "bus_volume", "bus_pan", "bus_stereo_width",
+                                "effect_wetdry",
+                            ],
+                        },
+                        "owner_id": {"type": "string"},
+                        "slot_id": {"type": "string"},
+                    },
+                    "required": ["kind", "owner_id"],
+                },
+                "start_bar":   {"type": "number", "minimum": 0},
+                "length_bars": {"type": "number", "minimum": 0.25},
+                "points": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "bar":   {"type": "number", "minimum": 0},
+                            "value": {"type": "number"},
+                        },
+                        "required": ["bar", "value"],
+                    },
+                },
+            },
+            "required": ["target", "start_bar", "length_bars", "points"],
+        },
+    },
 ]
 
 

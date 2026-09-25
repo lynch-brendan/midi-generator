@@ -5465,6 +5465,92 @@ async function applyToolCalls(calls) {
             summaries.push(`✎ section ${sec.name || input.section_id}`);
           }
         }
+      } else if (name === 'create_automation') {
+        // AI-generated automation clip. Mirrors what the human create /
+        // record paths build: a new automation pattern with target+points,
+        // plus a playlist clip on the Automation track pointing at it.
+        const t = input.target || {};
+        const kind = String(t.kind || '');
+        const ownerId = String(t.owner_id || '');
+        const slotId = String(t.slot_id || '');
+        const startBar = Math.max(0, Number(input.start_bar) || 0);
+        const lengthBars = Math.max(0.25, Number(input.length_bars) || 4);
+        const rawPoints = Array.isArray(input.points) ? input.points : [];
+        // Validate target kind + owner exists.
+        const validKinds = new Set([
+          'channel_volume','channel_pan','bus_volume','bus_pan',
+          'bus_stereo_width','effect_wetdry',
+        ]);
+        if (!validKinds.has(kind) || !ownerId) {
+          summaries.push(`× create_automation: bad target ${kind}/${ownerId}`);
+          continue;
+        }
+        const ownerExists = song.channels.find(c => c.id === ownerId)
+          || (song.mixer.busses || []).find(b => b.id === ownerId)
+          || (song.mixer.inserts || []).find(i => i.id === ownerId);
+        if (!ownerExists) {
+          summaries.push(`× create_automation: owner "${ownerId}" not found`);
+          continue;
+        }
+        if (kind === 'effect_wetdry' && !slotId) {
+          summaries.push(`× create_automation: effect_wetdry needs a slot_id`);
+          continue;
+        }
+        if (!rawPoints.length) {
+          summaries.push(`× create_automation: no points provided`);
+          continue;
+        }
+        // Clamp values per kind.
+        const clampValue = (kind, v) => {
+          v = Number(v);
+          if (!Number.isFinite(v)) v = 0;
+          switch (kind) {
+            case 'channel_volume':
+            case 'bus_volume':      return Math.max(0, Math.min(2, v));
+            case 'channel_pan':
+            case 'bus_pan':         return Math.max(-1, Math.min(1, v));
+            case 'bus_stereo_width':return Math.max(0, Math.min(1, v));
+            case 'effect_wetdry':   return Math.max(0, Math.min(1, v));
+            default:                return v;
+          }
+        };
+        const structuredTarget = { kind, ownerId };
+        if (slotId) structuredTarget.slotId = slotId;
+        const points = rawPoints
+          .map(p => ({
+            bar: Math.max(0, Math.min(lengthBars, Number(p.bar) || 0)),
+            value: clampValue(kind, p.value),
+          }))
+          .sort((a, b) => a.bar - b.bar);
+        // Build the automation pattern and the playlist clip.
+        const patName = String(input.name || describeAutomationTarget(structuredTarget));
+        const pattern = {
+          id: 'pat_auto_' + Math.random().toString(36).slice(2, 8),
+          name: patName,
+          lengthBars,
+          color: '#ff2d9c',
+          notes: [],
+          __automation: true,
+          target: structuredTarget,
+          points,
+        };
+        song.patterns.push(pattern);
+        let autoTrack = song.tracks.find(t2 => t2.__automation === true);
+        if (!autoTrack) {
+          autoTrack = {
+            id: 'track_auto', name: 'Automation', __automation: true,
+            clips: [], muted: false, solo: false,
+          };
+          song.tracks.unshift(autoTrack);
+        }
+        autoTrack.clips.push({
+          id: 'clip_' + Math.random().toString(36).slice(2, 10),
+          type: 'pattern',
+          patternId: pattern.id,
+          startBar,
+          lengthBars,
+        });
+        summaries.push(`+ automation ${patName} · bar ${startBar}→${startBar + lengthBars} · ${points.length} pts`);
       }
     } catch (e) { console.error('tool apply failed', call, e); }
   }
