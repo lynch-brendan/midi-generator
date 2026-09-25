@@ -2759,7 +2759,15 @@ let persistPendingEffectSnapshot = false;
 function writeSongToStorage() {
   try {
     const stripped = JSON.parse(JSON.stringify(song));
-    for (const t of stripped.tracks) t.clips = t.clips.filter(c => c.type !== 'audio');
+    // Mic assignments don't persist across sessions — user has to click IN
+    // (or say "record me") each session to route a mic. Sitting on a
+    // "primed" strip across app launches feels unsafe and confuses the
+    // startAudioRecording auto-wire path.
+    for (const b of (stripped.mixer.busses || [])) {
+      delete b.audioInputEnabled;
+      delete b.monitor;
+      delete b.recArmed;
+    }
     const attachEffectStates = (owner) => {
       const key = owner.id === 'master' ? 'master_bus' : owner.id;
       const perSlot = latestEffectStates[key];
@@ -8924,8 +8932,13 @@ function _finalizeRecordStart(pending) {
   if (!bus) return { ok: false, reason: 'target bus disappeared' };
   bus.recArmed = true;
   recArmed = true;
+  // Always stop and reset to bar 0 before rolling a take. Otherwise if the
+  // user was jamming (transport at bar 8) and asks to record, the take
+  // lands at bar 8 — technically punch-in behavior, but not what most
+  // users expect from "record me." Reset to 0 for a fresh take.
+  stopSong();
+  pendingStartSample = 0;
   if (song.transportMode !== 'song') {
-    stopSong();
     song.transportMode = 'song';
     if (engineTransport.available()) engineTransport.setMode('song');
     document.querySelectorAll('.patsong .ps-btn').forEach(b => {
@@ -8940,7 +8953,11 @@ function _finalizeRecordStart(pending) {
   }
   pendingRecordingContext = {
     busId: bus.id,
-    startSample: Math.max(0, engineTransport.currentSample || 0),
+    // Take starts at bar 0 (fresh) — matches the stopSong + pendingStartSample
+    // reset above. Overwriting Math.max(engineTransport.currentSample, 0)
+    // because the transport's state variable may still hold the pre-reset
+    // position for a frame or two before the engine's next position event.
+    startSample: 0,
   };
   // Kick off transport (with count-in if the toggle is on). Delay
   // start_recording by the count-in duration so the WAV file doesn't get a
