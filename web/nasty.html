@@ -8851,6 +8851,20 @@ function addAudioClipFromRecording(ctx, path, lengthSamples) {
   }
   render();
   persist();
+  // Auto-scroll the arrangement to the new clip after render, in case the
+  // track lives past the visible viewport. Row lookup by data-track-id so
+  // we don't have to guess the track's numeric index.
+  requestAnimationFrame(() => {
+    const row = document.querySelector(`.track-row[data-track-id="${track.id}"]`);
+    const scroller = document.getElementById('timeline-scroll');
+    if (row && scroller) {
+      // Vertical: bring the track row into view. Horizontal: scroll to the
+      // clip's left edge (with a small margin so it's not glued to the edge).
+      row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      const clipLeftPx = clip.startBar * (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bar-w')) || 24);
+      scroller.scrollLeft = Math.max(0, clipLeftPx - 40);
+    }
+  });
 }
 
 // Global entry points for kicking off / ending an audio take. Shared between
@@ -8928,8 +8942,22 @@ function _finalizeRecordStart(pending) {
     busId: bus.id,
     startSample: Math.max(0, engineTransport.currentSample || 0),
   };
-  window.nasty.engine.send({ cmd: 'start_recording' });
+  // Kick off transport (with count-in if the toggle is on). Delay
+  // start_recording by the count-in duration so the WAV file doesn't get a
+  // silent lead-in — otherwise the clip drops on the arrangement but the
+  // singing is offset by 1 bar from where the take starts. When count-in
+  // is off the delay is 0 and recording rolls immediately.
   playSong();
+  const countInOn = !!document.getElementById('count-in')?.checked;
+  const countInMs = countInOn ? Math.max(0, (4 * 60 / (song.bpm || 120)) * 1000) : 0;
+  const armedBusId = bus.id;
+  setTimeout(() => {
+    // Guard: don't fire start_recording if the user hit stop during count-in.
+    if (pendingRecordingContext && pendingRecordingContext.busId === armedBusId
+        && window.nasty && window.nasty.engine) {
+      window.nasty.engine.send({ cmd: 'start_recording' });
+    }
+  }, countInMs);
   renderMixer();
   persist();
   return { ok: true, busName: (bus.name || 'bus').trim() };
