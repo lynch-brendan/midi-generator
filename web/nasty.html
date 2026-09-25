@@ -13351,6 +13351,10 @@ if (window.nasty && window.nasty.engine) {
       setBootPhase('opening audio device…');
       window.nasty.engine.send({ cmd: 'list_plugins' });
       window.nasty.engine.send({ cmd: 'list_audio_devices' });
+      // Fetch mic list so we can auto-pick a default on fresh installs.
+      // The audio_inputs event handler does the pick if song.audioInputDevice
+      // is empty; harmless otherwise (just updates the hidden picker modal).
+      window.nasty.engine.send({ cmd: 'list_audio_inputs' });
       // Ask for the current transport state so we know the sample rate
       // before the user hits play (needed to translate beats → samples).
       window.nasty.engine.send({ cmd: 'transport_get' });
@@ -13413,6 +13417,18 @@ if (window.nasty && window.nasty.engine) {
       window.nasty.engine.send({ cmd: 'list_audio_devices' });
     } else if (msg.event === 'audio_inputs') {
       populateMicPicker(msg.inputs || [], msg.currentInput || '');
+      // Fresh-install auto-pick: if no device has ever been chosen, take the
+      // best-looking one from the list and set it. Prefers USB/mic-branded
+      // devices over "Aggregate" or virtual inputs. This lets Claude trigger
+      // recording without ever needing the user to open the mixer.
+      if (!song.audioInputDevice && Array.isArray(msg.inputs) && msg.inputs.length) {
+        const smart = msg.inputs.find(n => /usb|mic|shure|blue|yeti|scarlett|apollo|at2020/i.test(n))
+                   || msg.inputs.find(n => /macbook|built[- ]?in/i.test(n))
+                   || msg.inputs[0];
+        song.audioInputDevice = smart;
+        window.nasty.engine.send({ cmd: 'set_input_device', name: smart });
+        persist();
+      }
     } else if (msg.event === 'input_device_set') {
       // Engine now has the mic open. If a bus was waiting for this (user
       // clicked "IN" on a mixer strip), wire it up now.
