@@ -7362,23 +7362,37 @@ function dispatchAutomation(engine, target, value) {
     case 'channel_volume':
     case 'bus_volume': {
       // Compose with bus × master multipliers so the composed gain the
-      // engine sees matches how the user's knob computes it.
+      // engine sees matches how the user's knob computes it. Three owner
+      // kinds: channel (in song.channels), insert bus (song.mixer.busses),
+      // and MASTER (song.mixer.inserts, id 'master'). Master automation
+      // takes the automated value in place of the master state multiplier
+      // and pushes composed gain to every channel — same math the master
+      // strip fader uses.
       const ch = song.channels.find(c => c.id === target.ownerId);
       const bus = (song.mixer.busses || []).find(b => b.id === target.ownerId);
       const master = song.mixer.inserts.find(i => i.id === 'master');
       const masterVol = master ? (master.volume ?? 1.0) : 1.0;
+      const isMaster = target.ownerId === 'master';
       if (ch) {
         const busForCh = (song.mixer.busses || []).find(b => b.num === (ch.targetInsertNum || 0));
         const busVol = busForCh ? (busForCh.volume ?? 1.0) : 1.0;
         engine.send({ cmd: 'set_channel_gain', channelId: ch.id, gain: value * busVol * masterVol * channelMuteFactor(ch) });
       } else if (bus) {
-        // Bus volume: apply to bus, then push composed gain to every channel routed through it.
-        // Simplest path: set bus.volume and re-push. But we're not touching state — so send
-        // the composed gain per channel directly.
+        // Insert bus: apply to every channel routed through it.
         for (const c of song.channels) {
           if ((c.targetInsertNum || 0) !== bus.num) continue;
           const chVol = c.volume ?? 1.0;
           engine.send({ cmd: 'set_channel_gain', channelId: c.id, gain: chVol * value * masterVol * channelMuteFactor(c) });
+        }
+      } else if (isMaster) {
+        // Master: substitute the automated value for masterVol in the
+        // composed gain expression for EVERY channel — same as dragging
+        // the master strip fader.
+        for (const c of song.channels) {
+          const chVol = c.volume ?? 1.0;
+          const busForCh = (song.mixer.busses || []).find(b => b.num === (c.targetInsertNum || 0));
+          const busVol = busForCh ? (busForCh.volume ?? 1.0) : 1.0;
+          engine.send({ cmd: 'set_channel_gain', channelId: c.id, gain: chVol * busVol * value * channelMuteFactor(c) });
         }
       }
       break;
