@@ -1671,6 +1671,22 @@ juce::String PluginHost::addEffect(const juce::String& channelId,
                                    const juce::String& presetName) {
     std::cerr << "[addEffect] START ch=" << channelId << " slot=" << slotId << " pluginId=" << pluginId << std::endl;
 
+    // Early channel check — bail BEFORE the expensive plugin instantiation.
+    // Plugin init can pump the message loop for seconds (some VSTs do
+    // synchronous file scans on first-load) and if the channel doesn't exist,
+    // we'd be wasting that time then still failing at the graph-mutation step.
+    // Worse, some plugins hang the message thread during init, wedging the
+    // whole engine — happened when Claude fired add_effect at a "vocals"
+    // channel it hadn't created yet. Cheap upfront check keeps the engine
+    // healthy on bad-tool-ordering from the AI side.
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (channels.find(channelId) == channels.end()) {
+            std::cerr << "[addEffect] FAIL: channel not found (early check): " << channelId << std::endl;
+            return "Channel not found: " + channelId;
+        }
+    }
+
     // Nasty-native effects come from a small internal list, not from the
     // VST3/AU manifest. Route them through their own factory so they load
     // without a plugin scan and their bus layout (including our sidechain

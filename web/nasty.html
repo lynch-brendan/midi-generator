@@ -1011,6 +1011,19 @@
     border-color: var(--record);
     box-shadow: 0 0 5px var(--record);
   }
+  /* "MON" toggle — decides whether the mic routes through this bus to master
+     for user monitoring. Default off so recording never leaks back through
+     speakers (feedback risk). Yellow = live; grey = off (still recording). */
+  .mixer-strip .mixmon {
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; letter-spacing: 0.5px; color: var(--dim);
+    padding: 2px 0; cursor: pointer; user-select: none;
+    border-top: 1px solid #14171c;
+  }
+  .mixer-strip .mixmon:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+  .mixer-strip .mixmon.on {
+    color: #1a1d22; background: #f2c14e; font-weight: 700;
+  }
   /* "IN" button — FL-style audio-input picker per mixer insert. Compact so it
      never crowds the fader. Red = mic feeding this insert. */
   .mixer-strip .mixin {
@@ -6566,6 +6579,7 @@ function renderMixer() {
       muted: false, solo: false, num: b.num,
       audioInputEnabled: !!b.audioInputEnabled,
       recArmed: !!b.recArmed,
+      monitor: !!b.monitor,
       sidechainActive: !!scSend,
       sidechainLabel: scTargetLabel,
       pan: b.pan ?? 0, stereoWidth: b.stereoWidth ?? 1,
@@ -7709,7 +7723,7 @@ setInterval(() => {
   }
 }, 8);
 
-function buildStrip({ id, name, volume, color, kind, fxCount, muted, solo, num, audioInputEnabled, recArmed, sidechainActive, sidechainLabel, pan, stereoWidth }) {
+function buildStrip({ id, name, volume, color, kind, fxCount, muted, solo, num, audioInputEnabled, recArmed, monitor, sidechainActive, sidechainLabel, pan, stereoWidth }) {
   const strip = document.createElement('div');
   strip.className = 'mixer-strip' + (kind === 'master' ? ' master' : '');
   strip.dataset.id = id;
@@ -7728,6 +7742,7 @@ function buildStrip({ id, name, volume, color, kind, fxCount, muted, solo, num, 
     <div class="knob-row" data-knob-row="${id}"></div>
     ${isBus ? `<div class="mixin ${audioInputEnabled ? 'on' : ''}" data-mixin-id="${id}" title="${audioInputEnabled ? 'Mic feeding this insert — click to remove' : 'Route a mic / audio input into this insert'}"><span class="mixin-led"></span>IN</div>` : ''}
     ${isBus && audioInputEnabled ? `<div class="mixarm ${recArmed ? 'on' : ''}" data-arm-id="${id}" title="${recArmed ? 'Armed — recording will capture this input' : 'Arm for recording'}"><span class="mixarm-disc"></span></div>` : ''}
+    ${isBus && audioInputEnabled ? `<div class="mixmon ${monitor ? 'on' : ''}" data-mon-id="${id}" title="${monitor ? 'Monitoring on — you hear the mic through the DAW' : 'Monitoring off — recording still captures. Click to hear yourself.'}">MON</div>` : ''}
     <div class="fxcount">${fxCount ? fxCount + ' FX' : '·'}</div>
     <div class="faderwrap">
       <input class="fader" type="range" min="0" max="1" step="0.001" value="${faderGainToPosition(volume)}" data-id="${id}" />
@@ -7742,6 +7757,7 @@ function buildStrip({ id, name, volume, color, kind, fxCount, muted, solo, num, 
     // IN button is its own click target — never let strip-select run for it.
     if (e.target.closest('.mixin')) return;
     if (e.target.closest('.mixarm')) return;
+    if (e.target.closest('.mixmon')) return;
     if (e.target.closest('.routearrow')) return;
     selectedStripId = id;
     renderMixer();
@@ -7758,6 +7774,13 @@ function buildStrip({ id, name, volume, color, kind, fxCount, muted, solo, num, 
     armBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       onMixerArmClick(id);
+    });
+  }
+  const monBtn = strip.querySelector('.mixmon');
+  if (monBtn) {
+    monBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleBusMonitor(id);
     });
   }
   // FL-style routing arrow. Right-click opens the routing menu for the
@@ -8774,23 +8797,40 @@ function samplesPerBar() {
 }
 
 function addAudioClipFromRecording(ctx, path, lengthSamples) {
-  if (!path || !lengthSamples) return;
-  const bus = (song.mixer.busses || []).find(b => b.id === ctx.busId);
+  console.log('[nasty] addAudioClipFromRecording:', { ctx, path, lengthSamples });
+  if (!path) { console.warn('[nasty] audio clip drop skipped: no path'); return; }
+  if (!lengthSamples) { console.warn('[nasty] audio clip drop skipped: zero-length'); return; }
+  // Fall back to the first input-enabled bus (or bus[0]) if the recording
+  // context is missing or stale — Claude's mid-take song rebuild could have
+  // invalidated the original busId, and dropping the take on the floor
+  // because the pointer is stale is worse than dropping it on a nearby bus.
+  let bus = ctx && ctx.busId
+    ? (song.mixer.busses || []).find(b => b.id === ctx.busId)
+    : null;
+  if (!bus) {
+    bus = (song.mixer.busses || []).find(b => b.audioInputEnabled)
+       || (song.mixer.busses || [])[0];
+    if (bus) console.warn('[nasty] recording ctx bus missing, fell back to', bus.id);
+  }
+  if (!bus) { console.warn('[nasty] audio clip drop failed: no bus available'); return; }
   const track = findOrCreateAudioTrack(bus);
+  if (!track) { console.warn('[nasty] audio clip drop failed: no track'); return; }
   const spb = samplesPerBar();
-  const startBar = ctx.startSample > 0 ? (ctx.startSample / spb) : 0;
+  const startSample = (ctx && ctx.startSample > 0) ? ctx.startSample : 0;
+  const startBar = startSample > 0 ? (startSample / spb) : 0;
   const lengthBars = Math.max(1 / 16, lengthSamples / spb);
   const clip = {
     id: 'aclip_' + Math.random().toString(36).slice(2, 8),
     type: 'audio',
     path,
-    busId: ctx.busId,
-    startSample: ctx.startSample || 0,
+    busId: bus.id,
+    startSample,
     lengthSamples,
     startBar, lengthBars,
-    color: bus && bus.color || '#ff5c93',
+    color: bus.color || '#ff5c93',
   };
   track.clips.push(clip);
+  console.log('[nasty] audio clip landed on track', track.id, 'clip', clip.id);
   if (window.nasty && window.nasty.engine) {
     window.nasty.engine.send({
       cmd: 'add_audio_clip',
@@ -8807,6 +8847,14 @@ function addAudioClipFromRecording(ctx, path, lengthSamples) {
 // the physical Rec + Play buttons and the voice-driven start_recording /
 // stop_recording tool paths. Returns { ok, reason?, busName? } so callers
 // can decide what to say to the user.
+//
+// Two-step flow: if the CoreAudio input device isn't open yet (default
+// state — we no longer auto-open at boot to avoid holding it hostage from
+// other apps), we send set_input_device first and finish the record start
+// from the input_device_set event handler. Otherwise the take rolls
+// immediately. pendingRecordStart carries the target bus across the async
+// gap.
+let pendingRecordStart = null;
 function startAudioRecording() {
   if (!(window.nasty && window.nasty.engine)) {
     return { ok: false, reason: 'audio engine not running' };
@@ -8826,9 +8874,23 @@ function startAudioRecording() {
       return { ok: false, reason: 'no mic device selected — click IN on a mixer strip once to pick one' };
     }
     wireMicIntoBus(first.id);
-    window.nasty.engine.send({ cmd: 'set_input_device', name: song.audioInputDevice });
     bus = first;
   }
+  if (!engineBoot.inputOpen) {
+    // Lazily open the CoreAudio input device. When the engine confirms with
+    // input_device_set, the handler calls _finalizeRecordStart to actually
+    // roll the take. This costs ~300ms of latency on the first record of a
+    // session but keeps CoreAudio input released the rest of the time.
+    pendingRecordStart = { busId: bus.id };
+    window.nasty.engine.send({ cmd: 'set_input_device', name: song.audioInputDevice });
+    return { ok: true, priming: true, busName: (bus.name || 'bus').trim() };
+  }
+  return _finalizeRecordStart({ busId: bus.id });
+}
+
+function _finalizeRecordStart(pending) {
+  const bus = (song.mixer.busses || []).find(b => b.id === pending.busId);
+  if (!bus) return { ok: false, reason: 'target bus disappeared' };
   bus.recArmed = true;
   recArmed = true;
   if (song.transportMode !== 'song') {
@@ -8870,6 +8932,14 @@ function stopAudioRecording() {
     rb.style.color = '';
   }
   for (const b of (song.mixer.busses || [])) b.recArmed = false;
+  // Release the CoreAudio input device unless something still needs it
+  // (a bus with monitoring on). Holding it open when idle causes conflicts
+  // with other apps (YouTube, Zoom, etc.) sharing the same device.
+  const stillNeedsInput = (song.mixer.busses || []).some(b => b.audioInputEnabled && b.monitor);
+  if (!stillNeedsInput && window.nasty && window.nasty.engine) {
+    window.nasty.engine.send({ cmd: 'set_input_device', name: '' });
+    engineBoot.inputOpen = false;
+  }
   renderMixer();
   persist();
   return { ok: true };
@@ -8940,10 +9010,46 @@ function wireMicIntoBus(busId) {
   const bus = (song.mixer.busses || []).find(b => b.id === busId);
   if (!bus) return;
   bus.audioInputEnabled = true;
-  if (window.nasty && window.nasty.engine) {
+  // Default input monitoring OFF (Ableton / FL Studio behaviour). Recording
+  // captures device input directly regardless of bus routing, so the take
+  // still works — the user just doesn't hear themselves through the DAW's
+  // speaker path, which prevents the mic→speakers→mic feedback loop we hit
+  // during the first vocal test. User enables via the MON button on the strip.
+  if (typeof bus.monitor !== 'boolean') bus.monitor = false;
+  if (window.nasty && window.nasty.engine && bus.monitor) {
     window.nasty.engine.send({
       cmd: 'set_channel_audio_input', channelId: bus.id, enabled: true,
     });
+  }
+  renderMixer();
+  persist();
+}
+
+// Flip input monitoring on/off for a bus. When off, the mic still gets
+// recorded (the engine taps the device callback directly), but doesn't
+// route through the bus → master → speakers path — so no feedback risk.
+function toggleBusMonitor(busId) {
+  const bus = (song.mixer.busses || []).find(b => b.id === busId);
+  if (!bus || !bus.audioInputEnabled) return;
+  bus.monitor = !bus.monitor;
+  if (window.nasty && window.nasty.engine) {
+    if (bus.monitor && !engineBoot.inputOpen && song.audioInputDevice) {
+      // Enabling monitoring needs the input device open.
+      window.nasty.engine.send({ cmd: 'set_input_device', name: song.audioInputDevice });
+    }
+    window.nasty.engine.send({
+      cmd: 'set_channel_audio_input',
+      channelId: bus.id,
+      enabled: !!bus.monitor,
+    });
+    // Disabling: release the input device if nothing else needs it (no other
+    // bus monitoring, no active recording). Keeps CoreAudio free for other apps.
+    const stillNeedsInput = (song.mixer.busses || []).some(b => b.audioInputEnabled && b.monitor)
+                          || isRecordingAudio();
+    if (!bus.monitor && !stillNeedsInput) {
+      window.nasty.engine.send({ cmd: 'set_input_device', name: '' });
+      engineBoot.inputOpen = false;
+    }
   }
   renderMixer();
   persist();
@@ -10493,6 +10599,11 @@ async function sendMessage(overrideText, opts) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         song, message: text, history: chatHistory,
+        // Recording lock: server prepends a HANDS-OFF banner + system prompt
+        // forbids any mutating tool while this is true. Prevents Claude from
+        // rebuilding the song mid-take (starves the audio thread → glitches).
+        is_recording: (typeof isRecordingAudio === 'function' && isRecordingAudio())
+                      || (typeof anyBusRecArmed === 'function' && anyBusRecArmed()),
         // Manifest of the user's actually-installed VST3/AU plugins. Engine
         // scans them at launch and pushes a plugin_list event; we forward it
         // so Claude knows what's available on THIS machine, not what it
@@ -12256,10 +12367,12 @@ async function hydratePluginChannels() {
   const sf2 = window.nasty.sf2Path ? await window.nasty.sf2Path() : '';
   // Path to bundled drum samples (mirrors sf2Path for GM).
   const drumsBase = sf2 ? sf2.replace(/[^/]+$/, 'drums/') : '';
-  // Restore the input device first (if the song used one) so bus mic feeds
-  // come up with signal instead of silence.
+  // Restore the input device only if the song had monitoring on somewhere.
+  // Recording-only buses (audioInputEnabled but monitor off) lazily open
+  // the device when startAudioRecording actually fires, so we don't hold
+  // the mic device hostage from other apps during idle project load.
   if (song.audioInputDevice
-      && (song.mixer.busses || []).some(b => b.audioInputEnabled)) {
+      && (song.mixer.busses || []).some(b => b.audioInputEnabled && b.monitor)) {
     window.nasty.engine.send({ cmd: 'set_input_device', name: song.audioInputDevice });
   }
   for (const c of song.channels) {
@@ -12418,6 +12531,7 @@ const engineBoot = {
   audioReady: false,
   deviceName: '',
   sampleRate: 0,
+  inputOpen: false,           // true while a CoreAudio input device is held open
 };
 
 function setBootPhase(text, sub) {
@@ -13467,31 +13581,44 @@ if (window.nasty && window.nasty.engine) {
       window.nasty.engine.send({ cmd: 'list_audio_devices' });
     } else if (msg.event === 'audio_inputs') {
       populateMicPicker(msg.inputs || [], msg.currentInput || '');
-      // Fresh-install auto-pick: if no device has ever been chosen, take the
-      // best-looking one from the list and set it. Prefers USB/mic-branded
-      // devices over "Aggregate" or virtual inputs. This lets Claude trigger
-      // recording without ever needing the user to open the mixer.
+      // Fresh-install auto-pick: if no device has ever been chosen, remember
+      // the best-looking one so startAudioRecording can lazily open it later.
+      // NOTE: we deliberately DO NOT send set_input_device on boot — opening
+      // CoreAudio input holds the mic device and can interfere with other apps
+      // sharing the same device family (YouTube, Zoom, etc.). Input opens
+      // only when the user actually starts a take.
       if (!song.audioInputDevice && Array.isArray(msg.inputs) && msg.inputs.length) {
         const smart = msg.inputs.find(n => /usb|mic|shure|blue|yeti|scarlett|apollo|at2020/i.test(n))
                    || msg.inputs.find(n => /macbook|built[- ]?in/i.test(n))
                    || msg.inputs[0];
         song.audioInputDevice = smart;
-        window.nasty.engine.send({ cmd: 'set_input_device', name: smart });
         persist();
       }
     } else if (msg.event === 'input_device_set') {
+      // Track whether the engine currently holds an input device — used to
+      // decide whether startAudioRecording needs to prime the device first
+      // vs. can start capturing immediately.
+      engineBoot.inputOpen = !!(msg.deviceName && (msg.inputChannels || 0) > 0);
       // Engine now has the mic open. If a bus was waiting for this (user
       // clicked "IN" on a mixer strip), wire it up now.
       if (pendingMicBusId) {
         wireMicIntoBus(pendingMicBusId);
         pendingMicBusId = null;
+      } else if (pendingRecordStart) {
+        // We asked to open the device so we could record — now that it's
+        // open, actually roll the take. See startAudioRecording lazy path.
+        const pending = pendingRecordStart;
+        pendingRecordStart = null;
+        _finalizeRecordStart(pending);
       } else {
         // Deviceless / global change — re-push any buses that had a mic feed
-        // so they reconnect to the freshly-open input node.
+        // so they reconnect to the freshly-open input node. Respect the
+        // per-bus monitor toggle: don't blindly re-enable routing to master
+        // if the user had monitoring off.
         for (const b of (song.mixer.busses || [])) {
           if (b.audioInputEnabled) {
             window.nasty.engine.send({
-              cmd: 'set_channel_audio_input', channelId: b.id, enabled: true,
+              cmd: 'set_channel_audio_input', channelId: b.id, enabled: !!b.monitor,
             });
           }
         }
@@ -13524,9 +13651,14 @@ if (window.nasty && window.nasty.engine) {
       }
       // Drop the fresh take onto the arrangement as an audio clip on the bus
       // it was recorded from, at the transport position where capture started.
-      if (msg.path && pendingRecordingContext) {
-        addAudioClipFromRecording(pendingRecordingContext, msg.path, msg.samples || 0);
+      // If pendingRecordingContext got nulled mid-take (previously happened
+      // when Claude rebuilt the song under us), addAudioClipFromRecording
+      // now falls back to the first input-enabled bus so the take still lands.
+      if (msg.path && msg.samples) {
+        addAudioClipFromRecording(pendingRecordingContext || {}, msg.path, msg.samples);
         pendingRecordingContext = null;
+      } else {
+        console.warn('[nasty] recording_stopped with no path/samples — nothing to drop:', msg);
       }
       console.log('[nasty] saved recording →', msg.path, 'samples=', msg.samples);
     } else if (msg.event === 'audio_clip_added') {

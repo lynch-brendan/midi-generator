@@ -2596,6 +2596,7 @@ class NastyChatRequest(BaseModel):
     drum_kits: list = []  # vintage drum-machine kits scanned locally by main.js
     flex_presets: list = []  # FLEX preset library: [{pack, presets: [name, ...]}] from main.js
     preset_vault: list = []  # user-captured plugin state snapshots: [{name, pluginName, pluginId, notes, capturedAt}]
+    is_recording: bool = False  # true while a mic take is rolling — locks song edits
 
 
 class NastyMidiIdeasRequest(BaseModel):
@@ -2964,8 +2965,21 @@ def nasty_chat(req: NastyChatRequest):
     # cheatsheet index are stable per session. Put the DYNAMIC bits into
     # the user message so the cached system prefix stays cache-hit across
     # turns — that's the whole point of prompt caching.
+    # Recording lock: while a mic take is active, ANY graph/pattern mutation
+    # can starve the audio thread and cause glitches / dropped takes. Prepend
+    # a loud banner so Claude sees this before it sees the song state. The
+    # matching hard rule is in prompts/nasty_system.md.
+    recording_banner = (
+        "🔴 RECORDING IN PROGRESS — HANDS OFF THE SONG.\n"
+        "A mic take is currently rolling. You MUST NOT modify song / patterns "
+        "/ channels / arrangement / effects / plugins this turn. If the user "
+        "asks for changes, tell them 'we're rolling — hit stop and I'll do it "
+        "after.' Only stop_recording, transport_stop, and read-only replies "
+        "are allowed.\n\n"
+    ) if req.is_recording else ""
     user_content = (
-        f"Current song state:\n```json\n{json.dumps(slim_song, indent=2)}\n```\n\n"
+        recording_banner
+        + f"Current song state:\n```json\n{json.dumps(slim_song, indent=2)}\n```\n\n"
         + ideas_block
         + sound_goals_block
         + f"User: {req.message}"
