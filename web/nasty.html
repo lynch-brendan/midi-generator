@@ -8781,6 +8781,16 @@ function findOrCreateAudioTrack(bus) {
   const trackName = 'Audio · ' + label.trim();
   let track = song.tracks.find(t => t.name === trackName);
   if (track) return track;
+  // Reuse the first empty auto-generated "Track N" lane instead of pushing
+  // a new row at index 50. Rows past the visible viewport are effectively
+  // invisible — the user sees "nothing recorded" even though the clip is
+  // there. Renaming an existing empty row keeps the take in the fold.
+  const empty = song.tracks.find(t => (t.clips || []).length === 0
+                                   && /^Track /.test(t.name || ''));
+  if (empty) {
+    empty.name = trackName;
+    return empty;
+  }
   track = {
     id: 'atk_' + Math.random().toString(36).slice(2, 8),
     name: trackName,
@@ -8861,20 +8871,27 @@ function startAudioRecording() {
   }
   let bus = (song.mixer.busses || []).find(b => b.audioInputEnabled);
   if (!bus) {
-    // No mic on any strip — auto-wire to the first insert so Claude can
-    // trigger recording without the user opening the mixer. Requires a
-    // device to have been picked once before (song.audioInputDevice) so
-    // the engine knows which mic to open; fresh installs still need one
-    // manual pick via the IN button.
-    const first = (song.mixer.busses || [])[0];
-    if (!first) {
+    // No mic on any strip — auto-wire to the first EMPTY insert (no
+    // effects, no routing target, not already an input). If every insert
+    // is in use we fall back to insert[0] so the take still happens.
+    // Claude can override by asking the user which strip to route to.
+    const busses = song.mixer.busses || [];
+    const routedInsertNums = new Set(
+      (song.channels || []).map(c => c.targetInsertNum || 0).filter(n => n)
+    );
+    const isEmpty = (b) =>
+      !b.audioInputEnabled
+      && (b.effects || []).length === 0
+      && !routedInsertNums.has(b.num);
+    const target = busses.find(isEmpty) || busses[0];
+    if (!target) {
       return { ok: false, reason: 'no mixer inserts available' };
     }
     if (!song.audioInputDevice) {
       return { ok: false, reason: 'no mic device selected — click IN on a mixer strip once to pick one' };
     }
-    wireMicIntoBus(first.id);
-    bus = first;
+    wireMicIntoBus(target.id);
+    bus = target;
   }
   if (!engineBoot.inputOpen) {
     // Lazily open the CoreAudio input device. When the engine confirms with
@@ -10600,10 +10617,11 @@ async function sendMessage(overrideText, opts) {
       body: JSON.stringify({
         song, message: text, history: chatHistory,
         // Recording lock: server prepends a HANDS-OFF banner + system prompt
-        // forbids any mutating tool while this is true. Prevents Claude from
-        // rebuilding the song mid-take (starves the audio thread → glitches).
-        is_recording: (typeof isRecordingAudio === 'function' && isRecordingAudio())
-                      || (typeof anyBusRecArmed === 'function' && anyBusRecArmed()),
+        // forbids any mutating tool while this is true. ONLY set for actively
+        // rolling takes — "armed but not started" should still let Claude
+        // do the requested setup work (e.g. "record vocals" when a mic is
+        // pre-primed).
+        is_recording: (typeof isRecordingAudio === 'function' && isRecordingAudio()),
         // Manifest of the user's actually-installed VST3/AU plugins. Engine
         // scans them at launch and pushes a plugin_list event; we forward it
         // so Claude knows what's available on THIS machine, not what it
