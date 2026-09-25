@@ -2532,6 +2532,21 @@
   </div>
 </div>
 
+<!-- Toast that surfaces engine `error` events (add_effect FAIL, channel-not-
+     found, load_plugin failures, etc.). Some of these leave the engine's
+     audio graph in a state where later commands stall silently — a reload
+     is the only recovery. Full-screen crash modal is too heavy for a soft
+     stall; this bottom-right toast asks the user "want to reload?" and
+     calls window.nasty.engine.restart() on confirm. -->
+<div id="engine-issue-toast" class="hidden" style="position:fixed;bottom:16px;right:16px;z-index:8500;max-width:380px;background:#3a2a15;border:1px solid #b0691f;border-radius:6px;padding:12px 14px;box-shadow:0 4px 14px rgba(0,0,0,0.5);font-size:12px;color:#f5d090">
+  <div style="font-weight:600;margin-bottom:4px;color:#ffb85c">Engine hit a snag</div>
+  <div id="engine-issue-msg" style="line-height:1.45;margin-bottom:10px;color:#f5d090;word-break:break-word"></div>
+  <div class="row" style="justify-content:flex-end;gap:6px">
+    <button id="engine-issue-dismiss" style="padding:4px 10px;font-size:11px">Dismiss</button>
+    <button id="engine-issue-reload" style="padding:4px 10px;font-size:11px;background:#b0691f;border-color:#b0691f;color:white">Reload engine</button>
+  </div>
+</div>
+
 <div id="engine-crash-modal" class="modal hidden" style="z-index:9000">
   <div class="modal-panel" style="max-width:440px">
     <h3 style="font-size:14px">The audio engine crashed</h3>
@@ -9067,6 +9082,41 @@ document.addEventListener('DOMContentLoaded', () => {
 // Restart handler can consult it after the user clicks. Cleared each open.
 let currentCrashCulprit = null;
 
+// Soft-error toast: surfaces engine `error` events (add_effect FAIL,
+// channel-not-found, etc.) with a Reload button. Distinct from
+// showEngineCrashModal, which fires on a hard subprocess crash. Some soft
+// errors leave the graph in a state where later commands stall silently —
+// giving the user a one-click reload is the pragmatic recovery.
+function showEngineIssueToast(message) {
+  const toast = document.getElementById('engine-issue-toast');
+  const body  = document.getElementById('engine-issue-msg');
+  if (!toast || !body) return;
+  body.textContent = message;
+  toast.classList.remove('hidden');
+}
+function hideEngineIssueToast() {
+  const toast = document.getElementById('engine-issue-toast');
+  if (toast) toast.classList.add('hidden');
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const dismiss = document.getElementById('engine-issue-dismiss');
+  const reload  = document.getElementById('engine-issue-reload');
+  if (dismiss) dismiss.addEventListener('click', hideEngineIssueToast);
+  if (reload) reload.addEventListener('click', async () => {
+    reload.disabled = true;
+    reload.textContent = 'Reloading…';
+    try {
+      if (window.nasty && window.nasty.engine) {
+        await window.nasty.engine.restart();
+      }
+    } finally {
+      hideEngineIssueToast();
+      reload.disabled = false;
+      reload.textContent = 'Reload engine';
+    }
+  });
+});
+
 function showEngineCrashModal(msg) {
   const modal = document.getElementById('engine-crash-modal');
   const body  = document.getElementById('engine-crash-body');
@@ -13541,6 +13591,7 @@ if (window.nasty && window.nasty.engine) {
       // audio-clip, bus-create, etc. Log for triage. The plugins tab only
       // reflects real plugin-scan failures (see enginePluginsError set-sites).
       console.warn('[nasty] engine error:', msg.error || msg);
+      showEngineIssueToast(String(msg.error || 'unspecified engine error'));
     }
   });
   // Ask for plugin list on startup (engine will respond after scan finishes)
