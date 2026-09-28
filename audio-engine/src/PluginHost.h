@@ -36,6 +36,12 @@ public:
     // silent after macOS resumes the machine.
     void changeListenerCallback(juce::ChangeBroadcaster* source) override;
 
+    // Called on the JUCE message thread whenever the device situation shifts
+    // (plug, unplug, sleep, Bluetooth pair). Wired from main.cpp to broadcast
+    // a `devices_changed` event so the UI can refresh its In:/Out: dropdowns
+    // without the user having to reopen them.
+    std::function<void()> onDevicesChanged;
+
     using ScanProgress = std::function<void(const juce::String& name, int idx, int total)>;
 
     void scanDefaultPaths(const ScanProgress& onProgress = {});
@@ -394,6 +400,12 @@ private:
     mutable std::mutex mutex;
     std::map<juce::String, ChannelSlot> channels; // by channelId
     bool audioRunning = false;
+
+    // Re-entrancy guard for changeListenerCallback. setAudioDeviceSetup calls
+    // inside the callback fire the listener again; without this flag we'd
+    // recurse and cascade into a graph-touching loop that SIGSEGV'd with a
+    // live plugin graph.
+    std::atomic<bool> inChangeListener{false};
 
     // Preset (program) names per plugin, filled by scanAllPluginPresets and
     // persisted via loadPresetCache/savePresetCache. Empty StringArray means

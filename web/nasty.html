@@ -2293,6 +2293,13 @@
     </div>
     <div class="tb-sep"></div>
     <div class="tb-group">
+      <label>In:</label>
+      <select id="tb-audio-in" title="Audio input device (mic)" style="min-width:140px">
+        <option>Loading devices…</option>
+      </select>
+    </div>
+    <div class="tb-sep"></div>
+    <div class="tb-group">
       <button class="tb-btn" id="save-btn" title="Save">💾</button>
       <button class="tb-btn" id="load-btn" title="Load">📂</button>
       <button class="tb-btn" id="export-btn" title="Export WAV">⤓</button>
@@ -9267,6 +9274,31 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
+// ---- Audio input dropdown -----------------------------------------------
+// Sibling to the Out: dropdown. Lets the user hot-swap the mic without
+// restarting. Picking "(none)" releases CoreAudio so other apps get the mic
+// back. Selection persists to song.audioInputDevice; if the engine currently
+// holds the device open (recording or a bus is monitoring), we hot-swap.
+function renderAudioInputDropdown(inputs, currentInput) {
+  const sel = document.getElementById('tb-audio-in');
+  if (!sel) return;
+  sel.innerHTML = '';
+  const none = document.createElement('option');
+  none.value = '';
+  none.textContent = '(none)';
+  sel.appendChild(none);
+  const list = Array.isArray(inputs) ? inputs : [];
+  for (const name of list) {
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name;
+    sel.appendChild(opt);
+  }
+  // Prefer the engine's live device; fall back to the primed choice.
+  const selected = currentInput || song.audioInputDevice || '';
+  if ([...sel.options].some(o => o.value === selected)) sel.value = selected;
+}
+
 // Engine-crash modal. Fired from the engine event handler when
 // audioEngineProc exits without Nasty asking for it. Renders the culprit
 // plugin's name if the crash landed within a few seconds of a load_plugin
@@ -9391,6 +9423,25 @@ document.addEventListener('DOMContentLoaded', () => {
   sel.addEventListener('change', () => {
     if (window.nasty && window.nasty.engine) {
       window.nasty.engine.send({ cmd: 'set_output_device', name: sel.value });
+    }
+  });
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+  const sel = document.getElementById('tb-audio-in');
+  if (!sel) return;
+  sel.addEventListener('change', () => {
+    const dev = sel.value;
+    song.audioInputDevice = dev;
+    persist();
+    if (!(window.nasty && window.nasty.engine)) return;
+    // Only touch the engine when it's already holding a device — otherwise the
+    // change is just a "next time you need a mic, use this one" hint. Opening
+    // CoreAudio input here would steal the mic from other apps.
+    const engineHolding = engineBoot && engineBoot.inputOpen;
+    if (engineHolding || isRecordingAudio()) {
+      window.nasty.engine.send({ cmd: 'set_input_device', name: dev });
+      if (!dev) engineBoot.inputOpen = false;
     }
   });
 });
@@ -13731,11 +13782,18 @@ if (window.nasty && window.nasty.engine) {
       if (browserTab === 'plugins') renderBrowser();
     } else if (msg.event === 'audio_devices') {
       renderAudioDeviceDropdown(msg.devices || {});
+    } else if (msg.event === 'devices_changed') {
+      // Engine noticed a plug / unplug / Bluetooth pair — refresh both lists.
+      if (window.nasty && window.nasty.engine) {
+        window.nasty.engine.send({ cmd: 'list_audio_devices' });
+        window.nasty.engine.send({ cmd: 'list_audio_inputs' });
+      }
     } else if (msg.event === 'output_device_set') {
       // Re-query so the dropdown reflects what the engine actually settled on.
       window.nasty.engine.send({ cmd: 'list_audio_devices' });
     } else if (msg.event === 'audio_inputs') {
       populateMicPicker(msg.inputs || [], msg.currentInput || '');
+      renderAudioInputDropdown(msg.inputs || [], msg.currentInput || '');
       // Fresh-install auto-pick: if no device has ever been chosen, remember
       // the best-looking one so startAudioRecording can lazily open it later.
       // NOTE: we deliberately DO NOT send set_input_device on boot — opening
@@ -13754,6 +13812,10 @@ if (window.nasty && window.nasty.engine) {
       // decide whether startAudioRecording needs to prime the device first
       // vs. can start capturing immediately.
       engineBoot.inputOpen = !!(msg.deviceName && (msg.inputChannels || 0) > 0);
+      const inSel = document.getElementById('tb-audio-in');
+      if (inSel && [...inSel.options].some(o => o.value === (msg.deviceName || ''))) {
+        inSel.value = msg.deviceName || '';
+      }
       // Engine now has the mic open. If a bus was waiting for this (user
       // clicked "IN" on a mixer strip), wire it up now.
       if (pendingMicBusId) {
@@ -13893,6 +13955,20 @@ if (window.nasty && window.nasty.engine) {
         maybeWriteAfterSnapshots();
       }
     } else if (msg.event === 'error') {
+      // Device-swap failures carry a `name` field (the device we tried to
+      // switch to). Show a friendly toast and re-query so the dropdowns
+      // reflect the engine's actual current device — the engine rolled back,
+      // so we should too.
+      if (msg.name !== undefined) {
+        const which = msg.name ? `"${msg.name}"` : 'that device';
+        console.warn('[nasty] device swap failed:', msg.error, 'name=', msg.name);
+        showEngineIssueToast(`Couldn't switch to ${which} — ${msg.error || 'device error'}`);
+        if (window.nasty && window.nasty.engine) {
+          window.nasty.engine.send({ cmd: 'list_audio_devices' });
+          window.nasty.engine.send({ cmd: 'list_audio_inputs' });
+        }
+        return;
+      }
       // Generic engine errors are NOT plugin errors — some are recording,
       // audio-clip, bus-create, etc. Log for triage. The plugins tab only
       // reflects real plugin-scan failures (see enginePluginsError set-sites).

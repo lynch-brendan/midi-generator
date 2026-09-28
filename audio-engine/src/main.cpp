@@ -13,6 +13,7 @@
 #include "PluginHost.h"
 #include "StdioBridge.h"
 
+#include <chrono>
 #include <iostream>
 #include <thread>
 
@@ -33,6 +34,21 @@ int main(int /*argc*/, char** /*argv*/) {
 
     nasty::PluginHost host;
     nasty::StdioBridge bridge(host);
+
+    // Broadcast when a device is plugged / unplugged / paired so the UI can
+    // refresh its In:/Out: dropdowns without the user having to click them.
+    // Debounced to one event per 500ms — JUCE's change listener can fire many
+    // times for a single physical event (BT pair, plug), and we don't want to
+    // spam the frontend with re-queries. Leading edge only: the frontend
+    // always fetches the current list on receipt, so dropping later bursts is
+    // safe.
+    host.onDevicesChanged = [&bridge] {
+        static std::chrono::steady_clock::time_point lastEmit;
+        auto now = std::chrono::steady_clock::now();
+        if (now - lastEmit < std::chrono::milliseconds(500)) return;
+        lastEmit = now;
+        bridge.sendEvent({{"event", juce::var("devices_changed")}});
+    };
 
     // Send ready event before scanning (scan can take seconds).
     bridge.sendEvent({{"event", juce::var("starting")}});

@@ -960,20 +960,20 @@ void PluginHost::savePresetCache(const juce::File& cacheFile) const {
 void PluginHost::startAudio() {
     if (audioRunning) return;
 
-    // Initialise with room for stereo input even though we don't bind an
-    // input device yet — numInputChansNeeded is stored internally and gates
-    // how many input channels come through once someone picks a mic. If we
-    // start at 0, later setAudioDeviceSetup calls with an input device open
-    // it with 0 active channels (silent). Bluetooth headsets stay in A2DP
-    // because inputDeviceName is empty — CoreAudio only flips to HFP when
-    // the BT device is actually opened for input.
+    // Boot output-only (numInputs=0). Requesting input channels here — even
+    // with an empty inputDeviceName — is enough for macOS to flip Bluetooth
+    // devices into HFP profile (16kHz bidirectional) because BT speakers
+    // with mics show up as system-default input too. FL / Ableton avoid this
+    // by keeping input dormant until the user actually records; we do the
+    // same. setInputDevice re-initialises with numInputs=2 when the user
+    // engages the mic.
     juce::AudioDeviceManager::AudioDeviceSetup setup;
     setup.inputDeviceName = "";
     setup.useDefaultInputChannels = false;
     setup.inputChannels.clear();
     setup.useDefaultOutputChannels = true;
     juce::String err = deviceManager.initialise(
-        /*numInputs*/  2,
+        /*numInputs*/  0,
         /*numOutputs*/ 2,
         /*savedState*/ nullptr,
         /*selectDefaultDevice*/ true,
@@ -1029,24 +1029,31 @@ void PluginHost::startAudio() {
 
 void PluginHost::changeListenerCallback(juce::ChangeBroadcaster* source) {
     if (source != &deviceManager) return;
-    // If the current device went away (sleep, unplug), rebind — but preserve
-    // whatever input device the user already picked. Previous behaviour called
-    // initialiseWithDefaultDevices(0, 2), which silently killed the mic every
-    // time the user switched output.
+
+    // Re-entrancy guard: our own setAudioDeviceSetup call below will fire this
+    // same listener. Without the guard we'd recurse and hammer the graph on
+    // every device wobble — that was the SIGSEGV path when a swap failed.
+    if (inChangeListener.exchange(true)) return;
+    struct ClearOnExit { std::atomic<bool>& f; ~ClearOnExit(){ f.store(false); } } clr{inChangeListener};
+
+    // Tell the UI something shifted so it can re-list the dropdowns. Debounced
+    // in main.cpp so a single physical event (plug, BT pair) can't cascade.
+    if (onDevicesChanged) onDevicesChanged();
+
+    // If the current device is still alive, we're done — the UI refresh above
+    // is all this listener needs to do. Only rebind if the device actually
+    // went away (sleep, unplug).
     auto* currentDevice = deviceManager.getCurrentAudioDevice();
     if (currentDevice && currentDevice->isOpen()) return;
     std::cerr << "[PluginHost] audio device changed / lost — reconnecting" << std::endl;
 
+    // Use the lighter setAudioDeviceSetup instead of the full initialise().
+    // initialise() tears down and rebuilds every audio node, and doing that
+    // while the plugin graph is live and the audio callback may be mid-buffer
+    // is the SEGV vector we hit during the same-device I/O failure loop.
     juce::AudioDeviceManager::AudioDeviceSetup preserved;
     deviceManager.getAudioDeviceSetup(preserved);
-
-    deviceManager.removeAudioCallback(this);
-    deviceManager.initialise(/*numInputs*/ 2, /*numOutputs*/ 2,
-                             /*savedState*/ nullptr,
-                             /*selectDefaultDevice*/ true,
-                             /*preferredDefault*/ juce::String(),
-                             &preserved);
-    deviceManager.addAudioCallback(this);
+    deviceManager.setAudioDeviceSetup(preserved, true);
 
     // Re-run the audio-input wiring — the graph audio input node's channel
     // count may have shifted with the new device.
@@ -2452,8 +2459,16 @@ juce::var PluginHost::currentInputSnapshot() const {
 juce::String PluginHost::setInputDevice(const juce::String& deviceName) {
     if (!audioRunning) startAudio();
 
-    juce::AudioDeviceManager::AudioDeviceSetup setup;
-    deviceManager.getAudioDeviceSetup(setup);
+    // Snapshot the working setup so we can roll back cleanly if the new
+    // config fails to negotiate (mismatched sample rates, mic that can't
+    // do the requested channel count, etc.). Prior behaviour left the
+    // deviceManager in a half-alive state that the change listener then
+    // tried to "recover" by calling initialise() again, cascading into a
+    // graph-touching loop that SIGSEGV'd with plugins loaded.
+    juce::AudioDeviceManager::AudioDeviceSetup priorSetup;
+    deviceManager.getAudioDeviceSetup(priorSetup);
+
+    juce::AudioDeviceManager::AudioDeviceSetup setup = priorSetup;
     setup.inputDeviceName = deviceName;
     setup.useDefaultInputChannels = deviceName.isNotEmpty();
     if (deviceName.isEmpty()) setup.inputChannels.clear();
@@ -2471,11 +2486,20 @@ juce::String PluginHost::setInputDevice(const juce::String& deviceName) {
         /*selectDefaultDevice*/ true,
         /*preferredDefault*/ juce::String(),
         &setup);
-    deviceManager.addAudioCallback(this);
     if (err.isNotEmpty()) {
-        std::cerr << "[PluginHost] setInputDevice failed: " << err << std::endl;
+        std::cerr << "[PluginHost] setInputDevice failed: " << err
+                  << " — rolling back to '" << priorSetup.inputDeviceName << "'" << std::endl;
+        // Roll back to the working setup so the engine stays alive.
+        const int priorInCh = priorSetup.inputDeviceName.isNotEmpty() ? 2 : 0;
+        deviceManager.initialise(priorInCh, 2, nullptr, true, {}, &priorSetup);
+        deviceManager.addAudioCallback(this);
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            reconnectAudioInputsUnlocked();
+        }
         return err;
     }
+    deviceManager.addAudioCallback(this);
     if (auto* dev = deviceManager.getCurrentAudioDevice()) {
         std::cerr << "[PluginHost] input device: " << setup.inputDeviceName
                   << " (" << dev->getActiveInputChannels().countNumberOfSetBits()
@@ -2789,8 +2813,11 @@ juce::String PluginHost::createAudioInputChannel(const juce::String& channelId) 
 
 juce::String PluginHost::setOutputDevice(const juce::String& deviceName) {
     if (!audioRunning) startAudio();
-    juce::AudioDeviceManager::AudioDeviceSetup setup;
-    deviceManager.getAudioDeviceSetup(setup);
+    // Snapshot for rollback — same reasoning as setInputDevice.
+    juce::AudioDeviceManager::AudioDeviceSetup priorSetup;
+    deviceManager.getAudioDeviceSetup(priorSetup);
+
+    juce::AudioDeviceManager::AudioDeviceSetup setup = priorSetup;
     setup.outputDeviceName = deviceName;
     setup.useDefaultOutputChannels = true;
     auto err = deviceManager.setAudioDeviceSetup(setup, true);
@@ -2817,7 +2844,10 @@ juce::String PluginHost::setOutputDevice(const juce::String& deviceName) {
         std::lock_guard<std::mutex> lock(mutex);
         reconnectAudioInputsUnlocked();
     } else {
-        std::cerr << "[PluginHost] setOutputDevice failed: " << err << std::endl;
+        std::cerr << "[PluginHost] setOutputDevice failed: " << err
+                  << " — rolling back to '" << priorSetup.outputDeviceName << "'" << std::endl;
+        // Roll back so the engine stays on the last working device.
+        deviceManager.setAudioDeviceSetup(priorSetup, true);
     }
     return err;
 }
