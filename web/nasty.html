@@ -8937,13 +8937,12 @@ function startAudioRecording() {
     bus = target;
   }
   if (!engineBoot.inputOpen) {
-    // Lazily open the CoreAudio input device. When the engine confirms with
-    // input_device_set, the handler calls _finalizeRecordStart to actually
-    // roll the take. This costs ~300ms of latency on the first record of a
-    // session but keeps CoreAudio input released the rest of the time.
-    pendingRecordStart = { busId: bus.id };
-    window.nasty.engine.send({ cmd: 'set_input_device', name: song.audioInputDevice });
-    return { ok: true, priming: true, busName: (bus.name || 'bus').trim() };
+    // Input isn't live on the engine. We used to lazily send set_input_device
+    // here, but that calls JUCE's aggregate reconfigure with the plugin graph
+    // loaded — the SIGABRT vector. Device changes go through engine restart
+    // now. Nudge the user: pick In: from the toolbar, which triggers the
+    // restart with the mic baked in.
+    return { ok: false, reason: 'pick your mic from the In: dropdown first — that boots the mic side' };
   }
   return _finalizeRecordStart({ busId: bus.id });
 }
@@ -9417,13 +9416,31 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 });
+// Device swaps go through an engine RESTART, not a live setAudioDeviceSetup.
+// JUCE's aggregate device reconfigure crashes when plugins are loaded, so
+// the only reliable path is a fresh engine boot with the new device baked
+// in from init. Same pattern FL uses when you switch ASIO devices.
+async function restartEngineWithDevices() {
+  if (!(window.nasty && window.nasty.engine && window.nasty.engine.restart)) return;
+  const outputDevice = song.audioOutputDevice || '';
+  const inputDevice  = song.audioInputDevice  || '';
+  // Boot overlay covers the ~3-5s restart. Don't use the crash-styled toast;
+  // this isn't a snag, it's a planned reboot.
+  setBootPhase('switching audio device', 'engine will be back in a few seconds');
+  try {
+    await window.nasty.engine.restart({ outputDevice, inputDevice });
+  } catch (e) {
+    console.warn('[nasty] engine restart failed:', e);
+  }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const sel = document.getElementById('tb-audio-out');
   if (!sel) return;
   sel.addEventListener('change', () => {
-    if (window.nasty && window.nasty.engine) {
-      window.nasty.engine.send({ cmd: 'set_output_device', name: sel.value });
-    }
+    song.audioOutputDevice = sel.value;
+    persist();
+    restartEngineWithDevices();
   });
 });
 
@@ -9431,18 +9448,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const sel = document.getElementById('tb-audio-in');
   if (!sel) return;
   sel.addEventListener('change', () => {
-    const dev = sel.value;
-    song.audioInputDevice = dev;
+    song.audioInputDevice = sel.value;
     persist();
-    if (!(window.nasty && window.nasty.engine)) return;
-    // Only touch the engine when it's already holding a device — otherwise the
-    // change is just a "next time you need a mic, use this one" hint. Opening
-    // CoreAudio input here would steal the mic from other apps.
-    const engineHolding = engineBoot && engineBoot.inputOpen;
-    if (engineHolding || isRecordingAudio()) {
-      window.nasty.engine.send({ cmd: 'set_input_device', name: dev });
-      if (!dev) engineBoot.inputOpen = false;
-    }
+    restartEngineWithDevices();
   });
 });
 
@@ -13783,6 +13791,20 @@ if (window.nasty && window.nasty.engine) {
       // usable and results merge in when ready.
       augmentPluginPresetsFromDisk();
       if (browserTab === 'plugins') renderBrowser();
+    } else if (msg.event === 'output_device_fallback') {
+      // Engine wanted to boot on msg.fromName but it came up at a bad rate
+      // (BT stuck in HFP call mode is the common cause). Fell back to
+      // msg.toName. Tell the user the specific reason + how to fix it, and
+      // update the persisted device so we don't retry the bad one on next
+      // boot until the user explicitly re-picks it.
+      const badKHz = msg.badRate ? (msg.badRate / 1000).toFixed(1) : '?';
+      showEngineIssueToast(
+        `"${msg.fromName}" came up at ${badKHz}kHz (Bluetooth call mode). ` +
+        `Using "${msg.toName}" instead. To fix: open the Mac's Bluetooth menu, ` +
+        `disconnect "${msg.fromName}", then reconnect. Then re-pick from Out:.`
+      );
+      song.audioOutputDevice = msg.toName || '';
+      persist();
     } else if (msg.event === 'audio_devices') {
       renderAudioDeviceDropdown(msg.devices || {});
     } else if (msg.event === 'devices_changed') {

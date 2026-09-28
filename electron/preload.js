@@ -100,10 +100,13 @@ contextBridge.exposeInMainWorld('nasty', {
     // Check whether the engine is running and finished its initial plugin scan.
     status: () => ipcRenderer.invoke('engine-status'),
 
-    // Kill + respawn the audio engine subprocess so it re-scans the plugin
-    // folders. Used by onboarding on "I'm done" — after fresh installs the
-    // engine's cached plugin_list is stale until restart.
-    restart: () => ipcRenderer.invoke('restart-audio-engine'),
+    // Kill + respawn the audio engine subprocess. Used for:
+    //   - onboarding on "I'm done" (re-scan freshly installed plugins)
+    //   - device swaps (opts.outputDevice / opts.inputDevice — see below)
+    // Passing device names in opts avoids the live-swap crash class: the
+    // engine boots directly on the requested devices instead of trying to
+    // reconfigure them with a plugin graph already loaded.
+    restart: (opts) => ipcRenderer.invoke('restart-audio-engine', opts || {}),
 
     // Disk-truth listing of every plugin bundle installed on the user's Mac.
     // Onboarding uses this for the verification report so it works even

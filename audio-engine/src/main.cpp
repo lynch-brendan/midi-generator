@@ -129,6 +129,37 @@ int main(int /*argc*/, char** /*argv*/) {
         });
     }
 
+    // If the requested output device came up at a music-hostile rate and we
+    // fell back to a built-in output, tell the frontend so it can show a
+    // human explanation instead of the user wondering why their pick "didn't
+    // stick." Common trigger: Bluetooth speaker stuck in HFP (call mode).
+    if (host.lastFallbackFromDevice.isNotEmpty()) {
+        bridge.sendEvent({
+            {"event",     juce::var("output_device_fallback")},
+            {"fromName",  juce::var(host.lastFallbackFromDevice)},
+            {"toName",    juce::var(host.lastFallbackToDevice)},
+            {"badRate",   juce::var(host.lastFallbackBadRate)},
+        });
+    }
+
+    // If NASTY_INPUT_DEVICE was set, the mic side is already live from the
+    // initial deviceManager.initialise(). Emit input_device_set so the
+    // frontend flips engineBoot.inputOpen without needing a set_input_device
+    // round-trip (which would trigger the aggregate-reconfigure crash).
+    {
+        auto snap = host.currentInputSnapshot();
+        auto* obj = snap.getDynamicObject();
+        juce::String inName = obj ? obj->getProperty("deviceName").toString() : juce::String();
+        int inCh            = obj ? (int) obj->getProperty("inputChannels")   : 0;
+        if (inName.isNotEmpty() && inCh > 0) {
+            bridge.sendEvent({
+                {"event",         juce::var("input_device_set")},
+                {"deviceName",    juce::var(inName)},
+                {"inputChannels", juce::var(inCh)},
+            });
+        }
+    }
+
     // Block on JUCE's message loop for plugin UIs, timers, etc.
     // The bridge reads stdin on a background thread and dispatches to us.
     bridge.startReadThread();

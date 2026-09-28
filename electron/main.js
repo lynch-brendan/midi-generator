@@ -36,6 +36,10 @@ let lastRiskyCommand = null;
 // exit handler sees this flag, the exit is treated as clean and no crash
 // modal fires. Anything else that trips the exit handler is a real crash.
 let engineShutdownIntentional = false;
+// Device overrides staged by the restart-audio-engine IPC; consumed by the
+// next startAudioEngine() call and cleared. Prevents auto-restarts from
+// inheriting stale device selections.
+let pendingDeviceOverrides = null;
 
 function findAudioEngineBinary() {
   const candidates = [
@@ -175,6 +179,15 @@ function startAudioEngine() {
   // engine when creating GM channels.
   const sf2Path = instrumentsPath ? path.join(instrumentsPath, 'GeneralUser.sf2') : '';
   engineEnv.NASTY_SF2_PATH = sf2Path;
+  // Device overrides from the last restart-audio-engine IPC. The engine's
+  // startAudio() picks these up in place of system defaults. Cleared after
+  // use so a spontaneous restart (e.g., crash recovery) doesn't inherit
+  // stale overrides.
+  if (pendingDeviceOverrides) {
+    if (pendingDeviceOverrides.outputDevice) engineEnv.NASTY_OUTPUT_DEVICE = pendingDeviceOverrides.outputDevice;
+    if (pendingDeviceOverrides.inputDevice)  engineEnv.NASTY_INPUT_DEVICE  = pendingDeviceOverrides.inputDevice;
+    pendingDeviceOverrides = null;
+  }
 
   console.log('[nasty] spawning audio engine:', bin);
   if (instrumentsPath) console.log('[nasty] bundled instruments at:', instrumentsPath);
@@ -275,7 +288,14 @@ ipcMain.handle('engine-status', () => ({
 // everything the vendor installers just wrote to disk. The engine's
 // list_plugins command replays a cached list from boot, so nothing short
 // of a restart makes fresh installs visible in Nasty's browser.
-ipcMain.handle('restart-audio-engine', async () => {
+ipcMain.handle('restart-audio-engine', async (_evt, opts) => {
+  // Device swaps happen via engine restart (not live setAudioDeviceSetup)
+  // because JUCE's aggregate device reconfigure crashes when plugins are
+  // loaded. Pass the requested devices as env vars — startAudio() reads
+  // them and uses them in the initial deviceManager.initialise().
+  const outDev = (opts && typeof opts.outputDevice === 'string') ? opts.outputDevice : '';
+  const inDev  = (opts && typeof opts.inputDevice  === 'string') ? opts.inputDevice  : '';
+  pendingDeviceOverrides = { outputDevice: outDev, inputDevice: inDev };
   stopAudioEngine();
   await new Promise((r) => setTimeout(r, 300));
   startAudioEngine();

@@ -960,20 +960,33 @@ void PluginHost::savePresetCache(const juce::File& cacheFile) const {
 void PluginHost::startAudio() {
     if (audioRunning) return;
 
-    // Boot output-only (numInputs=0). Requesting input channels here — even
-    // with an empty inputDeviceName — is enough for macOS to flip Bluetooth
-    // devices into HFP profile (16kHz bidirectional) because BT speakers
-    // with mics show up as system-default input too. FL / Ableton avoid this
-    // by keeping input dormant until the user actually records; we do the
-    // same. setInputDevice re-initialises with numInputs=2 when the user
-    // engages the mic.
+    // Boot-time device selection comes from env vars set by the Electron
+    // parent on spawn. This is how we handle device swaps: the frontend
+    // asks main.js to relaunch the engine with new NASTY_OUTPUT_DEVICE /
+    // NASTY_INPUT_DEVICE. That way the device is picked at initialise()
+    // time and we never call setAudioDeviceSetup on a live plugin graph —
+    // which was the SIGABRT vector.
+    const char* envOut = std::getenv("NASTY_OUTPUT_DEVICE");
+    const char* envIn  = std::getenv("NASTY_INPUT_DEVICE");
+    const juce::String preferredOutput = envOut ? juce::String(envOut) : juce::String();
+    const juce::String preferredInput  = envIn  ? juce::String(envIn)  : juce::String();
+
     juce::AudioDeviceManager::AudioDeviceSetup setup;
-    setup.inputDeviceName = "";
-    setup.useDefaultInputChannels = false;
-    setup.inputChannels.clear();
+    setup.outputDeviceName = preferredOutput;
     setup.useDefaultOutputChannels = true;
+    // Only ask for input channels if a mic was explicitly requested.
+    // Otherwise Bluetooth devices flip to HFP profile (16kHz) just because
+    // an app asked for mic capacity.
+    if (preferredInput.isNotEmpty()) {
+        setup.inputDeviceName = preferredInput;
+        setup.useDefaultInputChannels = true;
+    } else {
+        setup.inputDeviceName = "";
+        setup.useDefaultInputChannels = false;
+        setup.inputChannels.clear();
+    }
     juce::String err = deviceManager.initialise(
-        /*numInputs*/  0,
+        /*numInputs*/  preferredInput.isNotEmpty() ? 2 : 0,
         /*numOutputs*/ 2,
         /*savedState*/ nullptr,
         /*selectDefaultDevice*/ true,
@@ -984,10 +997,45 @@ void PluginHost::startAudio() {
         return;
     }
 
-    // Adapt to whatever rate the device negotiates. Forcing a rate here was
-    // a device-wide property change in CoreAudio — every other app sharing
-    // the device got resampled or muted. Just accept the rate; the UI warns
-    // if it's music-hostile.
+    // Music-hostile-rate fallback (runs BEFORE plugins land in the graph and
+    // BEFORE the audio callback is registered). Doing this later — after
+    // hydration — triggers the aggregate-reconfigure crash. Here it's safe.
+    // Prefer a MacBook / Built-in output; skip if we're already on one.
+    // Records the fallback reason so main.cpp can broadcast an event the
+    // frontend surfaces as a proper explanation ("Soundcore came up at
+    // 16kHz — using MacBook Pro Speakers. Re-pair Soundcore to fix.").
+    if (auto* dev = deviceManager.getCurrentAudioDevice()) {
+        if (dev->getCurrentSampleRate() < 44100.0) {
+            const juce::String curName = dev->getName();
+            const double badRate = dev->getCurrentSampleRate();
+            const bool alreadyBuiltIn =
+                curName.containsIgnoreCase("MacBook")
+             || curName.containsIgnoreCase("Built-in");
+            if (!alreadyBuiltIn) {
+                if (auto* type = deviceManager.getCurrentDeviceTypeObject()) {
+                    type->scanForDevices();
+                    juce::String pick;
+                    for (const auto& n : type->getDeviceNames(false)) {
+                        if (n.containsIgnoreCase("MacBook")
+                         || n.containsIgnoreCase("Built-in")) { pick = n; break; }
+                    }
+                    if (pick.isNotEmpty()) {
+                        std::cerr << "[PluginHost] boot rate " << badRate
+                                  << " on '" << curName
+                                  << "' — falling back to '" << pick << "'" << std::endl;
+                        juce::AudioDeviceManager::AudioDeviceSetup s;
+                        deviceManager.getAudioDeviceSetup(s);
+                        s.outputDeviceName = pick;
+                        s.useDefaultOutputChannels = true;
+                        deviceManager.setAudioDeviceSetup(s, true);
+                        lastFallbackFromDevice = curName;
+                        lastFallbackToDevice   = pick;
+                        lastFallbackBadRate    = badRate;
+                    }
+                }
+            }
+        }
+    }
 
     if (!deviceManager.getCurrentAudioDevice()) {
         std::cerr << "[PluginHost] no current audio device after init" << std::endl;
@@ -1018,35 +1066,21 @@ void PluginHost::startAudio() {
 void PluginHost::changeListenerCallback(juce::ChangeBroadcaster* source) {
     if (source != &deviceManager) return;
 
-    // Re-entrancy guard: our own setAudioDeviceSetup call below will fire this
-    // same listener. Without the guard we'd recurse and hammer the graph on
-    // every device wobble — that was the SIGSEGV path when a swap failed.
-    if (inChangeListener.exchange(true)) return;
-    struct ClearOnExit { std::atomic<bool>& f; ~ClearOnExit(){ f.store(false); } } clr{inChangeListener};
-
-    // Tell the UI something shifted so it can re-list the dropdowns. Debounced
+    // Broadcast to the UI so its In:/Out: dropdowns can refresh. Debounced
     // in main.cpp so a single physical event (plug, BT pair) can't cascade.
     if (onDevicesChanged) onDevicesChanged();
 
-    // If the current device is still alive, we're done — the UI refresh above
-    // is all this listener needs to do. Only rebind if the device actually
-    // went away (sleep, unplug).
-    auto* currentDevice = deviceManager.getCurrentAudioDevice();
-    if (currentDevice && currentDevice->isOpen()) return;
-    std::cerr << "[PluginHost] audio device changed / lost — reconnecting" << std::endl;
+    // Deliberately DO NOT try to reconnect from here. Any setAudioDeviceSetup
+    // call inside this callback can trigger another async fire of this same
+    // listener — a cascade that SIGABRTs when JUCE's aggregate reconfigure
+    // trips its assertions. If a device truly went away, the user picks a
+    // new one from the dropdown and setOutputDevice / setInputDevice does
+    // the reconnect cleanly with rollback on failure. That's the crash-safe
+    // path — same as how FL / Logic handle a device disappearing.
 
-    // Use the lighter setAudioDeviceSetup instead of the full initialise().
-    // initialise() tears down and rebuilds every audio node, and doing that
-    // while the plugin graph is live and the audio callback may be mid-buffer
-    // is the SEGV vector we hit during the same-device I/O failure loop.
-    juce::AudioDeviceManager::AudioDeviceSetup preserved;
-    deviceManager.getAudioDeviceSetup(preserved);
-    deviceManager.setAudioDeviceSetup(preserved, true);
-
-    // Re-run the audio-input wiring — the graph audio input node's channel
-    // count may have shifted with the new device.
-    std::lock_guard<std::mutex> lock(mutex);
-    reconnectAudioInputsUnlocked();
+    // The old graph-input rewiring path used to run here too, but with no
+    // reconnect above it, there's nothing to rewire against — the graph
+    // stays pointed at whatever setInputDevice last established.
 }
 
 void PluginHost::stopAudio() {
@@ -2801,7 +2835,16 @@ juce::String PluginHost::createAudioInputChannel(const juce::String& channelId) 
 
 juce::String PluginHost::setOutputDevice(const juce::String& deviceName) {
     if (!audioRunning) startAudio();
-    // Snapshot for rollback — same reasoning as setInputDevice.
+    // Cold-swap the device: unhook the graph and stop the audio callback
+    // BEFORE setAudioDeviceSetup runs. Live-swapping a device while the
+    // graph is being processed is what SIGABRTs — JUCE's aggregate device
+    // reconfigure calls prepareToPlay on plugins mid-buffer and trips a
+    // graph-thread assertion. With the callback removed, no plugin
+    // processing happens during the swap; we re-hook after.
+    deviceManager.removeAudioCallback(this);
+    setProcessor(nullptr);
+
+    // Snapshot for rollback.
     juce::AudioDeviceManager::AudioDeviceSetup priorSetup;
     deviceManager.getAudioDeviceSetup(priorSetup);
 
@@ -2824,19 +2867,32 @@ juce::String PluginHost::setOutputDevice(const juce::String& deviceName) {
     }
     if (err.isEmpty()) {
         if (auto* dev = deviceManager.getCurrentAudioDevice()) {
-            std::cerr << "[PluginHost] switched output to: " << dev->getName() << std::endl;
+            std::cerr << "[PluginHost] switched output to: " << dev->getName()
+                      << " @ " << dev->getCurrentSampleRate() << "Hz" << std::endl;
+            // Reject music-hostile rates (BT stuck in call mode = 16kHz).
+            if (dev->getCurrentSampleRate() < 44100.0) {
+                const double badRate = dev->getCurrentSampleRate();
+                std::cerr << "[PluginHost] '" << dev->getName()
+                          << "' came up at " << badRate << "Hz — rolling back" << std::endl;
+                deviceManager.setAudioDeviceSetup(priorSetup, true);
+                setProcessor(&graph);
+                deviceManager.addAudioCallback(this);
+                return "This device came up at " + juce::String(badRate/1000.0, 1)
+                     + "kHz (Bluetooth call mode). Disconnect and re-pair it in the Mac's Bluetooth menu, then try again.";
+            }
         }
-        // Input side may have been renegotiated (same device now for both) —
-        // re-establish audio-input passthrough wiring so bus mic feeds
-        // survive an output switch.
         std::lock_guard<std::mutex> lock(mutex);
         reconnectAudioInputsUnlocked();
     } else {
         std::cerr << "[PluginHost] setOutputDevice failed: " << err
                   << " — rolling back to '" << priorSetup.outputDeviceName << "'" << std::endl;
-        // Roll back so the engine stays on the last working device.
         deviceManager.setAudioDeviceSetup(priorSetup, true);
     }
+    // Re-hook the graph and re-register the audio callback so processing
+    // resumes on whichever device we landed on (new one on success, rolled-
+    // back one on failure).
+    setProcessor(&graph);
+    deviceManager.addAudioCallback(this);
     return err;
 }
 

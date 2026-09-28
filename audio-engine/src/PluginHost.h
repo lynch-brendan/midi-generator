@@ -42,6 +42,14 @@ public:
     // without the user having to reopen them.
     std::function<void()> onDevicesChanged;
 
+    // Populated by startAudio() when the requested output device came up at
+    // a music-hostile rate (BT stuck in call mode) and we fell back to a
+    // built-in output. Read by main.cpp after startAudio to broadcast an
+    // event that explains the swap. Empty = no fallback happened.
+    juce::String lastFallbackFromDevice;
+    juce::String lastFallbackToDevice;
+    double       lastFallbackBadRate = 0.0;
+
     using ScanProgress = std::function<void(const juce::String& name, int idx, int total)>;
 
     void scanDefaultPaths(const ScanProgress& onProgress = {});
