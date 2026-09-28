@@ -2559,7 +2559,7 @@
      stall; this bottom-right toast asks the user "want to reload?" and
      calls window.nasty.engine.restart() on confirm. -->
 <div id="engine-issue-toast" class="hidden" style="position:fixed;bottom:16px;right:16px;z-index:8500;max-width:380px;background:#3a2a15;border:1px solid #b0691f;border-radius:6px;padding:12px 14px;box-shadow:0 4px 14px rgba(0,0,0,0.5);font-size:12px;color:#f5d090">
-  <div style="font-weight:600;margin-bottom:4px;color:#ffb85c">Engine hit a snag</div>
+  <div id="engine-issue-title" style="font-weight:600;margin-bottom:4px;color:#ffb85c">Engine hit a snag</div>
   <div id="engine-issue-msg" style="line-height:1.45;margin-bottom:10px;color:#f5d090;word-break:break-word"></div>
   <div class="row" style="justify-content:flex-end;gap:6px">
     <button id="engine-issue-dismiss" style="padding:4px 10px;font-size:11px">Dismiss</button>
@@ -2649,6 +2649,11 @@ const SONG_SCHEMA_VERSION = 10;
 const PALETTE = ['#ff5c93','#6b7cff','#33c58a','#ffb020','#a95cff','#ff7c47','#42c8e0','#e05cff','#ffdd57','#5cff8f'];
 
 let song = { version: SONG_SCHEMA_VERSION, bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] }, sections: [], transportMode: 'pat' };
+// Audio device selection is app-session state, NOT per-song. When you swap
+// projects, your mic + speakers stay the same — same as a physical studio
+// where your monitors and mic don't move because the song changed. Wiped
+// only when the app relaunches (module reinit).
+let sessionAudio = { outputDevice: '', inputDevice: '' };
 let recArmed = false;
 let chatHistory = [];
 // Undo / redo. Each entry is a full JSON snapshot of `song`. persist() is the
@@ -6593,7 +6598,7 @@ function renderMixer() {
     const routed = channelsByInsert.get(b.num) || [];
     const color = routed[0] ? routed[0].color : null;
     const label = b.audioInputEnabled
-      ? (b.name && b.name !== ('Insert ' + b.num) ? b.name : (song.audioInputDevice || 'Mic'))
+      ? (b.name && b.name !== ('Insert ' + b.num) ? b.name : (sessionAudio.inputDevice || 'Mic'))
       : (routed.length ? routed.map(c => c.name).join(' + ') : b.name);
     const scSend = (b.sends || []).find(s => s.targetInput === 'sidechain');
     const scTargetLabel = scSend
@@ -7987,7 +7992,7 @@ function renderMixerSlots() {
       inRow.classList.remove('hidden');
       inRow.classList.toggle('active', !!bus.audioInputEnabled);
       inBtn.textContent = bus.audioInputEnabled
-        ? (song.audioInputDevice || 'Mic')
+        ? (sessionAudio.inputDevice || 'Mic')
         : '(none)';
       inBtn.onclick = () => onMixerInputClick(bus.id);
     }
@@ -8552,7 +8557,7 @@ async function addChannelFromInstrument({ id, name, pluginId, gmProgram, drumPit
 // FL-style "IN" per mixer insert — Phase 1 of "record over a beat"
 // ------------------------------------------------------------
 // Each mixer bus can toggle a mic feed via the small IN button on its strip.
-// One global input device (song.audioInputDevice) — CoreAudio can only stream
+// One global input device (sessionAudio.inputDevice) — CoreAudio can only stream
 // one input device at a time in our current setup. `pendingMicBusId` remembers
 // which strip requested the picker so we can wire the mic in once the engine
 // confirms the device is open.
@@ -8930,7 +8935,7 @@ function startAudioRecording() {
     if (!target) {
       return { ok: false, reason: 'no mixer inserts available' };
     }
-    if (!song.audioInputDevice) {
+    if (!sessionAudio.inputDevice) {
       return { ok: false, reason: 'no mic device selected — click IN on a mixer strip once to pick one' };
     }
     wireMicIntoBus(target.id);
@@ -9091,7 +9096,7 @@ function populateMicPicker(inputs, currentInput) {
     const opt = document.createElement('option');
     opt.value = name;
     opt.textContent = name;
-    if (name === currentInput || name === song.audioInputDevice) opt.selected = true;
+    if (name === currentInput || name === sessionAudio.inputDevice) opt.selected = true;
     sel.appendChild(opt);
   }
   if (!sel.value) {
@@ -9127,9 +9132,9 @@ function toggleBusMonitor(busId) {
   if (!bus || !bus.audioInputEnabled) return;
   bus.monitor = !bus.monitor;
   if (window.nasty && window.nasty.engine) {
-    if (bus.monitor && !engineBoot.inputOpen && song.audioInputDevice) {
+    if (bus.monitor && !engineBoot.inputOpen && sessionAudio.inputDevice) {
       // Enabling monitoring needs the input device open.
-      window.nasty.engine.send({ cmd: 'set_input_device', name: song.audioInputDevice });
+      window.nasty.engine.send({ cmd: 'set_input_device', name: sessionAudio.inputDevice });
     }
     window.nasty.engine.send({
       cmd: 'set_channel_audio_input',
@@ -9160,7 +9165,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const sel = document.getElementById('mic-picker-select');
     const dev = sel.value;
     if (!dev || !pendingMicBusId) return;
-    song.audioInputDevice = dev;
+    sessionAudio.inputDevice = dev;
     // Engine will emit input_device_set — event handler wires the mic in.
     window.nasty.engine.send({ cmd: 'set_input_device', name: dev });
     closeMicPicker();
@@ -9276,7 +9281,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // ---- Audio input dropdown -----------------------------------------------
 // Sibling to the Out: dropdown. Lets the user hot-swap the mic without
 // restarting. Picking "(none)" releases CoreAudio so other apps get the mic
-// back. Selection persists to song.audioInputDevice; if the engine currently
+// back. Selection persists to sessionAudio.inputDevice; if the engine currently
 // holds the device open (recording or a bus is monitoring), we hot-swap.
 function renderAudioInputDropdown(inputs, currentInput) {
   const sel = document.getElementById('tb-audio-in');
@@ -9294,7 +9299,7 @@ function renderAudioInputDropdown(inputs, currentInput) {
     sel.appendChild(opt);
   }
   // Prefer the engine's live device; fall back to the primed choice.
-  const selected = currentInput || song.audioInputDevice || '';
+  const selected = currentInput || sessionAudio.inputDevice || '';
   if ([...sel.options].some(o => o.value === selected)) sel.value = selected;
 }
 
@@ -9312,10 +9317,18 @@ let currentCrashCulprit = null;
 // showEngineCrashModal, which fires on a hard subprocess crash. Some soft
 // errors leave the graph in a state where later commands stall silently —
 // giving the user a one-click reload is the pragmatic recovery.
-function showEngineIssueToast(message) {
+function showEngineIssueToast(message, opts) {
   const toast = document.getElementById('engine-issue-toast');
   const body  = document.getElementById('engine-issue-msg');
+  const title = document.getElementById('engine-issue-title');
+  const reload = document.getElementById('engine-issue-reload');
   if (!toast || !body) return;
+  // Info variant: no "Reload engine" button, softer title. Used when we're
+  // TELLING the user something (fallback, device swap) rather than ASKING
+  // them to recover from a snag.
+  const isInfo = opts && opts.info;
+  if (title) title.textContent = isInfo ? (opts.title || 'Heads up') : 'Engine hit a snag';
+  if (reload) reload.style.display = isInfo ? 'none' : '';
   body.textContent = message;
   toast.classList.remove('hidden');
 }
@@ -9422,8 +9435,8 @@ document.addEventListener('DOMContentLoaded', () => {
 // in from init. Same pattern FL uses when you switch ASIO devices.
 async function restartEngineWithDevices() {
   if (!(window.nasty && window.nasty.engine && window.nasty.engine.restart)) return;
-  const outputDevice = song.audioOutputDevice || '';
-  const inputDevice  = song.audioInputDevice  || '';
+  const outputDevice = sessionAudio.outputDevice || '';
+  const inputDevice  = sessionAudio.inputDevice  || '';
   // Boot overlay covers the ~3-5s restart. Don't use the crash-styled toast;
   // this isn't a snag, it's a planned reboot.
   setBootPhase('switching audio device', 'engine will be back in a few seconds');
@@ -9438,7 +9451,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const sel = document.getElementById('tb-audio-out');
   if (!sel) return;
   sel.addEventListener('change', () => {
-    song.audioOutputDevice = sel.value;
+    sessionAudio.outputDevice = sel.value;
     persist();
     restartEngineWithDevices();
   });
@@ -9448,7 +9461,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const sel = document.getElementById('tb-audio-in');
   if (!sel) return;
   sel.addEventListener('change', () => {
-    song.audioInputDevice = sel.value;
+    sessionAudio.inputDevice = sel.value;
     persist();
     restartEngineWithDevices();
   });
@@ -12293,9 +12306,8 @@ async function fetchFlexPresets() {
 }
 
 // One-shot audition of a sample from the Sounds browser. Uses HTML5 Audio
-// with a data-URL so it plays through the OS mixer independently of the
-// audio engine (works before Play, doesn't require the engine to be up).
-// Clicking a new sample cancels any in-flight preview.
+// with a data-URL. setSinkId (below) routes it to the same device the
+// engine is using, so previews and playback come out of the same speaker.
 let _previewAudio = null;
 async function previewSample(absPath) {
   try {
@@ -12305,10 +12317,40 @@ async function previewSample(absPath) {
     if (!b64) return;
     _previewAudio = new Audio('data:audio/wav;base64,' + b64);
     _previewAudio.volume = 0.85;
+    await applyEngineSinkId(_previewAudio);
     _previewAudio.play().catch(err => console.warn('[nasty] preview play failed', err));
   } catch (e) {
     console.warn('[nasty] preview failed', e);
   }
+}
+
+// Browser audio elements default to the macOS system output. If the engine
+// picked a different device (or fell back after a bad-rate boot), previews
+// come out of one speaker and engine playback comes out of another — a
+// weird split. setSinkId() routes an <audio> element to a specific device
+// so both paths stay unified.
+let _engineSinkId = ''; // matched from engineBoot.deviceName on audio_ready
+async function refreshEngineSinkId() {
+  if (!engineBoot || !engineBoot.deviceName) { _engineSinkId = ''; return; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+  try {
+    const devs = await navigator.mediaDevices.enumerateDevices();
+    // Match by label (device name). Prefer 'default' if it maps to the same
+    // physical device, otherwise the specific deviceId.
+    const target = (engineBoot.deviceName || '').toLowerCase();
+    let match = devs.find(d => d.kind === 'audiooutput'
+                             && d.label && d.label.toLowerCase().includes(target));
+    if (match) _engineSinkId = match.deviceId;
+    else _engineSinkId = '';
+  } catch (e) {
+    console.warn('[nasty] enumerateDevices failed', e);
+  }
+}
+async function applyEngineSinkId(audioEl) {
+  if (!_engineSinkId) return;
+  if (typeof audioEl.setSinkId !== 'function') return;
+  try { await audioEl.setSinkId(_engineSinkId); }
+  catch (e) { console.warn('[nasty] setSinkId failed', e); }
 }
 
 // Swap the samples on the four standard drum channels (ch_kick / ch_snare /
@@ -12571,9 +12613,9 @@ async function hydratePluginChannels() {
   // Recording-only buses (audioInputEnabled but monitor off) lazily open
   // the device when startAudioRecording actually fires, so we don't hold
   // the mic device hostage from other apps during idle project load.
-  if (song.audioInputDevice
+  if (sessionAudio.inputDevice
       && (song.mixer.busses || []).some(b => b.audioInputEnabled && b.monitor)) {
-    window.nasty.engine.send({ cmd: 'set_input_device', name: song.audioInputDevice });
+    window.nasty.engine.send({ cmd: 'set_input_device', name: sessionAudio.inputDevice });
   }
   for (const c of song.channels) {
     if (c.instrument !== 'plugin' || !c.pluginId) continue;
@@ -13730,7 +13772,7 @@ if (window.nasty && window.nasty.engine) {
       window.nasty.engine.send({ cmd: 'list_plugins' });
       window.nasty.engine.send({ cmd: 'list_audio_devices' });
       // Fetch mic list so we can auto-pick a default on fresh installs.
-      // The audio_inputs event handler does the pick if song.audioInputDevice
+      // The audio_inputs event handler does the pick if sessionAudio.inputDevice
       // is empty; harmless otherwise (just updates the hidden picker modal).
       window.nasty.engine.send({ cmd: 'list_audio_inputs' });
       // Ask for the current transport state so we know the sample rate
@@ -13744,6 +13786,9 @@ if (window.nasty && window.nasty.engine) {
       engineBoot.audioReady = !!msg.deviceName && (msg.outputChannels || 0) > 0;
       engineBoot.deviceName = msg.deviceName || '';
       engineBoot.sampleRate = msg.sampleRate || 0;
+      // Sync browser preview audio to whatever device the engine is using
+      // so drum-sample previews come out of the same speaker as playback.
+      refreshEngineSinkId();
       // Fresh engine boot means input is closed regardless of what the
       // frontend thought before (survives crash-restarts).
       engineBoot.inputOpen = false;
@@ -13794,17 +13839,15 @@ if (window.nasty && window.nasty.engine) {
     } else if (msg.event === 'output_device_fallback') {
       // Engine wanted to boot on msg.fromName but it came up at a bad rate
       // (BT stuck in HFP call mode is the common cause). Fell back to
-      // msg.toName. Tell the user the specific reason + how to fix it, and
-      // update the persisted device so we don't retry the bad one on next
-      // boot until the user explicitly re-picks it.
+      // msg.toName. Tell the user the specific reason + how to fix it.
       const badKHz = msg.badRate ? (msg.badRate / 1000).toFixed(1) : '?';
       showEngineIssueToast(
         `"${msg.fromName}" came up at ${badKHz}kHz (Bluetooth call mode). ` +
         `Using "${msg.toName}" instead. To fix: open the Mac's Bluetooth menu, ` +
-        `disconnect "${msg.fromName}", then reconnect. Then re-pick from Out:.`
+        `disconnect "${msg.fromName}", then reconnect. Then re-pick from Out:.`,
+        { info: true, title: 'Switched audio output' }
       );
-      song.audioOutputDevice = msg.toName || '';
-      persist();
+      sessionAudio.outputDevice = msg.toName || '';
     } else if (msg.event === 'audio_devices') {
       renderAudioDeviceDropdown(msg.devices || {});
     } else if (msg.event === 'devices_changed') {
@@ -13825,11 +13868,11 @@ if (window.nasty && window.nasty.engine) {
       // CoreAudio input holds the mic device and can interfere with other apps
       // sharing the same device family (YouTube, Zoom, etc.). Input opens
       // only when the user actually starts a take.
-      if (!song.audioInputDevice && Array.isArray(msg.inputs) && msg.inputs.length) {
+      if (!sessionAudio.inputDevice && Array.isArray(msg.inputs) && msg.inputs.length) {
         const smart = msg.inputs.find(n => /usb|mic|shure|blue|yeti|scarlett|apollo|at2020/i.test(n))
                    || msg.inputs.find(n => /macbook|built[- ]?in/i.test(n))
                    || msg.inputs[0];
-        song.audioInputDevice = smart;
+        sessionAudio.inputDevice = smart;
         persist();
       }
     } else if (msg.event === 'input_device_set') {
