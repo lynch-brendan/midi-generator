@@ -13736,11 +13736,6 @@ if (window.nasty && window.nasty.engine) {
       engineBoot.audioReady = !!msg.deviceName && (msg.outputChannels || 0) > 0;
       engineBoot.deviceName = msg.deviceName || '';
       engineBoot.sampleRate = msg.sampleRate || 0;
-      // Fresh engine boot means input side is closed regardless of whatever
-      // the frontend thought before (survives crash-restarts). Without this,
-      // startAudioRecording skips the priming step and start_recording fails
-      // with "no input channels."
-      engineBoot.inputOpen = false;
       if (!engineBoot.audioReady) {
         setBootPhase('no output device found', 'plug in an output and relaunch');
         return;
