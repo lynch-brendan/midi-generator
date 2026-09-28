@@ -335,8 +335,34 @@ public:
 private:
     juce::AudioPluginFormatManager formatManager;
     juce::KnownPluginList          knownPlugins;
-    juce::AudioDeviceManager       deviceManager;
+    // Two independent device managers — one for output, one for input. JUCE
+    // builds a private aggregate device per manager on macOS; keeping them
+    // separate means mixed I/O (Bluetooth speaker + USB mic) doesn't share
+    // an aggregate and can't crash the graph via aggregate reconfigure.
+    // Output manager is always alive; input manager is only opened when the
+    // user engages the mic (arm record / bus IN) so Bluetooth devices stay
+    // in A2DP profile the rest of the time.
+    juce::AudioDeviceManager       deviceManager;         // output-only
+    juce::AudioDeviceManager       inputDeviceManager;    // input-only, lazy
     juce::AudioProcessorGraph      graph;
+
+    // Ring buffer bridging the input-device audio thread → graph audio
+    // thread. MicCaptureCallback (registered on inputDeviceManager) writes
+    // mic samples in; MicInputProcessor (a node in the graph) reads them
+    // out during graph.processBlock. Lock-free, sized for ~85ms at 48kHz
+    // to absorb device buffer-size mismatches between input and output.
+    static constexpr int inputRingSize = 4096;
+    juce::AbstractFifo inputFifo{inputRingSize};
+    juce::AudioBuffer<float> inputRing{2, inputRingSize};
+    std::atomic<bool> inputBridgeActive{false};
+
+    // Forward decls for inner callback + processor.
+    class MicCaptureCallback;
+    class MicInputProcessor;
+    std::unique_ptr<MicCaptureCallback> micCapture;
+    // The MicInputProcessor's node in the graph. Owned by the graph — this
+    // handle just lets us look it up when wiring audio-input channels.
+    juce::AudioProcessorGraph::NodeID micInputNodeId;
 
     struct EffectSlot {
         juce::String slotId;
