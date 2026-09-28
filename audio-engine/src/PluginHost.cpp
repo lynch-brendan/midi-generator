@@ -984,22 +984,10 @@ void PluginHost::startAudio() {
         return;
     }
 
-    // Trust the system default. User picks what they want from the dropdown.
-    // We only WARN (via the sample-rate readout in the toolbar) if the rate
-    // looks too low to play music — we never switch silently.
-
-    // If the device came up at a music-hostile rate (Bluetooth hands-free
-    // mode = 16/24kHz), try to force it back to 48000. If CoreAudio can't
-    // honor the request, the front end's warning modal fires and the user
-    // picks a different device from the Out dropdown.
-    if (auto* dev = deviceManager.getCurrentAudioDevice()) {
-        if (dev->getCurrentSampleRate() < 44100.0) {
-            juce::AudioDeviceManager::AudioDeviceSetup s;
-            deviceManager.getAudioDeviceSetup(s);
-            s.sampleRate = 48000.0;
-            deviceManager.setAudioDeviceSetup(s, true);
-        }
-    }
+    // Adapt to whatever rate the device negotiates. Forcing a rate here was
+    // a device-wide property change in CoreAudio — every other app sharing
+    // the device got resampled or muted. Just accept the rate; the UI warns
+    // if it's music-hostile.
 
     if (!deviceManager.getCurrentAudioDevice()) {
         std::cerr << "[PluginHost] no current audio device after init" << std::endl;

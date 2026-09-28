@@ -13736,6 +13736,9 @@ if (window.nasty && window.nasty.engine) {
       engineBoot.audioReady = !!msg.deviceName && (msg.outputChannels || 0) > 0;
       engineBoot.deviceName = msg.deviceName || '';
       engineBoot.sampleRate = msg.sampleRate || 0;
+      // Fresh engine boot means input is closed regardless of what the
+      // frontend thought before (survives crash-restarts).
+      engineBoot.inputOpen = false;
       if (!engineBoot.audioReady) {
         setBootPhase('no output device found', 'plug in an output and relaunch');
         return;
