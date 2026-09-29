@@ -4385,13 +4385,15 @@ async function ensureIdeaMaterialised(idea) {
 }
 
 async function auditionIdea(idx) {
+  console.log('[ideas-cycle] auditionIdea start idx=', idx);
   if (ideasState.mode === 'effects') return auditionEffectIdea(idx);
   const idea = ideasState.ideas[idx];
-  if (!idea) return;
+  if (!idea) { console.warn('[ideas-cycle] no idea at idx', idx); return; }
 
   // Snapshot pre-audition transport state so closeIdeasPanel can restore
   // it if the user closes without Keeping.
   const wasPlaying = engineTransport.isPlaying;
+  console.log('[ideas-cycle] wasPlaying=', wasPlaying, 'engineTransport.available=', engineTransport.available());
   if (ideasState.priorTransportMode === null) {
     ideasState.priorTransportMode = song.transportMode || 'pat';
     ideasState.priorCurrentPatternId = currentPatternId;
@@ -4413,13 +4415,19 @@ async function auditionIdea(idx) {
     engineTransport.pushPattern(pat);
     engineTransport.setLoopBeats((idea.bars || 4) * 4);
   }
+  console.log('[ideas-cycle] before playSong, wasPlaying=', wasPlaying, 'currentPatternId=', currentPatternId);
   if (!wasPlaying) {
     ideasState.weStartedPlayback = true;
     playSong();
+    console.log('[ideas-cycle] playSong called');
+  } else {
+    console.log('[ideas-cycle] skipped playSong (wasPlaying)');
   }
 
   ideasState.selectedIdx = idx;
-  document.querySelectorAll('.idea-row').forEach((el, i) => {
+  const rows = document.querySelectorAll('.idea-row');
+  console.log('[ideas-cycle] highlight rows found:', rows.length);
+  rows.forEach((el, i) => {
     el.classList.toggle('playing', i === idx);
     el.classList.toggle('selected', i === idx);
   });
@@ -4438,20 +4446,25 @@ async function auditionIdea(idx) {
     // long enough for the ear to reset before the next idea starts, so
     // they don't blur into each other.
     const oneBarMs   = Math.max(500, (4 * 60000) / (song.bpm || 120));
+    console.log('[ideas-cycle] scheduling outer timeout, twoLoopsMs=', twoLoopsMs, 'oneBarMs=', oneBarMs);
     ideasState.autoCycleTimeoutId = setTimeout(() => {
-      if (!ideasState.autoplay || ideasState.mode !== 'midi') return;
+      console.log('[ideas-cycle] outer timeout fired for idx=', idx);
+      if (!ideasState.autoplay || ideasState.mode !== 'midi') {
+        console.log('[ideas-cycle] outer bailing: autoplay=', ideasState.autoplay, 'mode=', ideasState.mode);
+        return;
+      }
       stopAllEngineNotes();
       if (engineTransport.available()) engineTransport.stop();
       ideasState.weStartedPlayback = false;
       ideasState.autoCycleTimeoutId = setTimeout(() => {
-        if (!ideasState.autoplay || ideasState.mode !== 'midi') return;
-        // Reflect our own stop synchronously — the engine will emit its
-        // transport_state=stopped event eventually, but auditionIdea's
-        // wasPlaying check reads THIS flag right now. Without the
-        // override, wasPlaying is stale-true, playSong doesn't fire,
-        // and the transport never rolls for the next idea.
+        console.log('[ideas-cycle] inner timeout fired for idx=', idx);
+        if (!ideasState.autoplay || ideasState.mode !== 'midi') {
+          console.log('[ideas-cycle] inner bailing');
+          return;
+        }
         engineTransport.isPlaying = false;
         const next = (idx + 1) % ideasState.ideas.length;
+        console.log('[ideas-cycle] advancing to idx=', next, 'of', ideasState.ideas.length);
         auditionIdea(next);
       }, oneBarMs);
     }, twoLoopsMs);
