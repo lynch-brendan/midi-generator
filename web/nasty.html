@@ -8580,6 +8580,22 @@ async function swapChannelInstrument(channelId, { name, pluginId, gmProgram, dru
         state: base64State || '',
       });
     }
+    // Re-push channel state to the engine so gain/pan/width reflect the
+    // fader positions after the swap. The nodes themselves survive the
+    // swap and keep their atomic values, but pushing again is cheap and
+    // guarantees the UI and engine agree if anything drifted.
+    pushChannelGain(ch);
+    engineTransport.send({ cmd: 'set_channel_pan',           channelId: ch.id, value: ch.pan ?? 0 });
+    engineTransport.send({ cmd: 'set_channel_stereo_width',  channelId: ch.id, value: ch.stereoWidth ?? 1 });
+    // If the transport is currently playing, re-push the current pattern so
+    // the new plugin actually receives note events. Without this, the
+    // pattern player's next iteration continues but any "already scheduled"
+    // notes were bound to the old plugin node — result: silence until the
+    // user stops and re-hits play.
+    if (engineTransport.isPlaying) {
+      const pat = song.patterns.find(p => p.id === currentPatternId);
+      if (pat) engineTransport.pushPattern(pat);
+    }
   }
   render();
   persist();
