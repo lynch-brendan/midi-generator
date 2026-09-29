@@ -2414,6 +2414,9 @@
   </div>
   <div class="ip-controls">
     <div class="ip-prompt-echo" id="ip-prompt-echo"></div>
+    <label class="ip-autoplay" title="When on, playing an idea cycles through the rest until you Keep one or hit stop. Sticky across sessions.">
+      <input type="checkbox" id="ip-autoplay-toggle" /> auto-cycle
+    </label>
   </div>
   <div class="ip-body" id="ip-body"></div>
 </div>
@@ -3791,6 +3794,16 @@ function stopAllEngineNotes() {
 function playSong() {
   if (!engineTransport.available()) return;
 
+  // Any manual Play kills a pending Ideas-Panel auto-cycle advance — the
+  // sticky preference stays on, but the timer for THIS cycle is gone.
+  // auditionIdea re-sets a fresh timer for the idea it's about to play,
+  // so external Play (transport button, keyboard, ruler-click resume)
+  // is the only path that clears without replacement. Cycle stops.
+  if (typeof ideasState !== 'undefined' && ideasState.autoCycleTimeoutId) {
+    clearTimeout(ideasState.autoCycleTimeoutId);
+    ideasState.autoCycleTimeoutId = null;
+  }
+
   // Always tell the engine which mode this play is starting in — the flag
   // decides which walker path the MidiInjector runs (PAT: looping
   // PatternPlayer; SONG: monotonic Transport against per-channel arrangement).
@@ -4141,6 +4154,13 @@ const ideasState = {
   // the next idea (wrap after the last). Cancelled on manual click / new
   // audition / panel close so we don't fire against a stale audition.
   autoCycleTimeoutId: null,
+  // Sticky preference — when true, playing an idea kicks off the auto-
+  // cycle; when false each Play only auditions that one idea. Loaded from
+  // localStorage at startup, saved when the user toggles the checkbox.
+  autoplay: (() => {
+    try { const v = localStorage.getItem('nasty_ideas_autoplay');
+      return v == null ? true : v === '1'; } catch { return true; }
+  })(),
 };
 
 function openIdeasPanel(prompt, kind) {
@@ -4150,6 +4170,27 @@ function openIdeasPanel(prompt, kind) {
   ideasState.ideas = [];
   ideasState.selectedIdx = -1;
   ideasState.loading = true;
+  // Sync the checkbox with the persisted sticky preference every time the
+  // panel opens, and wire the change handler once (idempotent — replacing
+  // the listener each open would leak, so we set a flag on the element).
+  const cb = document.getElementById('ip-autoplay-toggle');
+  if (cb) {
+    cb.checked = !!ideasState.autoplay;
+    if (!cb._nastyWired) {
+      cb._nastyWired = true;
+      cb.addEventListener('change', () => {
+        ideasState.autoplay = !!cb.checked;
+        try { localStorage.setItem('nasty_ideas_autoplay', cb.checked ? '1' : '0'); } catch {}
+        // Turning it off mid-cycle also kills the pending advance timer;
+        // turning it on doesn't spontaneously start anything (user still
+        // has to click a Play).
+        if (!ideasState.autoplay && ideasState.autoCycleTimeoutId) {
+          clearTimeout(ideasState.autoCycleTimeoutId);
+          ideasState.autoCycleTimeoutId = null;
+        }
+      });
+    }
+  }
   document.getElementById('ideas-panel').classList.remove('hidden');
   document.getElementById('ip-prompt-echo').textContent =
     `${ideasState.kind} — ${prompt || ''}`;
@@ -4382,10 +4423,30 @@ async function auditionIdea(idx) {
     el.classList.toggle('playing', i === idx);
     el.classList.toggle('selected', i === idx);
   });
-  // Auto-cycle removed with the preview-slot rewrite: cycling through
-  // ideas used to swap the sound on a shared preview channel, but every
-  // idea now owns its own channel. Auto-cycling would spawn a new
-  // channel per beat, so the user drives auditioning manually.
+  // Auto-cycle: if the sticky toggle is on, schedule an advance to the
+  // next idea after this one plays for a couple of loops. Manual
+  // transport clicks (main play/stop, ruler seek, etc.) clear the timer
+  // via playSong/stopSong's cancel line — the toggle itself stays on so
+  // clicking another idea's Play resumes the cycle from there.
+  if (ideasState.autoCycleTimeoutId) clearTimeout(ideasState.autoCycleTimeoutId);
+  ideasState.autoCycleTimeoutId = null;
+  if (ideasState.autoplay && ideasState.ideas.length > 1) {
+    const beats = (idea.bars || 4) * 4;
+    const oneLoopMs = Math.max(500, (beats * 60000) / (song.bpm || 120));
+    const twoLoopsMs = oneLoopMs * 2;
+    const silenceMs = 400;
+    ideasState.autoCycleTimeoutId = setTimeout(() => {
+      if (!ideasState.autoplay || ideasState.mode !== 'midi') return;
+      stopAllEngineNotes();
+      if (engineTransport.available()) engineTransport.stop();
+      ideasState.weStartedPlayback = false;
+      ideasState.autoCycleTimeoutId = setTimeout(() => {
+        if (!ideasState.autoplay || ideasState.mode !== 'midi') return;
+        const next = (idx + 1) % ideasState.ideas.length;
+        auditionIdea(next);
+      }, silenceMs);
+    }, twoLoopsMs);
+  }
 }
 
 // "More like this" — reseed the panel with the picked idea as the
