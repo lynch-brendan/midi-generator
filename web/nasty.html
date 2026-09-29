@@ -4007,6 +4007,23 @@ const pluginNoteTimeouts = new Set();
 // to the piano roll AND unrouteable at playback (looks like the pattern has
 // notes but nothing plays). Returns the clean note list plus a dropped count
 // for the summary. Order is preserved.
+// Build a helpful tool-result summary when a pattern write is rejected for
+// orphan channel references. Includes what Claude wrote, what's actually
+// available, and the exact recovery path. Written for Claude's next-turn
+// consumption — every field should be actionable.
+function orphanRejectMsg(toolName, dropped, unknownIds) {
+  const wrote = unknownIds.length
+    ? `"${unknownIds.join('", "')}"`
+    : 'null/missing';
+  const available = song.channels.length
+    ? song.channels.map(c => `"${c.name}"`).join(', ')
+    : '(none — song has no channels yet)';
+  const recovery = song.channels.length
+    ? `Retry using one of the available channel names (or its exact id) as channel_id.`
+    : `Call create_channel + load_plugin (or try_instruments / load_drum_kit) to make the channel first, THEN create_pattern referencing its channel name or id.`;
+  return `× ${toolName} rejected — ${dropped} note${dropped>1?'s':''} reference ${wrote} which isn't in song.channels. Available: ${available}. ${recovery}`;
+}
+
 function sanitizeIncomingNotes(rawNotes) {
   // Two-pass resolver: notes reference channels by id OR by name (case-
   // insensitive). Claude naturally reaches for the instrument name ("violin")
@@ -5436,10 +5453,7 @@ async function applyToolCalls(calls) {
           const idx = song.patterns.length;
           const { notes, dropped, unknownIds } = sanitizeIncomingNotes(input.notes || []);
           if (dropped > 0) {
-            // Reject the whole tool call so Claude has to retry with the real
-            // channel_ids from song state. Silent-drop was letting Claude
-            // ship broken patterns forever without knowing.
-            summaries.push(`× create_pattern rejected: ${dropped} note${dropped>1?'s':''} reference unknown channel_id ${unknownIds.join(', ')} — retry with ids from song.channels`);
+            summaries.push(orphanRejectMsg('create_pattern', dropped, unknownIds));
           } else {
             song.patterns.push({
               id: input.id, name: input.name || 'Pattern ' + (idx+1),
@@ -5455,7 +5469,7 @@ async function applyToolCalls(calls) {
         if (p) {
           const { notes, dropped, unknownIds } = sanitizeIncomingNotes(input.notes || []);
           if (dropped > 0) {
-            summaries.push(`× edit_pattern rejected: ${dropped} note${dropped>1?'s':''} reference unknown channel_id ${unknownIds.join(', ')} — retry with ids from song.channels`);
+            summaries.push(orphanRejectMsg('edit_pattern', dropped, unknownIds));
           } else {
             p.notes = notes;
             summaries.push(`~ pattern ${input.pattern_id}`);
@@ -5466,7 +5480,7 @@ async function applyToolCalls(calls) {
         if (p) {
           const { notes, dropped, unknownIds } = sanitizeIncomingNotes(input.notes || []);
           if (dropped > 0) {
-            summaries.push(`× add_pattern_notes rejected: ${dropped} note${dropped>1?'s':''} reference unknown channel_id ${unknownIds.join(', ')} — retry with ids from song.channels`);
+            summaries.push(orphanRejectMsg('add_pattern_notes', dropped, unknownIds));
           } else {
             p.notes = (p.notes || []).concat(notes);
             summaries.push(`+ ${notes.length} note${notes.length===1?'':'s'} → pattern ${input.pattern_id}`);
