@@ -1280,16 +1280,36 @@ juce::String PluginHost::swapChannelInstrument(const juce::String& channelId,
             return "Channel deleted mid-swap: " + channelId;
         }
         auto oldNodeId = it->second.pluginNodeId;
-        it->second.pluginNodeId = newPluginNode->nodeID;
-        // Removing the old plugin node drops all its connections (both MIDI
-        // and audio) automatically. rewireChannelUnlocked below re-adds the
-        // audio side; we add the MIDI (injector → new plugin) here since the
-        // rewire path skips MIDI connections.
-        graph.removeNode(oldNodeId);
+
+        // Pre-wire the new plugin BEFORE removing the old. Order matters
+        // for live-swap audio continuity:
+        //   1. Add MIDI: injector → new plugin (in parallel with existing
+        //      injector → old plugin — both plugins receive the same MIDI).
+        //   2. Copy every AUDIO out-connection from old plugin onto new
+        //      plugin. Both plugins now feed the same downstream nodes
+        //      (effects chain / gain / target), summing into the graph.
+        //   3. Update slot.pluginNodeId to new node so rewire recognises
+        //      it as canonical.
+        //   4. Remove old plugin — its connections drop, only new remains.
+        //   5. rewireChannelUnlocked for canonical audio-chain state
+        //      (respects any sends/routing changes).
+        // Without this ordering, removing old first leaves the graph with
+        // no live audio path for the swapped channel until JUCE's async
+        // render-sequence rebuild lands (~1-5 buffers) — the user hears
+        // that as silence until they stop+play.
         if (it->second.injectorNodeId != juce::AudioProcessorGraph::NodeID{}) {
             graph.addConnection({{it->second.injectorNodeId, Graph::midiChannelIndex},
                                  {newPluginNode->nodeID,     Graph::midiChannelIndex}});
         }
+        auto oldConns = graph.getConnections();
+        for (const auto& c : oldConns) {
+            if (c.source.nodeID != oldNodeId) continue;
+            if (c.source.channelIndex == Graph::midiChannelIndex) continue;
+            graph.addConnection({{newPluginNode->nodeID, c.source.channelIndex},
+                                 c.destination});
+        }
+        it->second.pluginNodeId = newPluginNode->nodeID;
+        graph.removeNode(oldNodeId);
         rewireChannelUnlocked(it->second);
     }
     std::cerr << "[swapInstrument] DONE ch=" << channelId << " → " << pluginId << std::endl;
