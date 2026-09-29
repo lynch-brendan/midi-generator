@@ -2965,17 +2965,18 @@ def nasty_chat(req: NastyChatRequest):
     # cheatsheet index are stable per session. Put the DYNAMIC bits into
     # the user message so the cached system prefix stays cache-hit across
     # turns — that's the whole point of prompt caching.
-    # Recording lock: while a mic take is active, ANY graph/pattern mutation
-    # can starve the audio thread and cause glitches / dropped takes. Prepend
-    # a loud banner so Claude sees this before it sees the song state. The
-    # matching hard rule is in prompts/nasty_system.md.
+    # Recording lock (soft): a mic take is currently rolling. Heavy graph
+    # mutations starve the audio thread and glitch the take, but light single-
+    # write ops (volume, pan, mute, solo) are safe. Prepend a banner so Claude
+    # sees the state; the SOFT RULE in prompts/nasty_system.md defines the
+    # exact do / don't list.
     recording_banner = (
-        "🔴 RECORDING IN PROGRESS — HANDS OFF THE SONG.\n"
-        "A mic take is currently rolling. You MUST NOT modify song / patterns "
-        "/ channels / arrangement / effects / plugins this turn. If the user "
-        "asks for changes, tell them 'we're rolling — hit stop and I'll do it "
-        "after.' Only stop_recording, transport_stop, and read-only replies "
-        "are allowed.\n\n"
+        "🎙️ RECORDING IN PROGRESS.\n"
+        "A mic take is currently rolling. Avoid heavy graph mutations "
+        "(load_plugin, add_effect, create_pattern, big edits) — they starve "
+        "the audio thread and drop the take. Single-write ops (volume, pan, "
+        "mute, solo, wet/dry) and normal conversation are fine. If the user "
+        "asks for a heavy edit, reply briefly and wait for stop.\n\n"
     ) if req.is_recording else ""
     user_content = (
         recording_banner

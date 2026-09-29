@@ -4011,9 +4011,14 @@ function sanitizeIncomingNotes(rawNotes) {
   const known = new Set(song.channels.map(c => c.id));
   const notes = [];
   let dropped = 0;
+  const unknownIds = new Set();
   for (const n of rawNotes) {
     const cid = n.channel_id;
-    if (!cid || !known.has(cid)) { dropped++; continue; }
+    if (!cid || !known.has(cid)) {
+      dropped++;
+      if (cid) unknownIds.add(cid);
+      continue;
+    }
     notes.push({
       channelId: cid, pitch: n.pitch,
       startBeat: n.start_beat, durationBeats: n.duration_beats,
@@ -4023,7 +4028,7 @@ function sanitizeIncomingNotes(rawNotes) {
   if (dropped > 0) {
     console.warn('[nasty] dropped', dropped, 'notes with missing/unknown channel_id — known channels:', [...known]);
   }
-  return { notes, dropped };
+  return { notes, dropped, unknownIds: [...unknownIds] };
 }
 
 // Round-trip through the engine so any earlier queued stdin commands (like
@@ -5419,28 +5424,43 @@ async function applyToolCalls(calls) {
       } else if (name === 'create_pattern') {
         if (!song.patterns.find(p => p.id === input.id)) {
           const idx = song.patterns.length;
-          const { notes, dropped } = sanitizeIncomingNotes(input.notes || []);
-          song.patterns.push({
-            id: input.id, name: input.name || 'Pattern ' + (idx+1),
-            lengthBars: input.length_bars || 2, notes,
-            color: PALETTE[idx % PALETTE.length],
-          });
-          if (!currentPatternId) currentPatternId = input.id;
-          summaries.push(`+ pattern "${input.name}"` + (dropped ? ` (dropped ${dropped} orphan note${dropped>1?'s':''})` : ''));
+          const { notes, dropped, unknownIds } = sanitizeIncomingNotes(input.notes || []);
+          if (dropped > 0) {
+            // Reject the whole tool call so Claude has to retry with the real
+            // channel_ids from song state. Silent-drop was letting Claude
+            // ship broken patterns forever without knowing.
+            summaries.push(`× create_pattern rejected: ${dropped} note${dropped>1?'s':''} reference unknown channel_id ${unknownIds.join(', ')} — retry with ids from song.channels`);
+          } else {
+            song.patterns.push({
+              id: input.id, name: input.name || 'Pattern ' + (idx+1),
+              lengthBars: input.length_bars || 2, notes,
+              color: PALETTE[idx % PALETTE.length],
+            });
+            if (!currentPatternId) currentPatternId = input.id;
+            summaries.push(`+ pattern "${input.name}"`);
+          }
         }
       } else if (name === 'edit_pattern') {
         const p = song.patterns.find(p => p.id === input.pattern_id);
         if (p) {
-          const { notes, dropped } = sanitizeIncomingNotes(input.notes || []);
-          p.notes = notes;
-          summaries.push(`~ pattern ${input.pattern_id}` + (dropped ? ` (dropped ${dropped} orphan note${dropped>1?'s':''})` : ''));
+          const { notes, dropped, unknownIds } = sanitizeIncomingNotes(input.notes || []);
+          if (dropped > 0) {
+            summaries.push(`× edit_pattern rejected: ${dropped} note${dropped>1?'s':''} reference unknown channel_id ${unknownIds.join(', ')} — retry with ids from song.channels`);
+          } else {
+            p.notes = notes;
+            summaries.push(`~ pattern ${input.pattern_id}`);
+          }
         }
       } else if (name === 'add_pattern_notes') {
         const p = song.patterns.find(p => p.id === input.pattern_id);
         if (p) {
-          const { notes, dropped } = sanitizeIncomingNotes(input.notes || []);
-          p.notes = (p.notes || []).concat(notes);
-          summaries.push(`+ ${notes.length} note${notes.length===1?'':'s'} → pattern ${input.pattern_id}` + (dropped ? ` (dropped ${dropped} orphan)` : ''));
+          const { notes, dropped, unknownIds } = sanitizeIncomingNotes(input.notes || []);
+          if (dropped > 0) {
+            summaries.push(`× add_pattern_notes rejected: ${dropped} note${dropped>1?'s':''} reference unknown channel_id ${unknownIds.join(', ')} — retry with ids from song.channels`);
+          } else {
+            p.notes = (p.notes || []).concat(notes);
+            summaries.push(`+ ${notes.length} note${notes.length===1?'':'s'} → pattern ${input.pattern_id}`);
+          }
         }
       } else if (name === 'delete_pattern') {
         song.patterns = song.patterns.filter(p => p.id !== input.pattern_id);
@@ -9012,6 +9032,14 @@ function stopAudioRecording() {
   stopSong();
   // Un-arm so a subsequent play doesn't accidentally roll another take.
   recArmed = false;
+  // Belt-and-braces: clear the record-context pointer up front too. The
+  // engine's recording_stopped event handler ALSO clears it (and adds the
+  // audio clip to the arrangement), but if that event goes missing — engine
+  // restart, crash, force-quit mid-take — the flag would stay set forever
+  // and the recording-lock banner would fire on every subsequent chat turn.
+  // On page reload this variable is naturally null; the only stuck case is
+  // within a session, which this addresses.
+  setTimeout(() => { pendingRecordingContext = null; }, 500);
   const rb = document.getElementById('rec-btn');
   if (rb) {
     rb.classList.remove('recording');
@@ -10759,12 +10787,14 @@ async function sendMessage(overrideText, opts) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         song, message: text, history: chatHistory,
-        // Recording lock: server prepends a HANDS-OFF banner + system prompt
-        // forbids any mutating tool while this is true. ONLY set for actively
-        // rolling takes — "armed but not started" should still let Claude
-        // do the requested setup work (e.g. "record vocals" when a mic is
-        // pre-primed).
-        is_recording: (typeof isRecordingAudio === 'function' && isRecordingAudio()),
+        // Recording lock: server prepends a soft-lock banner while a take
+        // is actively rolling. Detection is anyBusRecArmed() — that flag
+        // gets set by startAudioRecording and cleared by stopAudioRecording,
+        // AND doesn't persist across sessions (writeSongToStorage strips
+        // recArmed). Was previously isRecordingAudio() → pendingRecording-
+        // Context, which could stay stuck if the engine's stop event went
+        // missing and freeze Claude across the whole session.
+        is_recording: (typeof anyBusRecArmed === 'function' && anyBusRecArmed()),
         // Manifest of the user's actually-installed VST3/AU plugins. Engine
         // scans them at launch and pushes a plugin_list event; we forward it
         // so Claude knows what's available on THIS machine, not what it
