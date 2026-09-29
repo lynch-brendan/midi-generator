@@ -4292,60 +4292,55 @@ function firstFreeTrackAtBar(bar) {
   return (tracks[tracks.length - 1]?.id) || 'track_1';
 }
 
-// Lazy — creates preview channel + pattern if they don't exist yet.
-// GM program is taken from `idea` on first call. On subsequent auditions
-// we swap the GM program on the same preview channel (idempotent).
-//
-// DRUMS special case: no preview channel is created. Drum ideas route
-// their notes to Nasty's pre-existing per-piece drum channels (ch_kick /
-// ch_snare / ch_hh / ch_clap) so the audition plays through the real
-// drum samples. Only the preview pattern is temp.
-async function ensurePreviewLoaded(idea) {
-  const isDrums = ideasState.kind === 'drums';
-
-  if (!ideasState.preview.patternId) {
-    const patId = 'preview-pat-' + Math.random().toString(36).slice(2, 6);
-    let chId = null;
-
-    if (!isDrums) {
-      const wantProg = Math.max(0, Math.min(127, parseInt(idea.gm_patch, 10) || 0));
-      chId = 'preview-idea-' + Math.random().toString(36).slice(2, 6);
-      await addChannelFromInstrument({
-        id: chId, name: 'Preview',
-        pluginId: 'gm-' + wantProg, gmProgram: wantProg,
-      });
-      ideasState.preview.gmProgram = wantProg;
+// GM patch number → human name ("Grand Piano", "Violin", etc). Used to
+// name the channel a played idea lands on so the rack shows the actual
+// instrument, not "Preview." Falls back to "Instrument" if the program
+// number is out of range.
+function gmProgramToName(prog) {
+  const p = Math.max(0, Math.min(127, parseInt(prog, 10) || 0));
+  for (const [, items] of GM_CATALOG) {
+    for (const [name, code] of items) {
+      if (code === p) return name;
     }
-
-    song.patterns.push({
-      id: patId, name: 'Preview',
-      lengthBars: idea.bars || 4,
-      notes: [],
-      color: PALETTE[song.patterns.length % PALETTE.length],
-      _preview: true,
-    });
-    ideasState.preview.channelId = chId;   // null for drums
-    ideasState.preview.patternId = patId;
-    ideasState.preview.kept = false;
-    return;
   }
+  return 'Instrument';
+}
 
-  // Subsequent auditions in a non-drums batch — swap the preview channel's
-  // GM program to match the new idea. Drums have no channel to swap; the
-  // pattern's routed-by-pitch notes are the whole story.
-  if (isDrums) return;
+// Ensure the given idea has its own real channel + pattern in the song.
+// FIRST play of an idea creates them; subsequent plays are no-op (the
+// channel is already there and this idea's notes are already in its
+// pattern). Under the "each idea is a normal channel" model there IS no
+// shared preview slot — Play just materialises the idea into the rack.
+//
+// DRUMS special case: no per-idea channel — drum notes route by pitch to
+// the pre-existing ch_kick / ch_snare / ch_hh / ch_clap. Only the pattern
+// is per-idea in that case.
+async function ensureIdeaMaterialised(idea) {
+  if (idea._patternId && song.patterns.find(p => p.id === idea._patternId)) {
+    return; // Already materialised in a previous audition.
+  }
+  const isDrums = ideasState.kind === 'drums';
   const wantProg = Math.max(0, Math.min(127, parseInt(idea.gm_patch, 10) || 0));
-  if (wantProg !== ideasState.preview.gmProgram && window.nasty && window.nasty.engine) {
-    const sf2 = window.nasty.sf2Path ? await window.nasty.sf2Path() : '';
-    window.nasty.engine.send({
-      cmd: 'add_gm_channel',
-      channelId: ideasState.preview.channelId,
-      program: wantProg, sf2Path: sf2,
+  let chId = null;
+  if (!isDrums) {
+    chId = 'ch_idea_' + Math.random().toString(36).slice(2, 8);
+    await addChannelFromInstrument({
+      id: chId,
+      name: gmProgramToName(wantProg),
+      pluginId: 'gm-' + wantProg,
+      gmProgram: wantProg,
     });
-    const ch = song.channels.find(c => c.id === ideasState.preview.channelId);
-    if (ch) { ch.pluginId = 'gm-' + wantProg; ch.gmProgram = wantProg; }
-    ideasState.preview.gmProgram = wantProg;
   }
+  const patId = 'pat_idea_' + Math.random().toString(36).slice(2, 8);
+  song.patterns.push({
+    id: patId,
+    name: idea.name || gmProgramToName(wantProg),
+    lengthBars: idea.bars || 4,
+    notes: museIdeaToNastyNotes(idea, chId),
+    color: PALETTE[song.patterns.length % PALETTE.length],
+  });
+  idea._channelId = chId;    // null for drums
+  idea._patternId = patId;
 }
 
 async function auditionIdea(idx) {
@@ -4361,28 +4356,19 @@ async function auditionIdea(idx) {
     ideasState.priorCurrentPatternId = currentPatternId;
   }
 
-  await ensurePreviewLoaded(idea);
+  await ensureIdeaMaterialised(idea);
 
-  // Rewrite the preview pattern with the picked idea's notes. For drums,
-  // channelId is null → museIdeaToNastyNotes routes by pitch to the
-  // per-piece drum channels; for anything else, all notes point at the
-  // single preview channel.
-  const pat = song.patterns.find(p => p.id === ideasState.preview.patternId);
-  if (pat) {
-    pat.notes = museIdeaToNastyNotes(idea, ideasState.preview.channelId);
-    pat.lengthBars = idea.bars || 4;
-    pat.name = idea.name || 'Preview';
-  }
-
-  // PAT mode + preview pattern as current → the pattern loops in
-  // isolation. No playlist clip, no arrangement pollution while cycling
-  // through ideas. Keep is what promotes to arrangement.
+  // PAT mode + this idea's pattern as current → the pattern loops in
+  // isolation. Each idea has its own real channel + pattern from the
+  // moment it's first played. Keep just promotes the pattern to the
+  // arrangement; unkept channels get cleaned up when the panel closes.
   song.transportMode = 'pat';
-  currentPatternId = ideasState.preview.patternId;
+  currentPatternId = idea._patternId;
   render();
   persist();
 
-  if (engineTransport.available()) {
+  const pat = song.patterns.find(p => p.id === idea._patternId);
+  if (engineTransport.available() && pat) {
     engineTransport.pushPattern(pat);
     engineTransport.setLoopBeats((idea.bars || 4) * 4);
   }
@@ -4396,35 +4382,10 @@ async function auditionIdea(idx) {
     el.classList.toggle('playing', i === idx);
     el.classList.toggle('selected', i === idx);
   });
-
-  // Auto-cycle — play the picked idea's pattern TWICE, insert a short
-  // silence, then advance to the next idea. Silence is real: engine stop
-  // between loops so the user hears the boundary. Length check is inside
-  // the timeout so more ideas arriving via streaming still get cycled to.
-  if (ideasState.autoCycleTimeoutId) clearTimeout(ideasState.autoCycleTimeoutId);
-  const beats = (idea.bars || 4) * 4;
-  const oneLoopMs = Math.max(500, (beats * 60000) / (song.bpm || 120));
-  const twoLoopsMs = oneLoopMs * 2;
-  const silenceMs = 400;
-  const tick = () => {
-    if (ideasState.mode !== 'midi') return;
-    // If a batch is still streaming and only one has arrived, let the
-    // current one keep looping and re-check after another loop.
-    if (ideasState.ideas.length <= 1) {
-      ideasState.autoCycleTimeoutId = setTimeout(tick, oneLoopMs);
-      return;
-    }
-    // Stop engine to make the silence audible, then wait, then advance.
-    stopAllEngineNotes();
-    if (engineTransport.available()) engineTransport.stop();
-    ideasState.weStartedPlayback = false;  // next audition restarts playback
-    ideasState.autoCycleTimeoutId = setTimeout(() => {
-      if (ideasState.mode !== 'midi') return;
-      const next = (idx + 1) % ideasState.ideas.length;
-      auditionIdea(next);
-    }, silenceMs);
-  };
-  ideasState.autoCycleTimeoutId = setTimeout(tick, twoLoopsMs);
+  // Auto-cycle removed with the preview-slot rewrite: cycling through
+  // ideas used to swap the sound on a shared preview channel, but every
+  // idea now owns its own channel. Auto-cycling would spawn a new
+  // channel per beat, so the user drives auditioning manually.
 }
 
 // "More like this" — reseed the panel with the picked idea as the
@@ -4483,29 +4444,18 @@ async function keepIdea(idx) {
   if (!idea) return;
   if (idea._kept) return;   // already kept — no-op
 
-  // Ensure the preview channel is loaded with the picked idea's notes.
-  await auditionIdea(idx);
+  // Materialise if the user hits Keep without ever Playing first.
+  await ensureIdeaMaterialised(idea);
+  const pat = song.patterns.find(p => p.id === idea._patternId);
 
-  // Promote preview → permanent (strip _preview markers).
-  // Channel keeps its instrument-based name ("Bass," "Rhodes," etc.) — the
-  // idea's vibe name belongs to the PATTERN, not the channel. Renaming the
-  // channel here made the rack row show "Chromatic Wanderer" instead of
-  // the instrument, which is what the row is really about.
-  const ch = song.channels.find(c => c.id === ideasState.preview.channelId);
-  if (ch) {
-    delete ch._preview;
-  }
-  const pat = song.patterns.find(p => p.id === ideasState.preview.patternId);
-  if (pat) {
-    pat.name = idea.name || 'Chords';
-    delete pat._preview;
-  }
-
-  // Commit to arrangement — clip on first free track at bar 0.
+  // Under the "each idea is a real channel" model there's no preview to
+  // promote — the channel and pattern are already permanent from the
+  // first Play. Keep only adds the arrangement clip so the pattern lands
+  // in the song's timeline instead of only looping in PAT mode.
   const trackId = firstFreeTrackAtBar(0);
   const track = song.tracks.find(t => t.id === trackId);
   const lengthBars = idea.bars || 4;
-  if (track && pat) {
+  if (track && pat && !track.clips.some(c => c.patternId === pat.id)) {
     track.clips.push({
       id: 'clip-' + pat.id,
       type: 'pattern',
@@ -4513,29 +4463,17 @@ async function keepIdea(idx) {
     });
   }
   autoExpandBars();
-
-  // Reset preview slot so the next audition creates a NEW preview channel
-  // instead of overwriting the just-promoted one. Keep the panel open so
-  // the user can Keep multiple ideas in one batch (or reseed / close).
   idea._kept = true;
-  ideasState.preview = { channelId: null, patternId: null, gmProgram: null, kept: false };
-  // Prior transport state stays "PAT + preview pattern" — but the
-  // preview pattern is now permanent (with the just-kept name). Playback
-  // continues on the newly-committed pattern until the user auditions a
-  // different idea (which spins up a fresh preview channel).
-
   render();
   persist();
-  renderIdeasPanel();  // re-render so the kept row shows kept styling
+  renderIdeasPanel();
 }
 
-// Tear down the preview channel + pattern + clip if the user closed the
-// panel without keeping anything. Idempotent — safe to call twice.
+// Clean up channels + patterns created by auditions the user didn't
+// Keep. Each idea owns a real channel + pattern from the moment it was
+// first played; on close we delete the ones the user never committed
+// to, so the rack doesn't accumulate rejected auditions. Idempotent.
 function teardownPreviewIfNotKept() {
-  const p = ideasState.preview;
-  if (!p || p.kept) return;
-  if (!p.channelId && !p.patternId) return;
-
   // 1) Stop playback if WE started it. If the user was already playing
   //    before opening the panel, leave it running.
   if (ideasState.weStartedPlayback) {
@@ -4543,29 +4481,30 @@ function teardownPreviewIfNotKept() {
     engineTransport.stop();
   }
 
-  // 2) Delete the preview pattern and restore currentPatternId.
-  if (p.patternId) {
-    song.patterns = song.patterns.filter(pat => pat.id !== p.patternId);
-    if (currentPatternId === p.patternId) {
-      currentPatternId = ideasState.priorCurrentPatternId || (song.patterns[0]?.id) || null;
+  // 2) For each unkept idea, drop its channel + pattern from song state.
+  for (const idea of (ideasState.ideas || [])) {
+    if (idea._kept) continue;
+    if (idea._patternId) {
+      song.patterns = song.patterns.filter(p => p.id !== idea._patternId);
+      if (currentPatternId === idea._patternId) {
+        currentPatternId = ideasState.priorCurrentPatternId
+                        || (song.patterns[0]?.id) || null;
+      }
     }
+    if (idea._channelId) {
+      if (window.nasty && window.nasty.engine) {
+        window.nasty.engine.send({ cmd: 'all_notes_off', channelId: idea._channelId });
+      }
+      song.channels = song.channels.filter(c => c.id !== idea._channelId);
+      for (const pat of song.patterns) {
+        pat.notes = (pat.notes || []).filter(n => n.channelId !== idea._channelId);
+      }
+    }
+    idea._channelId = null;
+    idea._patternId = null;
   }
 
-  // 3) Delete the preview channel from song state. Engine tolerates
-  //    leftover channels that aren't referenced by the current pattern
-  //    (same convention `delete_channel` uses); silence any held notes
-  //    on the way out so nothing hangs.
-  if (p.channelId) {
-    if (window.nasty && window.nasty.engine) {
-      window.nasty.engine.send({ cmd: 'all_notes_off', channelId: p.channelId });
-    }
-    song.channels = song.channels.filter(c => c.id !== p.channelId);
-    for (const pat of song.patterns) {
-      pat.notes = (pat.notes || []).filter(n => n.channelId !== p.channelId);
-    }
-  }
-
-  // 4) Restore the user's prior transport mode.
+  // 3) Restore the user's prior transport mode.
   if (ideasState.priorTransportMode) {
     song.transportMode = ideasState.priorTransportMode;
   }
