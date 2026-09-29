@@ -4432,9 +4432,12 @@ async function auditionIdea(idx) {
   ideasState.autoCycleTimeoutId = null;
   if (ideasState.autoplay && ideasState.ideas.length > 1) {
     const beats = (idea.bars || 4) * 4;
-    const oneLoopMs = Math.max(500, (beats * 60000) / (song.bpm || 120));
+    const oneLoopMs  = Math.max(500, (beats * 60000) / (song.bpm || 120));
     const twoLoopsMs = oneLoopMs * 2;
-    const silenceMs = 400;
+    // One full bar (4 beats at current BPM) of silence between ideas —
+    // long enough for the ear to reset before the next idea starts, so
+    // they don't blur into each other.
+    const oneBarMs   = Math.max(500, (4 * 60000) / (song.bpm || 120));
     ideasState.autoCycleTimeoutId = setTimeout(() => {
       if (!ideasState.autoplay || ideasState.mode !== 'midi') return;
       stopAllEngineNotes();
@@ -4444,7 +4447,7 @@ async function auditionIdea(idx) {
         if (!ideasState.autoplay || ideasState.mode !== 'midi') return;
         const next = (idx + 1) % ideasState.ideas.length;
         auditionIdea(next);
-      }, silenceMs);
+      }, oneBarMs);
     }, twoLoopsMs);
   }
 }
