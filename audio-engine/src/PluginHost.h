@@ -91,6 +91,19 @@ public:
                             const juce::String& presetName = {});
     void unloadPlugin(const juce::String& channelId);
 
+    // Surgical instrument swap on an EXISTING channel slot. Unlike loadPlugin
+    // (which fully rebuilds the slot and drops effects / sends / gain), this
+    // replaces only the plugin node — keeping the injector, gain, width, pan,
+    // effects chain, and sends intact. MIDI notes and pattern references
+    // survive because the channel id doesn't change. Foundation for the
+    // click-row-to-swap-instrument UX (Phase 1 of the rack rebuild). Returns
+    // "Channel not found" if the slot doesn't exist; caller should fall
+    // through to loadPlugin for the fresh-channel case.
+    juce::String swapChannelInstrument(const juce::String& channelId,
+                                       const juce::String& pluginId,
+                                       const juce::String& base64State = {},
+                                       const juce::String& presetName = {});
+
     // Tear down every channel + effect and return the graph to its empty
     // startup shape (master audio output + metronome intact; no channels,
     // no buses, no effect nodes). Called from the load-from-file path so

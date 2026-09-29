@@ -200,6 +200,22 @@ juce::var StdioBridge::handleCommand(const juce::var& msg) {
         return juce::var(o);
     }
 
+    if (cmd == "swap_channel_instrument") {
+        auto err = host.swapChannelInstrument(msg["channelId"].toString(),
+                                              msg["pluginId"].toString(),
+                                              msg["state"].toString(),
+                                              msg["presetName"].toString());
+        auto* o = new juce::DynamicObject();
+        o->setProperty("event",     err.isEmpty() ? "instrument_swapped" : "error");
+        o->setProperty("channelId", msg["channelId"]);
+        if (err.isNotEmpty()) {
+            o->setProperty("error", err);
+        } else {
+            o->setProperty("params", host.paramsForOwner(msg["channelId"].toString()));
+        }
+        return juce::var(o);
+    }
+
     if (cmd == "add_gm_channel") {
         auto err = host.addGmChannel(msg["channelId"].toString(),
                                      (int) msg["program"],

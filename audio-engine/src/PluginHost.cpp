@@ -1217,6 +1217,85 @@ juce::String PluginHost::loadPlugin(const juce::String& channelId,
     return {};
 }
 
+juce::String PluginHost::swapChannelInstrument(const juce::String& channelId,
+                                                const juce::String& pluginId,
+                                                const juce::String& base64State,
+                                                const juce::String& presetName) {
+    std::cerr << "[swapInstrument] START ch=" << channelId << " pluginId=" << pluginId << std::endl;
+
+    // Early check — surgical swap only makes sense on an existing slot.
+    // Caller should fall through to loadPlugin for the fresh-channel case.
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (channels.find(channelId) == channels.end()) {
+            std::cerr << "[swapInstrument] FAIL: channel not found: " << channelId << std::endl;
+            return "Channel not found: " + channelId;
+        }
+    }
+
+    // Look up plugin description.
+    const juce::PluginDescription* desc = nullptr;
+    for (const auto& t : knownPlugins.getTypes()) {
+        if (t.createIdentifierString() == pluginId) { desc = &t; break; }
+    }
+    if (!desc) return "Plugin not found: " + pluginId;
+
+    // Instantiate WITHOUT holding MessageManagerLock — same reasoning as
+    // loadPlugin (plugin init pumps the message loop).
+    juce::String err;
+    auto instance = formatManager.createPluginInstance(
+        *desc, graph.getSampleRate(), graph.getBlockSize(), err);
+    if (!instance) return err.isNotEmpty() ? err : juce::String("Instantiation failed");
+    instance->setPlayHead(playHead.get());
+
+    if (base64State.isNotEmpty()) {
+        juce::MemoryOutputStream decoded;
+        if (juce::Base64::convertFromBase64(decoded, base64State) && decoded.getDataSize() > 0) {
+            instance->setStateInformation(decoded.getData(), (int) decoded.getDataSize());
+        }
+    }
+    if (presetName.isNotEmpty()) {
+        if (auto* pi = dynamic_cast<juce::AudioPluginInstance*>(instance.get())) {
+            const int idx = matchPresetIndex(*pi, presetName);
+            if (idx >= 0) pi->setCurrentProgram(idx);
+        }
+    }
+
+    // Close the OLD plugin's editor window (if open) on the message thread
+    // before we drop its node — its retained editor pointer would dangle.
+    hidePluginUI(channelId);
+
+    juce::MessageManagerLock mml;
+    if (!mml.lockWasGained()) return "aborted";
+
+    auto newPluginNode = graph.addNode(std::move(instance));
+    if (newPluginNode == nullptr) return "graph rejected plugin: " + pluginId;
+
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        auto it = channels.find(channelId);
+        if (it == channels.end()) {
+            // Race with a concurrent delete — clean up.
+            graph.removeNode(newPluginNode->nodeID);
+            return "Channel deleted mid-swap: " + channelId;
+        }
+        auto oldNodeId = it->second.pluginNodeId;
+        it->second.pluginNodeId = newPluginNode->nodeID;
+        // Removing the old plugin node drops all its connections (both MIDI
+        // and audio) automatically. rewireChannelUnlocked below re-adds the
+        // audio side; we add the MIDI (injector → new plugin) here since the
+        // rewire path skips MIDI connections.
+        graph.removeNode(oldNodeId);
+        if (it->second.injectorNodeId != juce::AudioProcessorGraph::NodeID{}) {
+            graph.addConnection({{it->second.injectorNodeId, Graph::midiChannelIndex},
+                                 {newPluginNode->nodeID,     Graph::midiChannelIndex}});
+        }
+        rewireChannelUnlocked(it->second);
+    }
+    std::cerr << "[swapInstrument] DONE ch=" << channelId << " → " << pluginId << std::endl;
+    return {};
+}
+
 juce::String PluginHost::addGmChannel(const juce::String& channelId,
                                       int gmProgram,
                                       const juce::String& sf2Path) {

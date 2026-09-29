@@ -6311,6 +6311,20 @@ function renderChannelRack() {
       </span>
     `;
     wireChannelNumRouting(left.querySelector('.chnum'), ch);
+    // Click the channel name → open the instrument picker in swap mode.
+    // Foundation for Phase 1 of the rack rebuild: a channel row is a SLOT.
+    // Clicking its name swaps the sound in the slot in place. Notes /
+    // effects / gain / pan stay put. Text cursor stays a pointer over the
+    // name so the affordance is discoverable.
+    const cnameEl = left.querySelector('.cname');
+    if (cnameEl) {
+      cnameEl.style.cursor = 'pointer';
+      cnameEl.title = 'Click to swap the instrument on this channel — notes and effects stay';
+      cnameEl.addEventListener('click', (e) => {
+        e.stopPropagation(); // don't also arm the channel
+        openInstPickerForSwap(ch.id, cnameEl);
+      });
+    }
     // Volume knob — replaces the horizontal fader. Works in fader-position
     // space (0..1) so the audio-taper curve matches every other volume
     // control (mixer strips, master). Double-click snaps to unity.
@@ -8426,6 +8440,7 @@ function openInstPicker(anchorEl) {
 
 function closeInstPicker() {
   instPickerOpen = false;
+  pickerSwapTargetId = null;
   document.getElementById('inst-picker').classList.add('hidden');
 }
 
@@ -8446,11 +8461,10 @@ function renderInstPicker(query) {
       btn.textContent = e.label;
       btn.title = 'GM program ' + e.gm;
       btn.addEventListener('click', () => {
-        addChannelFromInstrument({
+        pickerCommitInstrument({
           name: e.label, pluginId: 'gm-' + e.gm, gmProgram: e.gm,
           drumPitch: e.drumPitch || null,
         });
-        closeInstPicker();
       });
       grid.appendChild(btn);
     }
@@ -8475,9 +8489,8 @@ function renderInstPicker(query) {
         row.textContent = name;
         row.title = `${cat} · GM ${prog}`;
         row.addEventListener('click', () => {
-          addChannelFromInstrument({ name, pluginId: 'gm-' + prog, gmProgram: prog,
+          pickerCommitInstrument({ name, pluginId: 'gm-' + prog, gmProgram: prog,
             drumPitch: prog === 128 ? 36 : null });
-          closeInstPicker();
         });
         group.appendChild(row);
       }
@@ -8497,9 +8510,8 @@ function renderInstPicker(query) {
         row.textContent = name;
         row.title = `GM program ${prog}`;
         row.addEventListener('click', () => {
-          addChannelFromInstrument({ name, pluginId: 'gm-' + prog, gmProgram: prog,
+          pickerCommitInstrument({ name, pluginId: 'gm-' + prog, gmProgram: prog,
             drumPitch: prog === 128 ? 36 : null });
-          closeInstPicker();
         });
         group.appendChild(row);
       }
@@ -8530,14 +8542,68 @@ function renderInstPicker(query) {
         row.textContent = p.name;
         row.title = `${p.name} — ${p.manufacturer || ''}`;
         row.addEventListener('click', () => {
-          addChannelFromInstrument({ name: p.name, pluginId: p.id });
-          closeInstPicker();
+          pickerCommitInstrument({ name: p.name, pluginId: p.id });
         });
         group.appendChild(row);
       });
       list.appendChild(group);
     }
   }
+}
+
+// Swap the instrument on an EXISTING channel, keeping the channel id + notes
+// + effects + gain + pan intact. Foundation for Phase 1 of the rack rebuild:
+// click a channel row's name → pick a new sound → same slot, different
+// instrument. Pattern references survive because ch.id doesn't change.
+async function swapChannelInstrument(channelId, { name, pluginId, gmProgram, drumPitch, presetName, base64State }) {
+  const ch = song.channels.find(c => c.id === channelId);
+  if (!ch) { console.warn('[nasty] swapChannelInstrument: no channel', channelId); return; }
+  ch.name       = name || ch.name;
+  ch.instrument = 'plugin';
+  ch.pluginId   = pluginId;
+  ch.gmProgram  = gmProgram ?? null;
+  ch.drumPitch  = drumPitch ?? null;
+  if (window.nasty && window.nasty.engine) {
+    if (typeof pluginId === 'string' && pluginId.startsWith('gm-')) {
+      // GM path: engine's add_gm_channel handles replace-if-exists but wipes
+      // effects. Acceptable for MVP Phase 1 — VST/AU is the more common
+      // swap case. Preserving effects on GM swap is a follow-up.
+      const sf2 = window.nasty.sf2Path ? await window.nasty.sf2Path() : '';
+      window.nasty.engine.send({
+        cmd: 'add_gm_channel', channelId, program: gmProgram, sf2Path: sf2,
+      });
+    } else {
+      // VST/AU: surgical swap preserves effects, sends, gain, pan, width.
+      window.nasty.engine.send({
+        cmd: 'swap_channel_instrument', channelId, pluginId,
+        presetName: presetName || '',
+        state: base64State || '',
+      });
+    }
+  }
+  render();
+  persist();
+}
+
+// The instrument picker can be opened in either mode:
+//   - null (default): picking an instrument creates a NEW channel.
+//   - channelId string: picking an instrument SWAPS onto that existing
+//     channel's slot. Preserves notes + effects + pan/gain/width.
+// Callers set this via openInstPickerForSwap(channelId). Cleared on close.
+let pickerSwapTargetId = null;
+
+function pickerCommitInstrument(spec) {
+  if (pickerSwapTargetId) {
+    swapChannelInstrument(pickerSwapTargetId, spec);
+  } else {
+    addChannelFromInstrument(spec);
+  }
+  closeInstPicker();
+}
+
+function openInstPickerForSwap(channelId, anchorEl) {
+  pickerSwapTargetId = channelId;
+  openInstPicker(anchorEl);
 }
 
 async function addChannelFromInstrument({ id, name, pluginId, gmProgram, drumPitch, presetName, base64State }) {
