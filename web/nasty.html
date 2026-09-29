@@ -4445,6 +4445,12 @@ async function auditionIdea(idx) {
       ideasState.weStartedPlayback = false;
       ideasState.autoCycleTimeoutId = setTimeout(() => {
         if (!ideasState.autoplay || ideasState.mode !== 'midi') return;
+        // Reflect our own stop synchronously — the engine will emit its
+        // transport_state=stopped event eventually, but auditionIdea's
+        // wasPlaying check reads THIS flag right now. Without the
+        // override, wasPlaying is stale-true, playSong doesn't fire,
+        // and the transport never rolls for the next idea.
+        engineTransport.isPlaying = false;
         const next = (idx + 1) % ideasState.ideas.length;
         auditionIdea(next);
       }, oneBarMs);
