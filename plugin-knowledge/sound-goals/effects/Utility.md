@@ -9,6 +9,14 @@ Metering, spectrum analysis, tuning, volume adjustment, gain staging. Reach for 
 
 ## Options
 
+### MasterLimiter
+
+- **Character:** Transparent brickwall limiting — designed to control peaks and maximize loudness without (ideally) altering the tone of the mix
+- **Best for:** Final-stage master bus limiting, overload protection, loudness maximization for streaming or export
+- **Emotional tags:** Controlled, tight, contained, loud
+- **Comparison:** Comparable in role to generic brickwall limiters; specific sonic character vs. FabFilter Pro-L 2, LoudMax, or similar cannot be confirmed due to lack of verified documentation
+- **How to use:** `add_plugin_effect(channel_id=..., plugin_id="MasterLimiter")` — place last in the master bus chain; lower Threshold (or raise Input Gain) to increase loudness; set Output Ceiling to -0.1 dBFS or -1.0 dBFS for streaming safety
+
 ### AUSampler
 
 - **Character:** Neutral and transparent — the sampler itself imparts no color; timbre is 100% determined by the loaded sample content (.aupreset / .exs / .sf2 / .dls).
