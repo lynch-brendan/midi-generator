@@ -512,9 +512,19 @@
     box-shadow: inset 3px 0 0 var(--arm);
   }
   .channel-row .ch-left .cname {
-    flex: 1; font-weight: 600; font-size: 11px;
+    flex: 0 0 auto; max-width: 120px;
+    font-weight: 600; font-size: 11px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    padding: 3px 8px; border-radius: 3px;
+    background: #2b3038; border: 1px solid #3a414a;
+    cursor: pointer;
+    transition: background 0.08s, border-color 0.08s;
   }
+  .channel-row .ch-left .cname:hover {
+    background: #3a414d; border-color: #565f6b; color: #fff;
+  }
+  /* Blank space to the right of the name — click-to-arm target. */
+  .channel-row .ch-left .cbtns { margin-left: auto; }
   .channel-row .ch-left .cvol-slot,
   .channel-row .ch-left .cpan-slot {
     display: inline-flex; align-items: center; padding: 0 2px;
@@ -5206,11 +5216,10 @@ async function applyToolCalls(calls) {
         // (Claude fires this only on explicit user request — the request is
         // the confirmation).
         song = { version: SONG_SCHEMA_VERSION, bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] }, sections: [], transportMode: 'pat' };
-        chatHistory = [];
+        resetAiContext();
         currentPatternId = null;
         ensureDefaults();
         hydratePluginChannels();
-        document.getElementById('chat-messages').innerHTML = '';
         stopSong();
         summaries.push('◇ new song');
       } else if (name === 'start_recording') {
@@ -6318,7 +6327,7 @@ function renderChannelRack() {
       <span class="swatch" style="background:${ch.color}"></span>
       <span class="cvol-slot" data-ch="${ch.id}"></span>
       <span class="cpan-slot" data-ch="${ch.id}"></span>
-      <span class="cname" title="${escapeHtml(ch.instrument)}${ch.drumPitch != null ? ' · pitch ' + ch.drumPitch : ''}">${escapeHtml(ch.name)}</span>
+      <span class="cname" title="Click to swap the instrument on this channel — notes and effects stay">${escapeHtml(ch.name)}</span>
       <span class="cbtns">
         <button class="${ch.muted?'on-mute':''}" data-a="mute" data-ch="${ch.id}">M</button>
         <button class="${ch.solo?'on-solo':''}" data-a="solo" data-ch="${ch.id}">S</button>
@@ -6326,17 +6335,13 @@ function renderChannelRack() {
       </span>
     `;
     wireChannelNumRouting(left.querySelector('.chnum'), ch);
-    // Click the channel name → open the instrument picker in swap mode.
-    // Foundation for Phase 1 of the rack rebuild: a channel row is a SLOT.
-    // Clicking its name swaps the sound in the slot in place. Notes /
-    // effects / gain / pan stay put. Text cursor stays a pointer over the
-    // name so the affordance is discoverable.
+    // The channel name is a button styled to look clickable. Click it →
+    // open the swap-instrument picker. stopPropagation keeps the row's
+    // click-to-arm handler from also firing.
     const cnameEl = left.querySelector('.cname');
     if (cnameEl) {
-      cnameEl.style.cursor = 'pointer';
-      cnameEl.title = 'Click to swap the instrument on this channel — notes and effects stay';
       cnameEl.addEventListener('click', (e) => {
-        e.stopPropagation(); // don't also arm the channel
+        e.stopPropagation();
         openInstPickerForSwap(ch.id, cnameEl);
       });
     }
@@ -11030,8 +11035,7 @@ function loadFromFile() {
         }
         song = ensureShape(parsed);
         currentPatternId = song.patterns[0]?.id || null;
-        chatHistory = [];
-        document.getElementById('chat-messages').innerHTML = '';
+        resetAiContext();
         // Wipe the engine's current graph before rebuilding — otherwise the
         // previously-loaded channels/effects stay on top of what we hydrate
         // next, and old drum channels keep playing while the loaded song's
@@ -11450,17 +11454,55 @@ document.querySelectorAll('.patsong .ps-btn').forEach(btn => {
     persist();
   });
 });
+// Wipe every scrap of AI-conversation / audition state so a fresh song
+// doesn't inherit context from the previous one. Called from all three
+// project-reset paths (clear button, load-from-file, AI new_song tool).
+// Keeps sessionAudio and other studio-setup state intact — those aren't
+// AI context.
+function resetAiContext() {
+  chatHistory = [];
+  const chatMessages = document.getElementById('chat-messages');
+  if (chatMessages) chatMessages.innerHTML = '';
+  // Ideas panel — chords/bass/melody auditions AND effects-A/B state.
+  // Close it if open so a stale audition doesn't sit on top of the new song.
+  try {
+    if (typeof closeIdeasPanel === 'function') closeIdeasPanel();
+  } catch (_) {}
+  if (typeof ideasState === 'object' && ideasState) {
+    ideasState.ideas = [];
+    ideasState.selectedIdx = -1;
+    ideasState.loading = false;
+    ideasState.prompt = '';
+    if (ideasState.preview) {
+      ideasState.preview.channelId = null;
+      ideasState.preview.patternId = null;
+      ideasState.preview.gmProgram = null;
+      ideasState.preview.kept = false;
+    }
+    if (ideasState.effects) {
+      ideasState.effects.targetOwnerId = null;
+      ideasState.effects.targetLabel = '';
+      ideasState.effects.options = [];
+      ideasState.effects.currentSlotId = null;
+      ideasState.effects.kept = false;
+    }
+    if (ideasState.autoCycleTimeoutId) {
+      try { clearTimeout(ideasState.autoCycleTimeoutId); } catch (_) {}
+      ideasState.autoCycleTimeoutId = null;
+    }
+  }
+}
+
 document.getElementById('clear-btn').addEventListener('click', () => {
   if (!confirm('Clear the song? (channels, patterns, and playlist all reset)')) return;
   song = { version: SONG_SCHEMA_VERSION, bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] }, sections: [], transportMode: 'pat' };
-  chatHistory = [];
+  resetAiContext();
   currentPatternId = null;
   ensureDefaults();
   // Load the freshly-created default channels into the engine so audio flows.
   // Without this, drum channels exist in song data but have no engine-side
   // synth attached, so note_on messages are dropped and the DAW is silent.
   hydratePluginChannels();
-  document.getElementById('chat-messages').innerHTML = '';
   stopSong();
   render();
 });
@@ -11849,9 +11891,27 @@ const voiceInput = (() => {
   // R2D2-style acknowledgment beeps. Dedicated AudioContext (separate from
   // the mic-input one, which gets closed when voice is off) so we can beep
   // regardless of voice-mode state.
+  // Routes to the engine's device via AudioContext.setSinkId when supported
+  // (Electron/Chromium 110+) so beeps come out of the same speaker as
+  // playback — no split between voice mode and the song.
   let beepCtx = null;
   function ensureBeepCtx() {
-    if (!beepCtx) beepCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (!beepCtx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      // Newer Chromium accepts { sinkId } in the constructor; fall back to
+      // parameterless if the option isn't recognised.
+      try {
+        beepCtx = _engineSinkId
+          ? new AC({ sinkId: _engineSinkId })
+          : new AC();
+      } catch (_) {
+        beepCtx = new AC();
+      }
+    } else if (_engineSinkId && typeof beepCtx.setSinkId === 'function'
+               && beepCtx.sinkId !== _engineSinkId) {
+      // Engine device changed after the context was created — re-route.
+      try { beepCtx.setSinkId(_engineSinkId); } catch (_) {}
+    }
     return beepCtx;
   }
   function beep(kind) {
