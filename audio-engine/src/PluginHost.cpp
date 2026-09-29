@@ -1281,38 +1281,6 @@ juce::String PluginHost::swapChannelInstrument(const juce::String& channelId,
         }
         auto oldNodeId = it->second.pluginNodeId;
 
-        // === SWAP INSTRUMENTATION ===
-        // Dump slot state + connection topology before and after the swap so
-        // we can diagnose why live-swap loses audio. Delete this block once
-        // the root cause is understood.
-        std::cerr << "[swap-dbg] channel=" << channelId
-                  << " old=" << oldNodeId.uid
-                  << " new=" << newPluginNode->nodeID.uid
-                  << " injector=" << it->second.injectorNodeId.uid
-                  << " gain=" << it->second.gainNodeId.uid
-                  << " width=" << it->second.widthNodeId.uid
-                  << " pan=" << it->second.panNodeId.uid
-                  << " effects=" << it->second.effects.size() << std::endl;
-        for (const auto& e : it->second.effects) {
-            std::cerr << "[swap-dbg]   fx slot=" << e.slotId
-                      << " node=" << e.nodeId.uid
-                      << " wet=" << e.wetGainNodeId.uid
-                      << " dry=" << e.dryGainNodeId.uid
-                      << " bypassed=" << e.bypassed << std::endl;
-        }
-        {
-            auto before = graph.getConnections();
-            std::cerr << "[swap-dbg] BEFORE swap — " << before.size() << " conns; touching this channel:" << std::endl;
-            for (const auto& c : before) {
-                if (c.source.nodeID == oldNodeId || c.destination.nodeID == oldNodeId
-                 || c.source.nodeID == it->second.injectorNodeId
-                 || c.source.nodeID == it->second.gainNodeId) {
-                    std::cerr << "[swap-dbg]   " << c.source.nodeID.uid << ":" << c.source.channelIndex
-                              << " → " << c.destination.nodeID.uid << ":" << c.destination.channelIndex << std::endl;
-                }
-            }
-        }
-
         // Pre-wire the new plugin BEFORE removing the old. Order matters
         // for live-swap audio continuity:
         //   1. Add MIDI: injector → new plugin (in parallel with existing
@@ -1343,19 +1311,6 @@ juce::String PluginHost::swapChannelInstrument(const juce::String& channelId,
         it->second.pluginNodeId = newPluginNode->nodeID;
         graph.removeNode(oldNodeId);
         rewireChannelUnlocked(it->second);
-
-        // === POST-SWAP INSTRUMENTATION ===
-        auto after = graph.getConnections();
-        std::cerr << "[swap-dbg] AFTER swap+rewire — " << after.size() << " conns; touching this channel:" << std::endl;
-        for (const auto& c : after) {
-            if (c.source.nodeID == newPluginNode->nodeID
-             || c.destination.nodeID == newPluginNode->nodeID
-             || c.source.nodeID == it->second.injectorNodeId
-             || c.source.nodeID == it->second.gainNodeId) {
-                std::cerr << "[swap-dbg]   " << c.source.nodeID.uid << ":" << c.source.channelIndex
-                          << " → " << c.destination.nodeID.uid << ":" << c.destination.channelIndex << std::endl;
-            }
-        }
     }
     std::cerr << "[swapInstrument] DONE ch=" << channelId << " → " << pluginId << std::endl;
     return {};
