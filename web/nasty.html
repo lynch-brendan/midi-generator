@@ -8558,16 +8558,27 @@ function renderInstPicker(query) {
 async function swapChannelInstrument(channelId, { name, pluginId, gmProgram, drumPitch, presetName, base64State }) {
   const ch = song.channels.find(c => c.id === channelId);
   if (!ch) { console.warn('[nasty] swapChannelInstrument: no channel', channelId); return; }
+  const wasGm  = typeof ch.pluginId === 'string' && ch.pluginId.startsWith('gm-');
+  const wantGm = typeof pluginId    === 'string' && pluginId.startsWith('gm-');
   ch.name       = name || ch.name;
   ch.instrument = 'plugin';
   ch.pluginId   = pluginId;
   ch.gmProgram  = gmProgram ?? null;
   ch.drumPitch  = drumPitch ?? null;
   if (window.nasty && window.nasty.engine) {
-    if (typeof pluginId === 'string' && pluginId.startsWith('gm-')) {
-      // GM path: engine's add_gm_channel handles replace-if-exists but wipes
-      // effects. Acceptable for MVP Phase 1 — VST/AU is the more common
-      // swap case. Preserving effects on GM swap is a follow-up.
+    if (wasGm && wantGm) {
+      // GM → GM: the existing GmSynth node stays, we just change its patch
+      // program. Fully atomic — no graph mutation, no rebuild, no silence.
+      // Audio continues, mixer keeps working, effects stay.
+      window.nasty.engine.send({
+        cmd: 'set_gm_program', channelId, program: gmProgram,
+      });
+    } else if (wantGm) {
+      // Non-GM → GM: needs a new GmSynth node. Engine's add_gm_channel does
+      // replace-if-exists but wipes the slot (injector, gain, effects). This
+      // is the "surgical GM swap" gap — proper fix is to extend the engine's
+      // swap command to handle GM instantiation. Deferred; the common path
+      // in practice is GM → GM (patch swap) or VST ↔ VST (surgical).
       const sf2 = window.nasty.sf2Path ? await window.nasty.sf2Path() : '';
       window.nasty.engine.send({
         cmd: 'add_gm_channel', channelId, program: gmProgram, sf2Path: sf2,
