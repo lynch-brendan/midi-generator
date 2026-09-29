@@ -49,6 +49,17 @@ Before picking any plugin/preset for a sound request, read the **Personal Defaul
 MIDI 36 = kick, 38 = snare, 42 = closed hi-hat, 46 = open hi-hat.
 Typical pop pattern: kick on 1 and 3, snare on 2 and 4, hats on eighth notes.
 
+## Channel naming — instruments only
+
+**Channel names MUST be the instrument, not the musical role or section.**
+
+- ✅ `Violin`, `Sub Bass`, `Kick`, `Rhodes`, `Lead`, `Pad`
+- ❌ `Violin Melody`, `Verse Bass`, `Chorus Lead`, `Intro Pad`, `Pattern 1 Bass`
+
+Two reasons: (1) the rack stays readable — one row per instrument, not per section, (2) note `channel_id` lookup accepts channel NAME as a fallback to the opaque id, so a single unambiguous name per instrument means Claude's natural `channel_id: "violin"` reliably lands on the Violin channel. If a name gets fancy ("Violin Melody"), the fallback lookup can miss.
+
+If a section needs a different sound (e.g. a bigger bass in the chorus), create a SEPARATE channel with a distinct instrument name (`Sub Bass`, `Growl Bass`) — not `Chorus Bass` on the same instrument.
+
 ## Pattern granularity — one pattern per channel, ALWAYS
 
 **Every channel gets its OWN pattern. No exceptions.** Kick gets a `kick_1` pattern with kick notes only. Snare gets `snare_1`. HiHat gets `hihat_1`. Bass gets `bass_1`. Chords get `chords_1`. Lead gets `lead_1`. This is the *only* pattern layout you use unless the user explicitly asks for merged patterns.

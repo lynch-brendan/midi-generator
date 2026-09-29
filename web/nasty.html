@@ -4008,25 +4008,35 @@ const pluginNoteTimeouts = new Set();
 // notes but nothing plays). Returns the clean note list plus a dropped count
 // for the summary. Order is preserved.
 function sanitizeIncomingNotes(rawNotes) {
-  const known = new Set(song.channels.map(c => c.id));
+  // Two-pass resolver: notes reference channels by id OR by name (case-
+  // insensitive). Claude naturally reaches for the instrument name ("violin")
+  // instead of the opaque id ("ch_violin_a3xk1") — supporting both means the
+  // shortcut is correct instead of dropped. Assumes channel names are the
+  // instrument (Violin, Sub Bass, Kick) so a single name never resolves to
+  // two channels — enforced by a prompt rule on create_channel.
+  const byId = new Map(song.channels.map(c => [c.id, c]));
+  const byName = new Map(song.channels.map(c => [(c.name || '').toLowerCase(), c]));
   const notes = [];
   let dropped = 0;
   const unknownIds = new Set();
   for (const n of rawNotes) {
-    const cid = n.channel_id;
-    if (!cid || !known.has(cid)) {
+    const ref = n.channel_id;
+    if (!ref) { dropped++; continue; }
+    const ch = byId.get(ref) || byName.get(String(ref).toLowerCase());
+    if (!ch) {
       dropped++;
-      if (cid) unknownIds.add(cid);
+      unknownIds.add(ref);
       continue;
     }
     notes.push({
-      channelId: cid, pitch: n.pitch,
+      channelId: ch.id, pitch: n.pitch,
       startBeat: n.start_beat, durationBeats: n.duration_beats,
       velocity: n.velocity ?? 0.8,
     });
   }
   if (dropped > 0) {
-    console.warn('[nasty] dropped', dropped, 'notes with missing/unknown channel_id — known channels:', [...known]);
+    console.warn('[nasty] dropped', dropped, 'notes — no channel matched id/name. Known:',
+      song.channels.map(c => `${c.name}(${c.id})`));
   }
   return { notes, dropped, unknownIds: [...unknownIds] };
 }
