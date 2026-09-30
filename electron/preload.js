@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 // Bridge minimal safe API into the renderer.
 // nasty.html detects window.nasty?.isDesktop and points fetch() at apiBase.
@@ -83,6 +83,12 @@ contextBridge.exposeInMainWorld('nasty', {
   // decoding audio. Used by the Sounds tab drag-to-arrangement flow so the
   // dropped clip has a real visual length. Returns null on non-WAV or error.
   probeWav: (path) => ipcRenderer.invoke('nasty-probe-wav', path),
+
+  // Resolve a dropped File → absolute filesystem path. Modern Electron
+  // stopped exposing File.path directly on the renderer; webUtils is the
+  // sanctioned replacement. Used by the channel-rack drop handler to turn
+  // Finder-dragged WAVs into paths the audio engine can open.
+  pathForFile: (file) => { try { return webUtils.getPathForFile(file); } catch { return ''; } },
 
   // File-system reach for plugin-knowledge preset loading. Renderer asks
   // main for a directory of preset files (recursive) or the raw bytes of

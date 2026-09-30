@@ -10820,6 +10820,49 @@ function parseMidiFile(buffer) {
   return allNotes;
 }
 
+// Drop a WAV onto the channel rack → create a Sampler channel loaded with
+// that file. Accepts two drag sources:
+//   - Files (from Finder) — resolved via nasty.pathForFile
+//   - application/x-nasty-audio-file (from the in-app Sounds/Browser dock)
+// Both routes end up at ensureSampleChannel(absPath), which is idempotent
+// per path (drop the same file twice, get one channel — no duplicates).
+function initChannelRackDrop() {
+  const rack = document.getElementById('channel-rack');
+  if (!rack) return;
+  const isAudioName = (n) => /\.(wav|aif|aiff|mp3|flac|ogg)$/i.test(n || '');
+  const highlight = (on) => { rack.style.boxShadow = on ? 'inset 0 0 0 2px var(--accent-2)' : ''; };
+  rack.addEventListener('dragover', (e) => {
+    const types = e.dataTransfer && e.dataTransfer.types;
+    if (!types) return;
+    if (types.includes('application/x-nasty-audio-file') || types.includes('Files')) {
+      e.preventDefault();
+      highlight(true);
+    }
+  });
+  rack.addEventListener('dragleave', () => highlight(false));
+  rack.addEventListener('drop', (e) => {
+    const types = e.dataTransfer && e.dataTransfer.types;
+    if (!types) return;
+    if (!types.includes('application/x-nasty-audio-file') && !types.includes('Files')) return;
+    e.preventDefault();
+    highlight(false);
+    const paths = [];
+    const internal = e.dataTransfer.getData('application/x-nasty-audio-file');
+    if (internal) paths.push(internal);
+    if (window.nasty && window.nasty.pathForFile) {
+      for (const f of e.dataTransfer.files || []) {
+        if (!isAudioName(f.name)) continue;
+        const p = window.nasty.pathForFile(f);
+        if (p) paths.push(p);
+      }
+    }
+    if (!paths.length) return;
+    for (const p of paths) ensureSampleChannel(p);
+    render();
+    persist();
+  });
+}
+
 function initPianoRollDrop() {
   const wrap = document.getElementById('pr-grid-wrap');
   wrap.addEventListener('dragover', (e) => {
@@ -14513,6 +14556,7 @@ lastCommittedSnapshot = serializeSongForUndo();
 render();
 initMIDI();
 initPianoRollDrop();
+initChannelRackDrop();
 updateTimeLcd(0);
 </script>
 </body>
