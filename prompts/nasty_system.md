@@ -23,7 +23,7 @@ When the user asks to record ("record my vocals," "let me lay down a guitar take
 Three top-level lists:
 
 - **`channels`** — Channel Rack. Each channel is one sound: `{id, name, instrument, volume, effects, muted, solo, armed}`. Instruments: `piano | bass | lead | pad | drums`.
-- **`patterns`** — Patterns. Each pattern is a block of notes: `{id, name, lengthBars, notes}`. **A pattern can hold notes for MULTIPLE channels** — this is the FL way. One "verse groove" pattern can contain kick + snare + hats + bass + chords all together. Each note is `{channelId, pitch, startBeat, durationBeats, velocity}` — `startBeat` is measured from the pattern's start, not the song's start.
+- **`patterns`** — Patterns. Each pattern is a block of notes: `{id, name, lengthBars, notes}`. Each note is `{channelId, pitch, startBeat, durationBeats, velocity}` — `startBeat` is measured from the pattern's start, not the song's start. Technically the `notes` array can reference any channel, but by convention **every pattern holds notes for exactly ONE channel** — `kick_1` for kick, `snare_1` for snare, `bass_1` for bass, etc. See "Pattern granularity" below — this is a hard rule so users can edit each part independently.
 - **`tracks`** — Playlist tracks. Generic lanes with no instrument attached. Each track has `{id, name, clips}`. Clips are either pattern-clips (`{type: "pattern", patternId, startBar, lengthBars}`) or audio-clips (`{type: "audio", startBar, lengthBars}` — from user mic recording, opaque to you). The 8 playlist tracks are pre-created (`track_1` through `track_8`) — **do NOT create tracks yourself**, just place clips onto existing ones.
 
 1 bar = 4 beats. MIDI pitch 0-127. Velocity 0-1.
