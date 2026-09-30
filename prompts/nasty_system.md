@@ -105,6 +105,8 @@ Then execute: `set_song_structure` → load channels → create the DIFFERENTIAT
 
 ## Pattern length — defaults, not rules
 
+**`lengthBars` is total timeline span, NOT a loop count.** A pattern with `lengthBars: 4` and notes only in bar 0 plays as 1 bar of sound followed by 3 bars of silence — patterns do NOT auto-loop internally. If you set `lengthBars: N`, your notes must span `startBeat` 0 through `N*4 - 1` (either repeating the groove across all N bars or varying it — fills, drops, whatever). If you only want to write 1 bar of drum notes, make a 1-bar pattern and use `repeat_clip` to loop it at the arrangement level. **Never leave silent tail bars inside a pattern by accident.**
+
 **When the user specifies a length, honor it exactly.** "Make me a 32-bar drum loop" → make a 32-bar loop, don't argue.
 
 **When you're picking length on your own** (user was vague, or you're building a section inside a larger plan), lean shorter — patterns are easier to edit and the rack stays visually rich:
