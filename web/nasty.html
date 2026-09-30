@@ -6569,24 +6569,36 @@ function renderAudioClipList() {
   const list = document.getElementById('audio-clip-list');
   if (!list) return;
   list.innerHTML = '';
-  // Enumerate unique audio-clip paths across all tracks. Same path used in
-  // multiple places → one palette entry, with a count so you can see reuse.
+  // A palette of every unique WAV that lives in this song, anywhere:
+  //   - Sampler / drum channels (pluginId: 'drum:<path>')
+  //   - Audio clips on arrangement tracks (type === 'audio')
+  //   - Recorded takes end up in one of the above too
+  // Same path used in multiple places = one palette entry with a count.
   const byPath = new Map();
+  const bump = (path, name, color) => {
+    if (!path) return;
+    const existing = byPath.get(path);
+    if (existing) { existing.count++; return; }
+    byPath.set(path, {
+      path,
+      name: name || path.split('/').pop(),
+      color: color || '#33c58a',
+      count: 1,
+    });
+  };
+  for (const c of (song.channels || [])) {
+    if (typeof c.pluginId === 'string' && c.pluginId.startsWith('drum:')) {
+      bump(c.drumSample || c.pluginId.slice(5), c.name, c.color);
+    }
+  }
   for (const tr of (song.tracks || [])) {
     for (const c of (tr.clips || [])) {
       if (c.type !== 'audio' || !c.path) continue;
-      const existing = byPath.get(c.path);
-      if (existing) { existing.count++; continue; }
-      byPath.set(c.path, {
-        path: c.path,
-        name: c.name || c.path.split('/').pop(),
-        color: c.color || '#33c58a',
-        count: 1,
-      });
+      bump(c.path, c.name, c.color);
     }
   }
   if (byPath.size === 0) {
-    list.innerHTML = '<div style="color:var(--dim);padding:12px;font-size:11px;line-height:1.4">No audio clips yet. Drop a WAV onto a track, or record a take, and it\'ll show up here.</div>';
+    list.innerHTML = '<div style="color:var(--dim);padding:12px;font-size:11px;line-height:1.4">No samples yet. Drop a WAV on the channel rack or a track — it\'ll show up here to reuse.</div>';
     return;
   }
   for (const item of byPath.values()) {
@@ -10133,26 +10145,46 @@ async function dropAudioFileOnTrack(track, absPath, startBar) {
   addAudioClipOnTrack(track, absPath, startBar, lengthSamples);
 }
 
-// Materialize a dropped sample as a persistent drum-style channel in the
-// rack (idempotent — same absPath resolves to the same channel id, so
-// dropping the same file twice doesn't spawn duplicate channels).
+// Materialize a dropped sample as a persistent Sampler channel in the rack
+// (idempotent — same absPath resolves to the same channel id, so dropping
+// the same file twice doesn't spawn duplicate channels). Sends one direct
+// add_sampler_channel command + set_channel_target for insert routing —
+// hydratePluginChannels() is for whole-song reload, not per-channel adds.
 function ensureSampleChannel(absPath) {
   const pluginId = 'drum:' + absPath;
   let ch = song.channels.find(c => c.pluginId === pluginId);
   if (ch) return ch;
   const fileName = absPath.split('/').pop().replace(/\.[^.]+$/, '');
   const id = 'ch_smp_' + Math.random().toString(36).slice(2, 8);
+  // Grab the next unused insert number the same way addChannelFromInstrument
+  // does — without this the channel has no per-insert bus and routes only
+  // through master (works, but drops the mixer strip you'd expect to see).
+  const used = new Set(song.channels.map(c => c.targetInsertNum || 0));
+  let nextInsert = 1;
+  while (used.has(nextInsert)) nextInsert++;
+  for (const other of song.channels) other.armed = false;
   ch = {
     id, name: fileName,
     instrument: 'plugin', pluginId,
     drumSample: absPath, drumRootNote: 60,
     volume: 1.0, effects: [],
-    muted: false, solo: false, armed: false,
+    muted: false, solo: false, armed: true,
     color: PALETTE[song.channels.length % PALETTE.length],
     insertId: 'master',
+    targetInsertNum: nextInsert,
+    inputOctaveOffset: 0,
   };
   song.channels.push(ch);
-  hydratePluginChannels();
+  if (window.nasty && window.nasty.engine) {
+    window.nasty.engine.send({
+      cmd: 'add_sampler_channel', channelId: id,
+      samplePath: absPath, rootNote: ch.drumRootNote,
+    });
+    window.nasty.engine.send({
+      cmd: 'set_channel_target', channelId: id,
+      targetChannelId: 'bus_' + nextInsert,
+    });
+  }
   return ch;
 }
 
