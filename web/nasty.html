@@ -8489,6 +8489,19 @@ function renderInstPicker(query) {
       grid.appendChild(btn);
     }
     basics.appendChild(grid);
+
+    // Load sample… — opens a native file dialog. On pick, either creates a
+    // fresh Sampler channel or swaps the picker's target channel to that
+    // sample. Sits alongside the GM basics so "load any WAV as a channel" is
+    // a first-class option next to Piano / Bass / Drums.
+    const loadRow = document.createElement('div');
+    loadRow.className = 'sp-ess-btn';
+    loadRow.style.marginTop = '6px';
+    loadRow.style.gridColumn = '1 / -1';
+    loadRow.textContent = 'Load sample…';
+    loadRow.title = 'Pick a WAV/AIFF/MP3 → becomes a Sampler channel (playable across the keyboard)';
+    loadRow.addEventListener('click', pickerCommitSample);
+    basics.appendChild(loadRow);
   }
 
   const instruments = (enginePluginsList || []).filter(p => p.isInstrument);
@@ -8630,6 +8643,55 @@ function pickerCommitInstrument(spec) {
     addChannelFromInstrument(spec);
   }
   closeInstPicker();
+}
+
+// "Load sample…" branch of the picker. Opens a native file dialog, then
+// either creates a fresh Sampler channel or swaps the picker's target
+// channel over to that sample. Reuses the existing drum: pluginId shape so
+// persistence/hydration stays on one code path — the engine sees the same
+// SampleDrum backend either way.
+async function pickerCommitSample() {
+  if (!(window.nasty && window.nasty.pickAudioFile)) {
+    alert('File picker unavailable — run the desktop app.');
+    return;
+  }
+  const absPath = await window.nasty.pickAudioFile();
+  if (!absPath) return; // user cancelled
+  const swapTargetId = pickerSwapTargetId; // capture before closeInstPicker() clears it
+  closeInstPicker();
+  if (swapTargetId) {
+    swapChannelToSample(swapTargetId, absPath);
+  } else {
+    ensureSampleChannel(absPath);
+    render();
+    persist();
+  }
+}
+
+// Swap an existing channel to a Sampler backed by absPath. Uses the same
+// add_sampler_channel engine command as fresh drops — engine's addDrumChannel
+// (which addSamplerChannel wraps) unloads whatever's on the slot first and
+// rebuilds. Not surgical for effects yet; matches the current GM-swap gap
+// documented in swapChannelInstrument.
+function swapChannelToSample(channelId, absPath) {
+  const ch = song.channels.find(c => c.id === channelId);
+  if (!ch) return;
+  const fileName = absPath.split('/').pop().replace(/\.[^.]+$/, '');
+  ch.name         = fileName;
+  ch.instrument   = 'plugin';
+  ch.pluginId     = 'drum:' + absPath;
+  ch.drumSample   = absPath;
+  ch.drumRootNote = ch.drumRootNote ?? 60;
+  ch.gmProgram    = null;
+  ch.drumPitch    = null;
+  if (window.nasty && window.nasty.engine) {
+    window.nasty.engine.send({
+      cmd: 'add_sampler_channel', channelId, samplePath: absPath,
+      rootNote: ch.drumRootNote,
+    });
+  }
+  render();
+  persist();
 }
 
 function openInstPickerForSwap(channelId, anchorEl) {

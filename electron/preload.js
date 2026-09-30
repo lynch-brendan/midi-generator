@@ -90,6 +90,11 @@ contextBridge.exposeInMainWorld('nasty', {
   // Finder-dragged WAVs into paths the audio engine can open.
   pathForFile: (file) => { try { return webUtils.getPathForFile(file); } catch { return ''; } },
 
+  // Open a native "choose an audio file" dialog. Returns absolute path or
+  // empty string on cancel. Used by the "Load sample…" branch in the
+  // channel instrument picker.
+  pickAudioFile: () => ipcRenderer.invoke('nasty-pick-audio-file'),
+
   // File-system reach for plugin-knowledge preset loading. Renderer asks
   // main for a directory of preset files (recursive) or the raw bytes of
   // a specific file. Both go through IPC — renderer has no direct fs.

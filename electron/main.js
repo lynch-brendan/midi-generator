@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, shell, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, shell, ipcMain, dialog } = require('electron');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -1310,6 +1310,22 @@ ipcMain.handle('nasty-probe-wav', async (_evt, filePath) => {
   } catch (e) {
     return null;
   }
+});
+
+// Open a native file picker filtered to audio formats. Returns the absolute
+// path (or empty string on cancel). Used by the "Load sample…" branch in the
+// channel instrument picker.
+ipcMain.handle('nasty-pick-audio-file', async () => {
+  const res = await dialog.showOpenDialog(mainWindow, {
+    title: 'Load sample',
+    properties: ['openFile'],
+    filters: [
+      { name: 'Audio', extensions: ['wav', 'aif', 'aiff', 'mp3', 'flac', 'ogg'] },
+      { name: 'All files', extensions: ['*'] },
+    ],
+  });
+  if (res.canceled || !res.filePaths.length) return '';
+  return res.filePaths[0];
 });
 
 function findNastyHtml() {
