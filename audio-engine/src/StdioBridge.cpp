@@ -77,6 +77,7 @@ static bool commandMutatesGraph(const juce::String& cmd) {
     return cmd == "unload_plugin"
         || cmd == "add_gm_channel"
         || cmd == "add_drum_channel"
+        || cmd == "add_sampler_channel"
         || cmd == "remove_effect"
         || cmd == "reorder_effects"
         || cmd == "bypass_effect"
@@ -234,6 +235,18 @@ juce::var StdioBridge::handleCommand(const juce::var& msg) {
                                        rootNote);
         auto* o = new juce::DynamicObject();
         o->setProperty("event",     err.isEmpty() ? "drum_channel_added" : "error");
+        o->setProperty("channelId", msg["channelId"]);
+        if (err.isNotEmpty()) o->setProperty("error", err);
+        return juce::var(o);
+    }
+
+    if (cmd == "add_sampler_channel") {
+        int rootNote = msg.hasProperty("rootNote") ? (int) msg["rootNote"] : 60;
+        auto err = host.addSamplerChannel(msg["channelId"].toString(),
+                                          msg["samplePath"].toString(),
+                                          rootNote);
+        auto* o = new juce::DynamicObject();
+        o->setProperty("event",     err.isEmpty() ? "sampler_channel_added" : "error");
         o->setProperty("channelId", msg["channelId"]);
         if (err.isNotEmpty()) o->setProperty("error", err);
         return juce::var(o);

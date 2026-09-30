@@ -1405,6 +1405,12 @@ juce::String PluginHost::addDrumChannel(const juce::String& channelId,
     return {};
 }
 
+juce::String PluginHost::addSamplerChannel(const juce::String& channelId,
+                                           const juce::String& samplePath,
+                                           int rootNote) {
+    return addDrumChannel(channelId, samplePath, rootNote);
+}
+
 void PluginHost::setGmProgram(const juce::String& channelId, int gmProgram) {
     std::lock_guard<std::mutex> lock(mutex);
     auto it = channels.find(channelId);

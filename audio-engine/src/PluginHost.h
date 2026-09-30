@@ -128,6 +128,14 @@ public:
                                 const juce::String& samplePath,
                                 int rootNote);
 
+    // FL-style Sampler channel — same sampler engine as addDrumChannel, exposed
+    // as a first-class pitched instrument. Drag any WAV into the rack and it
+    // becomes a playable channel: notes drive it through the piano roll like
+    // any synth. Drums are a special case of this (one pitch, root at C5).
+    juce::String addSamplerChannel(const juce::String& channelId,
+                                   const juce::String& samplePath,
+                                   int rootNote);
+
     // Serialise every loaded plugin's state as { channelId: base64 }. Called
     // on song save so plugin state persists across app restarts.
     juce::var snapshotPluginStates();
