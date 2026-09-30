@@ -11648,13 +11648,13 @@ document.getElementById('play-btn').addEventListener('click', () => {
   }
 });
 document.getElementById('stop-btn').addEventListener('click', () => {
-  // Always send stop_recording — engine no-ops if nothing's active. This
-  // means an audio-record session started from any code path gets closed
-  // cleanly whenever the user hits Stop.
-  if (window.nasty && window.nasty.engine) {
-    window.nasty.engine.send({ cmd: 'stop_recording' });
-  }
-  stopSong();
+  // Route through stopAudioRecording() so the arm state clears too. Sending
+  // stop_recording alone left bus.recArmed set, which kept anyBusRecArmed()
+  // true and made Claude see the "recording in progress" banner on every
+  // subsequent turn until reload. stopAudioRecording is safe on non-record
+  // stops — the engine no-ops stop_recording when nothing's active, and
+  // stopSong() + arm-clearing are idempotent.
+  stopAudioRecording();
 });
 document.getElementById('loop-btn').addEventListener('click', () => {
   loopEnabled = !loopEnabled;
