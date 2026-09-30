@@ -257,6 +257,34 @@
   }
   #picker-panel .ph button { padding: 1px 5px; font-size: 9px; margin-left: auto; }
   #pattern-list { flex: 1; overflow-y: auto; padding: 3px; }
+  #pattern-list.hidden, #audio-clip-list.hidden, .ph.hidden { display: none; }
+  #picker-mode-tabs {
+    display: flex; border-bottom: 1px solid var(--line); background: var(--panel-2);
+  }
+  #picker-mode-tabs .pmt-btn {
+    flex: 1; padding: 4px 6px; font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 1px;
+    background: transparent; color: var(--text-dim);
+    border: 0; border-radius: 0; border-right: 1px solid var(--line);
+    cursor: pointer;
+  }
+  #picker-mode-tabs .pmt-btn:last-child { border-right: 0; }
+  #picker-mode-tabs .pmt-btn.active {
+    color: var(--text); background: var(--panel);
+    box-shadow: inset 0 -2px 0 var(--accent-2);
+  }
+  #audio-clip-list { flex: 1; overflow-y: auto; padding: 3px; }
+  .audio-clip-row {
+    padding: 5px 6px; margin-bottom: 2px; background: var(--panel-2);
+    border: 1px solid var(--line); border-radius: 2px;
+    font-size: 11px; color: var(--text); cursor: grab;
+    display: flex; align-items: center; gap: 6px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .audio-clip-row:hover { background: var(--panel); border-color: var(--accent-2); }
+  .audio-clip-row .swatch { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+  .audio-clip-row .aname { overflow: hidden; text-overflow: ellipsis; }
+  .audio-clip-row .acount { color: var(--text-dim); font-size: 9px; margin-left: auto; flex-shrink: 0; }
 
   #track-headers {
     width: 140px; flex-shrink: 0; background: var(--panel);
@@ -2344,11 +2372,19 @@
         </div>
         <div id="playlist-body">
           <div id="picker-panel">
-            <div class="ph">
+            <div id="picker-mode-tabs">
+              <button class="pmt-btn active" data-mode="patterns">Patterns</button>
+              <button class="pmt-btn" data-mode="audio">Audio</button>
+            </div>
+            <div class="ph" id="picker-patterns-head">
               Patterns
               <button id="add-pattern-btn" title="New pattern">+</button>
             </div>
             <div id="pattern-list"></div>
+            <div class="ph hidden" id="picker-audio-head">
+              Audio Clips
+            </div>
+            <div id="audio-clip-list" class="hidden"></div>
           </div>
           <div id="track-headers"></div>
           <div id="timeline-scroll">
@@ -5711,6 +5747,7 @@ function render() {
   renderPlaylist();
   renderChannelRack();
   renderPatternList();
+  if (pickerMode === 'audio') renderAudioClipList();
   renderMixer();
   if (typeof renderFlShell === 'function') renderFlShell();
   persist();
@@ -6507,6 +6544,68 @@ function renderChannelRack() {
   });
 
   rack.querySelectorAll('.cbtns button').forEach(b => b.addEventListener('click', onChannelBtn));
+}
+
+// Picker-panel mode: 'patterns' shows the patterns list (default, FL-parity);
+// 'audio' shows every unique audio clip that lives in the song's arrangement,
+// as draggable palette items. Same drag protocol (application/x-nasty-audio-file)
+// as the Sounds dock, so existing track drop handlers already accept them.
+let pickerMode = 'patterns';
+
+function setPickerMode(mode) {
+  if (mode !== 'patterns' && mode !== 'audio') return;
+  pickerMode = mode;
+  document.querySelectorAll('#picker-mode-tabs .pmt-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.mode === mode);
+  });
+  document.getElementById('picker-patterns-head').classList.toggle('hidden', mode !== 'patterns');
+  document.getElementById('pattern-list').classList.toggle('hidden', mode !== 'patterns');
+  document.getElementById('picker-audio-head').classList.toggle('hidden', mode !== 'audio');
+  document.getElementById('audio-clip-list').classList.toggle('hidden', mode !== 'audio');
+  if (mode === 'audio') renderAudioClipList();
+}
+
+function renderAudioClipList() {
+  const list = document.getElementById('audio-clip-list');
+  if (!list) return;
+  list.innerHTML = '';
+  // Enumerate unique audio-clip paths across all tracks. Same path used in
+  // multiple places → one palette entry, with a count so you can see reuse.
+  const byPath = new Map();
+  for (const tr of (song.tracks || [])) {
+    for (const c of (tr.clips || [])) {
+      if (c.type !== 'audio' || !c.path) continue;
+      const existing = byPath.get(c.path);
+      if (existing) { existing.count++; continue; }
+      byPath.set(c.path, {
+        path: c.path,
+        name: c.name || c.path.split('/').pop(),
+        color: c.color || '#33c58a',
+        count: 1,
+      });
+    }
+  }
+  if (byPath.size === 0) {
+    list.innerHTML = '<div style="color:var(--dim);padding:12px;font-size:11px;line-height:1.4">No audio clips yet. Drop a WAV onto a track, or record a take, and it\'ll show up here.</div>';
+    return;
+  }
+  for (const item of byPath.values()) {
+    const row = document.createElement('div');
+    row.className = 'audio-clip-row';
+    row.draggable = true;
+    row.title = item.path + '\nDrag onto a track to drop as an audio clip';
+    row.innerHTML = `
+      <span class="swatch" style="background:${item.color}"></span>
+      <span class="aname">${escapeHtml(item.name)}</span>
+      <span class="acount">${item.count > 1 ? '×' + item.count : ''}</span>
+    `;
+    row.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('application/x-nasty-audio-file', item.path);
+      e.dataTransfer.setData('text/plain', item.path);
+      e.dataTransfer.effectAllowed = 'copy';
+    });
+    list.appendChild(row);
+  }
 }
 
 function renderPatternList() {
@@ -14619,6 +14718,9 @@ render();
 initMIDI();
 initPianoRollDrop();
 initChannelRackDrop();
+document.querySelectorAll('#picker-mode-tabs .pmt-btn').forEach(b => {
+  b.addEventListener('click', () => setPickerMode(b.dataset.mode));
+});
 updateTimeLcd(0);
 </script>
 </body>
