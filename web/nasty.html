@@ -5631,6 +5631,116 @@ async function applyToolCalls(calls) {
             summaries.push(`✎ section ${sec.name || input.section_id}`);
           }
         }
+      } else if (name === 'arrange_song_from_loop') {
+        // Expand the current loop into a full song shape. Layer-on/off only —
+        // the AI picks a shape + which channels play per section; the tool
+        // does the mechanical clip placement. No new patterns, no new notes.
+        const SHAPES = {
+          pop: [
+            { id: 'sec_intro',        name: 'Intro',          lengthBars: 4,  key: 'intro'         },
+            { id: 'sec_verse_1',      name: 'Verse 1',        lengthBars: 8,  key: 'verse'         },
+            { id: 'sec_chorus_1',     name: 'Chorus 1',       lengthBars: 8,  key: 'chorus'        },
+            { id: 'sec_verse_2',      name: 'Verse 2',        lengthBars: 8,  key: 'verse'         },
+            { id: 'sec_chorus_2',     name: 'Chorus 2',       lengthBars: 8,  key: 'chorus'        },
+            { id: 'sec_bridge',       name: 'Bridge',         lengthBars: 8,  key: 'bridge'        },
+            { id: 'sec_chorus_final', name: 'Chorus (Final)', lengthBars: 8,  key: 'chorus_final'  },
+            { id: 'sec_outro',        name: 'Outro',          lengthBars: 4,  key: 'outro'         },
+          ],
+          hiphop: [
+            { id: 'sec_intro',        name: 'Intro',          lengthBars: 4,  key: 'intro'         },
+            { id: 'sec_hook_1',       name: 'Hook 1',         lengthBars: 8,  key: 'hook'          },
+            { id: 'sec_verse_1',      name: 'Verse 1',        lengthBars: 8,  key: 'verse'         },
+            { id: 'sec_hook_2',       name: 'Hook 2',         lengthBars: 8,  key: 'hook'          },
+            { id: 'sec_verse_2',      name: 'Verse 2',        lengthBars: 8,  key: 'verse'         },
+            { id: 'sec_hook_final',   name: 'Hook (Final)',   lengthBars: 8,  key: 'hook_final'    },
+            { id: 'sec_outro',        name: 'Outro',          lengthBars: 4,  key: 'outro'         },
+          ],
+          edm: [
+            { id: 'sec_intro',        name: 'Intro',          lengthBars: 8,  key: 'intro'         },
+            { id: 'sec_build_1',      name: 'Build 1',        lengthBars: 8,  key: 'build'         },
+            { id: 'sec_drop_1',       name: 'Drop 1',         lengthBars: 16, key: 'drop'          },
+            { id: 'sec_breakdown',    name: 'Breakdown',      lengthBars: 8,  key: 'breakdown'     },
+            { id: 'sec_build_2',      name: 'Build 2',        lengthBars: 8,  key: 'build'         },
+            { id: 'sec_drop_2',       name: 'Drop 2',         lengthBars: 16, key: 'drop'          },
+            { id: 'sec_outro',        name: 'Outro',          lengthBars: 8,  key: 'outro'         },
+          ],
+          lofi: [
+            { id: 'sec_intro',        name: 'Intro',          lengthBars: 4,  key: 'intro'         },
+            { id: 'sec_groove',       name: 'Groove',         lengthBars: 8,  key: 'groove'        },
+            { id: 'sec_groove_plus',  name: 'Groove +',       lengthBars: 8,  key: 'groove_plus'   },
+            { id: 'sec_full',         name: 'Full',           lengthBars: 8,  key: 'full'          },
+            { id: 'sec_breakdown',    name: 'Breakdown',      lengthBars: 8,  key: 'breakdown'     },
+            { id: 'sec_full_reprise', name: 'Full (Reprise)', lengthBars: 8,  key: 'full'          },
+            { id: 'sec_outro',        name: 'Outro',          lengthBars: 4,  key: 'outro'         },
+          ],
+        };
+        const shape = SHAPES[input.shape];
+        const secChans = input.section_channels || {};
+        if (!shape) {
+          summaries.push(`× arrange: unknown shape "${input.shape}"`);
+        } else {
+          // Detect the loop: one pattern per channel, picked from the existing
+          // pattern-clips. Patterns follow the "one channel per pattern" rule,
+          // so we look up each pattern's channel via its first note.
+          const patternById = new Map(song.patterns.map(p => [p.id, p]));
+          const channelToRef = new Map(); // channelId -> { patternId, trackId, patLen }
+          for (const t of song.tracks) {
+            for (const c of t.clips) {
+              if (c.type !== 'pattern') continue;
+              const pat = patternById.get(c.patternId);
+              if (!pat) continue;
+              const chanId = pat.notes && pat.notes[0] && pat.notes[0].channelId;
+              if (!chanId) continue;
+              if (!channelToRef.has(chanId)) {
+                channelToRef.set(chanId, {
+                  patternId: c.patternId,
+                  trackId: t.id,
+                  patLen: Math.max(1, pat.lengthBars || c.lengthBars || 4),
+                });
+              }
+            }
+          }
+          if (channelToRef.size === 0) {
+            summaries.push(`× arrange: no loop found — need at least one pattern-clip on the arrangement`);
+          } else {
+            // Wipe existing pattern-clips across all tracks. Audio clips are
+            // left alone.
+            for (const t of song.tracks) t.clips = t.clips.filter(c => c.type !== 'pattern');
+            // Compute section start bars from the shape template.
+            let cursor = 0;
+            const built = shape.map(s => {
+              const sec = { id: s.id, name: s.name, startBar: cursor, lengthBars: s.lengthBars, tags: [] };
+              cursor += s.lengthBars;
+              return { sec, key: s.key };
+            });
+            song.sections = built.map(b => b.sec);
+            // Place clips for each section's enabled channels.
+            for (const { sec, key } of built) {
+              const enabled = Array.isArray(secChans[key]) ? secChans[key] : [];
+              for (const chanId of enabled) {
+                const ref = channelToRef.get(chanId);
+                if (!ref) continue;
+                const track = song.tracks.find(t => t.id === ref.trackId) || song.tracks[0];
+                if (!track) continue;
+                let bar = sec.startBar;
+                const end = sec.startBar + sec.lengthBars;
+                while (bar < end) {
+                  const clipLen = Math.min(ref.patLen, end - bar);
+                  track.clips.push({
+                    id: `clip_${Math.random().toString(36).slice(2, 8)}`,
+                    type: 'pattern',
+                    patternId: ref.patternId,
+                    startBar: bar,
+                    lengthBars: clipLen,
+                  });
+                  bar += ref.patLen;
+                }
+              }
+            }
+            song.transportMode = 'song';
+            summaries.push(`⚙ arranged ${input.shape}: ${built.map(b => b.sec.name).join(' → ')}`);
+          }
+        }
       } else if (name === 'create_automation') {
         // AI-generated automation clip. Mirrors what the human create /
         // record paths build: a new automation pattern with target+points,

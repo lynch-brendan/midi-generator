@@ -2186,6 +2186,55 @@ _NASTY_TOOLS = [
         },
     },
     {
+        "name": "arrange_song_from_loop",
+        "description": (
+            "Expand the current loop into a full-song arrangement using LAYER-ON/OFF ONLY. "
+            "Fire this — and NOTHING ELSE — when the user asks 'turn this into a full song', "
+            "'make this a full song', 'build out the arrangement', 'arrange this into a song', "
+            "or similar. Requires an existing loop: at least one pattern-clip already on the "
+            "arrangement. Does NOT create new patterns and does NOT write new notes — it takes "
+            "the existing per-channel patterns and places them across sections, with per-section "
+            "channel enable/disable.\n\n"
+            "You make two decisions:\n"
+            "1. `shape` — the song template.\n"
+            "2. `section_channels` — for each section KEY (below), which channel_ids play there. "
+            "Channels not listed are silent in that section.\n\n"
+            "The tool deletes the current pattern-clips, calls set_song_structure with the shape's "
+            "section layout, then places clips for the enabled channels in each section. All bar math "
+            "is handled deterministically — do NOT call add_pattern_clip, repeat_clip, delete_clip, or "
+            "set_song_structure yourself in the same turn.\n\n"
+            "Shapes (each section's length is fixed by the template):\n"
+            "- **pop** — Intro(4) / Verse 1(8) / Chorus 1(8) / Verse 2(8) / Chorus 2(8) / Bridge(8) / Chorus Final(8) / Outro(4). Keys: `intro`, `verse`, `chorus`, `bridge`, `chorus_final`, `outro`. (`verse` applies to Verse 1 AND Verse 2; same for `chorus`.)\n"
+            "- **hiphop** — Intro(4) / Hook 1(8) / Verse 1(8) / Hook 2(8) / Verse 2(8) / Hook Final(8) / Outro(4). Keys: `intro`, `hook`, `verse`, `hook_final`, `outro`.\n"
+            "- **edm** — Intro(8) / Build 1(8) / Drop 1(16) / Breakdown(8) / Build 2(8) / Drop 2(16) / Outro(8). Keys: `intro`, `build`, `drop`, `breakdown`, `outro`.\n"
+            "- **lofi** — Intro(4) / Groove(8) / Groove+(8) / Full(8) / Breakdown(8) / Full Reprise(8) / Outro(4). Keys: `intro`, `groove`, `groove_plus`, `full`, `breakdown`, `outro`."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "shape": {
+                    "type": "string",
+                    "enum": ["pop", "hiphop", "edm", "lofi"],
+                    "description": "Which shape template to use, chosen from the loop's vibe.",
+                },
+                "section_channels": {
+                    "type": "object",
+                    "description": (
+                        "Map from section KEY (matching the shape's keys) to an array of channel_id "
+                        "strings that should play in that section. Channels present in the loop but "
+                        "not listed for a section are SILENT in that section — that's how layer-drop "
+                        "works. Read channel ids from song.channels."
+                    ),
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                },
+            },
+            "required": ["shape", "section_channels"],
+        },
+    },
+    {
         "name": "get_plugin_cheatsheet",
         "description": (
             "Fetch the full cheatsheet for a specific plugin the user has "
