@@ -1,7 +1,7 @@
 {
   "name": "nasty",
   "version": "0.1.0",
-  "description": "Nasty — AI-native DAW (desktop shell)",
+  "description": "FLOW — AI-native DAW (desktop shell)",
   "author": "Brendan Lynch",
   "main": "main.js",
   "scripts": {
@@ -16,7 +16,7 @@
   },
   "build": {
     "appId": "com.nasty.daw",
-    "productName": "Nasty",
+    "productName": "FLOW",
     "directories": {
       "output": "dist"
     },
