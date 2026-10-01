@@ -11512,12 +11512,22 @@ async function saveAsFile() {
   if (!(window.nasty && window.nasty.songs)) {
     return saveToFile(); // browser has no Save As — just downloads
   }
-  const picked = await window.nasty.songs.pickSave(songDisplayName());
+  // When this song already lives somewhere, open the dialog in its folder
+  // so version saves (Beat 1 → Beat 1 v2) naturally group together.
+  const startDir = song.savedPath
+    ? song.savedPath.replace(/\/[^/]+$/, '')
+    : '';
+  const picked = await window.nasty.songs.pickSave(songDisplayName(), startDir);
   if (!picked) return; // cancelled
-  song.savedPath = picked;
-  const res = await window.nasty.songs.write(picked, serializeSongForFile());
+  // Main-process logic nests first-save files into a per-song folder — so
+  // the dialog's chosen "/FLOW Songs/Beat 1.flow" becomes the actual
+  // "/FLOW Songs/Beat 1/Beat 1.flow". Already-nested paths pass through.
+  const resolved = await window.nasty.songs.resolveSavePath(picked);
+  const finalPath = resolved || picked;
+  song.savedPath = finalPath;
+  const res = await window.nasty.songs.write(finalPath, serializeSongForFile());
   if (!res.ok) { alert('Save failed: ' + res.error); song.savedPath = ''; return; }
-  pushRecent(picked);
+  pushRecent(finalPath);
   markClean();
   updateTitleBar();
 }

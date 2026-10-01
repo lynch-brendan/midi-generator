@@ -99,7 +99,11 @@ contextBridge.exposeInMainWorld('nasty', {
   // (or the OS equivalent). Dialogs return absolute paths; write/read take
   // paths and content strings. Keeps the renderer out of fs entirely.
   songs: {
-    pickSave: (suggestedName) => ipcRenderer.invoke('nasty-pick-save-song', suggestedName || ''),
+    pickSave: (suggestedName, startDir) => ipcRenderer.invoke('nasty-pick-save-song', {
+      suggestedName: suggestedName || '',
+      startDir: startDir || '',
+    }),
+    resolveSavePath: (chosenPath) => ipcRenderer.invoke('nasty-resolve-song-save-path', chosenPath),
     pickOpen: () => ipcRenderer.invoke('nasty-pick-open-song'),
     write: (filePath, content) => ipcRenderer.invoke('nasty-write-song', { path: filePath, content }),
     read: (filePath) => ipcRenderer.invoke('nasty-read-song', filePath),

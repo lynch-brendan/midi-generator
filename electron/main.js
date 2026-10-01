@@ -1323,11 +1323,14 @@ function flowSongsDir() {
   return dir;
 }
 
-// Native "Save As…" dialog defaulting to FLOW Songs. Returns absolute path
-// or empty string on cancel. Appends .flow if the user didn't type an
+// Native "Save As…" dialog. If startDir is passed (a song that already has
+// a home), dialog opens there so version saves naturally group together.
+// Otherwise defaults to the FLOW Songs root. Returns absolute path or
+// empty string on cancel. Appends .flow if the user didn't type an
 // extension so saved files land with the native extension consistently.
-ipcMain.handle('nasty-pick-save-song', async (_evt, suggestedName) => {
-  const defaultPath = path.join(flowSongsDir(), (suggestedName || 'Untitled') + '.flow');
+ipcMain.handle('nasty-pick-save-song', async (_evt, { suggestedName, startDir } = {}) => {
+  const baseDir = startDir && fs.existsSync(startDir) ? startDir : flowSongsDir();
+  const defaultPath = path.join(baseDir, (suggestedName || 'Untitled') + '.flow');
   const res = await dialog.showSaveDialog(mainWindow, {
     title: 'Save FLOW song',
     defaultPath,
@@ -1337,6 +1340,31 @@ ipcMain.handle('nasty-pick-save-song', async (_evt, suggestedName) => {
   let p = res.filePath;
   if (!/\.flow$/i.test(p)) p += '.flow';
   return p;
+});
+
+// Given the raw path returned by the save dialog, decide where the file
+// actually lands on disk. If the chosen path is directly inside the FLOW
+// Songs root (no song subfolder yet), nest it into a folder named after
+// the song — so the first save of "Beat 1" becomes "Beat 1/Beat 1.flow"
+// and later "Beat 1 v2" lands alongside it in the same folder.
+// Already-nested paths pass through unchanged, which keeps Save As… inside
+// an existing song's folder working naturally.
+ipcMain.handle('nasty-resolve-song-save-path', async (_evt, chosenPath) => {
+  if (!chosenPath) return '';
+  const songsRoot = flowSongsDir();
+  const parentDir = path.dirname(chosenPath);
+  const normalizedParent = path.normalize(parentDir);
+  const normalizedRoot = path.normalize(songsRoot);
+  // Only auto-nest if the chosen file is sitting directly in FLOW Songs/
+  // (not already in a subfolder). This preserves user intent when they
+  // navigate inside an existing song's folder.
+  if (normalizedParent === normalizedRoot) {
+    const base = path.basename(chosenPath, '.flow');
+    const songDir = path.join(songsRoot, base);
+    try { fs.mkdirSync(songDir, { recursive: true }); } catch (_) { /* ignore */ }
+    return path.join(songDir, base + '.flow');
+  }
+  return chosenPath;
 });
 
 // Native "Open…" dialog defaulting to FLOW Songs. Returns absolute path or
