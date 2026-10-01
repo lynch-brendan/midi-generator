@@ -19,11 +19,11 @@ Metering, spectrum analysis, tuning, volume adjustment, gain staging. Reach for 
 
 ### AUSampler
 
-- **Character:** Neutral and transparent — the sampler itself imparts no color; timbre is 100% determined by the loaded sample content (.aupreset / .exs / .sf2 / .dls).
-- **Best for:** Programmatic MIDI-driven sample playback in macOS/iOS apps and DAW sessions (GarageBand, Logic, MainStage); loading EXS24 or SoundFont libraries; embedding a lightweight sampler engine in Core Audio / AVAudioEngine projects.
-- **Emotional tags:** Neutral — depends entirely on loaded content.
-- **Comparison:** Functionally similar to a stripped-down version of Logic's EXS24/Sampler, but with fewer parameters exposed, no built-in browser, and significant undocumented internals; more limited than full-featured samplers like Kontakt or UVI Workstation.
-- **How to use:** `load_instrument(channel_id=..., plugin_id="AUSampler", preset_name="<path_to.aupreset>")` — note that the plugin will be silent until a valid instrument file is loaded.
+- **Character:** Neutral and transparent — the sonic character is entirely determined by the samples loaded; the engine itself adds no coloration.
+- **Best for:** Programmatic/developer use cases: embedding playable sample-based instruments in macOS/iOS apps, prototyping EXS24-derived instruments outside Logic, loading DLS/SF2 general MIDI banks for sketch playback, or bridging sample content to Core Audio pipelines.
+- **Emotional tags:** Functional, transparent, utility-grade
+- **Comparison:** Comparable in role to AVAudioUnitSampler (its Swift/ObjC wrapper); less capable and far less documented than Logic's Sampler (formerly EXS24) or third-party samplers like Native Instruments Kontakt; more embedded/developer-oriented than any consumer-facing sampler.
+- **How to use:** `load_instrument(channel_id=..., plugin_id="AUSampler", preset_name="<name>.aupreset")` — note that a valid `.aupreset` or instrument file **must** be loaded before any audio is produced; the plugin is silent by default.
 
 ### Airwindows Consolidated
 
