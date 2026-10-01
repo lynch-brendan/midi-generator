@@ -94,6 +94,16 @@
   #menubar .menu-drop .mi .sh { color: var(--dim); font-size: 10px; }
   #menubar .menu-drop .mi:hover .sh { color: rgba(255,255,255,0.8); }
   #menubar .menu-drop .msep { height: 1px; background: var(--line); margin: 3px 0; }
+  #menubar .menu-drop .mi.has-submenu { position: relative; }
+  #menubar .menu-drop .mi .menu-sub {
+    position: absolute; left: 100%; top: -4px; min-width: 240px;
+    background: var(--panel); border: 1px solid var(--line);
+    box-shadow: 3px 3px 8px rgba(0,0,0,0.6);
+    z-index: 201; display: none; padding: 3px 0;
+  }
+  #menubar .menu-drop .mi.has-submenu:hover .menu-sub { display: block; }
+  #menubar .menu-drop .mi.disabled { cursor: default; }
+  #menubar .menu-drop .mi.disabled:hover { background: transparent; color: var(--text); }
 
   /* Transport bar */
   #transport {
@@ -2197,11 +2207,17 @@
     <div class="brand">FLOW</div>
     <div class="menu-item" data-menu="file">FILE
       <div class="menu-drop">
-        <div class="mi" data-cmd="save"><span>Save</span><span class="sh">⌘S</span></div>
-        <div class="mi" data-cmd="load"><span>Load…</span><span class="sh">⌘O</span></div>
-        <div class="mi" data-cmd="export"><span>Export WAV</span><span class="sh">⌘E</span></div>
+        <div class="mi" data-cmd="clear"><span>New</span><span class="sh">⌘N</span></div>
+        <div class="mi" data-cmd="load"><span>Open…</span><span class="sh">⌘O</span></div>
+        <div class="mi has-submenu" data-cmd="noop">
+          <span>Open Recent ▸</span>
+          <div class="menu-sub" id="recent-submenu"></div>
+        </div>
         <div class="msep"></div>
-        <div class="mi" data-cmd="clear"><span>New (Clear)</span><span class="sh">⌘N</span></div>
+        <div class="mi" data-cmd="save"><span>Save</span><span class="sh">⌘S</span></div>
+        <div class="mi" data-cmd="save-as"><span>Save As…</span><span class="sh">⇧⌘S</span></div>
+        <div class="msep"></div>
+        <div class="mi" data-cmd="export"><span>Export WAV</span><span class="sh">⌘E</span></div>
       </div>
     </div>
     <div class="menu-item" data-menu="edit">EDIT
@@ -2942,6 +2958,7 @@ function redo() {
 }
 
 function persist() {
+  if (typeof markDirty === 'function') markDirty();
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     recordUndoSnapshot();
@@ -11356,42 +11373,212 @@ async function sendMessage(overrideText, opts) {
 // ============================================================
 // Save / Load / Export
 // ============================================================
-function saveToFile() {
-  const stripped = JSON.parse(JSON.stringify(song));
-  // Audio clips reference absolute WAV paths in ~/Music/Nasty Recordings —
-  // if the receiving machine has those files at the same paths they play
-  // back; otherwise they're just harmless empty clips. Persisting them is
-  // strictly better than dropping them.
-  const blob = new Blob([JSON.stringify(stripped, null, 2)], { type: 'application/json' });
-  downloadBlob(blob, 'nasty-song.json');
+// Dirty tracking + recents list. savedPath lives on the song itself so it
+// travels with the file; dirty + recents are local-machine UI state kept in
+// memory + localStorage. Browser (non-desktop) fallbacks preserve the
+// download-a-file behaviour so nothing regresses in the web build.
+let songDirty = false;
+// Suppressed during boot + during adoptLoadedSong — the render() those paths
+// trigger would otherwise call persist() → markDirty() and the user would
+// see a "•" the moment the app opens / the moment a file loads.
+let suppressDirty = true;
+const RECENTS_KEY = 'flow_recents';
+const RECENTS_MAX = 10;
+
+function markDirty() {
+  if (suppressDirty) return;
+  if (!songDirty) {
+    songDirty = true;
+    updateTitleBar();
+  }
 }
-function loadFromFile() {
+
+function markClean() {
+  songDirty = false;
+  updateTitleBar();
+}
+
+function songDisplayName() {
+  if (song.savedPath) {
+    return song.savedPath.split('/').pop().replace(/\.(flow|json)$/i, '');
+  }
+  return 'Untitled';
+}
+
+function updateTitleBar() {
+  const brand = document.querySelector('#menubar .brand');
+  if (!brand) return;
+  brand.textContent = 'FLOW — ' + songDisplayName() + (songDirty ? ' •' : '');
+}
+
+function readRecents() {
+  try { return JSON.parse(localStorage.getItem(RECENTS_KEY) || '[]'); } catch { return []; }
+}
+
+function writeRecents(list) {
+  try { localStorage.setItem(RECENTS_KEY, JSON.stringify(list.slice(0, RECENTS_MAX))); } catch {}
+}
+
+function pushRecent(filePath) {
+  if (!filePath) return;
+  const list = readRecents().filter(r => r.path !== filePath);
+  list.unshift({ path: filePath, savedAt: Date.now() });
+  writeRecents(list);
+  renderRecentsMenu();
+}
+
+function removeRecent(filePath) {
+  writeRecents(readRecents().filter(r => r.path !== filePath));
+  renderRecentsMenu();
+}
+
+function renderRecentsMenu() {
+  const sub = document.getElementById('recent-submenu');
+  if (!sub) return;
+  sub.innerHTML = '';
+  const list = readRecents();
+  if (!list.length) {
+    const empty = document.createElement('div');
+    empty.className = 'mi disabled';
+    empty.innerHTML = '<span style="color:var(--dim)">No recent songs</span>';
+    sub.appendChild(empty);
+    return;
+  }
+  for (const r of list) {
+    const row = document.createElement('div');
+    row.className = 'mi';
+    const name = r.path.split('/').pop().replace(/\.(flow|json)$/i, '');
+    row.innerHTML = `<span>${escapeHtml(name)}</span><span class="sh" style="font-size:9px">${escapeHtml(r.path.replace(/\/[^/]+$/, '').replace(/^.*\//, ''))}</span>`;
+    row.title = r.path;
+    row.addEventListener('click', () => openSongFromPath(r.path));
+    sub.appendChild(row);
+  }
+}
+
+// Serialise the current song to the on-disk JSON blob. Pulls in the latest
+// plugin + effect state snapshots so Serato's loaded sample, Surge presets,
+// etc. survive a round-trip.
+function serializeSongForFile() {
+  const stripped = JSON.parse(JSON.stringify(song));
+  for (const b of (stripped.mixer.busses || [])) {
+    delete b.monitor;
+    delete b.recArmed;
+  }
+  const attachEffectStates = (owner) => {
+    const key = owner.id === 'master' ? 'master_bus' : owner.id;
+    const perSlot = latestEffectStates[key];
+    if (perSlot && (owner.effects || []).some(e => e && e.type === 'plugin')) {
+      owner.effectStates = {};
+      for (const e of owner.effects) {
+        if (e && e.type === 'plugin' && perSlot[e.slotId]) {
+          owner.effectStates[e.slotId] = perSlot[e.slotId];
+        }
+      }
+    }
+  };
+  for (const c of stripped.channels) {
+    if (c.instrument === 'plugin' && latestPluginStates[c.id]) {
+      c.pluginState = latestPluginStates[c.id];
+    }
+    attachEffectStates(c);
+  }
+  for (const b of (stripped.mixer.busses || [])) attachEffectStates(b);
+  const masterIns = (stripped.mixer.inserts || []).find(i => i.id === 'master');
+  if (masterIns) attachEffectStates(masterIns);
+  return JSON.stringify(stripped, null, 2);
+}
+
+// Save the song. If this song has a known path (opened or previously saved
+// via Save As), overwrite that file silently — exactly how Save works in
+// every other DAW. If it's brand-new (no path), fall through to Save As…
+async function saveToFile() {
+  if (!(window.nasty && window.nasty.songs)) {
+    // Browser fallback — same behaviour as before (downloads a copy).
+    const blob = new Blob([serializeSongForFile()], { type: 'application/json' });
+    downloadBlob(blob, (songDisplayName() || 'FLOW song') + '.flow');
+    markClean();
+    return;
+  }
+  if (!song.savedPath) {
+    return saveAsFile();
+  }
+  const res = await window.nasty.songs.write(song.savedPath, serializeSongForFile());
+  if (!res.ok) { alert('Save failed: ' + res.error); return; }
+  pushRecent(song.savedPath);
+  markClean();
+}
+
+async function saveAsFile() {
+  if (!(window.nasty && window.nasty.songs)) {
+    return saveToFile(); // browser has no Save As — just downloads
+  }
+  const picked = await window.nasty.songs.pickSave(songDisplayName());
+  if (!picked) return; // cancelled
+  song.savedPath = picked;
+  const res = await window.nasty.songs.write(picked, serializeSongForFile());
+  if (!res.ok) { alert('Save failed: ' + res.error); song.savedPath = ''; return; }
+  pushRecent(picked);
+  markClean();
+  updateTitleBar();
+}
+
+// Apply a parsed song object to the running app — the shared "I have JSON,
+// make it the current song" path used by Open and recent-open. Centralises
+// schema check, engine reset, hydrate, and render so both routes behave
+// identically.
+function adoptLoadedSong(parsed, filePath) {
+  if (!parsed.channels) { alert('This file uses the old format. Load an FL-model song.'); return false; }
+  const v = parsed.version ?? 1;
+  if (v > SONG_SCHEMA_VERSION) {
+    alert('This song was saved by a newer version of FLOW (schema v' + v + '). Update FLOW before opening it.');
+    return false;
+  }
+  suppressDirty = true;
+  song = ensureShape(parsed);
+  song.savedPath = filePath || '';
+  currentPatternId = song.patterns[0]?.id || null;
+  resetAiContext();
+  if (window.nasty && window.nasty.engine) {
+    window.nasty.engine.send({ cmd: 'reset_graph' });
+  }
+  hydratePluginChannels();
+  if (filePath) pushRecent(filePath);
+  render();
+  // Release dirty suppression on the next tick so the render-triggered
+  // persist() debounce fires before user input can mark the song dirty.
+  setTimeout(() => { suppressDirty = false; markClean(); }, 250);
+  return true;
+}
+
+async function openSongFromPath(filePath) {
+  if (!(window.nasty && window.nasty.songs)) return;
+  const res = await window.nasty.songs.read(filePath);
+  if (!res.ok) {
+    alert('Could not open:\n' + filePath + '\n\n' + res.error);
+    removeRecent(filePath);
+    return;
+  }
+  try {
+    adoptLoadedSong(JSON.parse(res.content), filePath);
+  } catch (e) {
+    alert('Bad file: ' + e.message);
+  }
+}
+
+async function loadFromFile() {
+  if (window.nasty && window.nasty.songs) {
+    const picked = await window.nasty.songs.pickOpen();
+    if (!picked) return;
+    return openSongFromPath(picked);
+  }
+  // Browser fallback — original file-input flow.
   const input = document.getElementById('file-input');
   input.onchange = () => {
     const f = input.files[0]; if (!f) return;
     const reader = new FileReader();
     reader.onload = () => {
-      try {
-        const parsed = JSON.parse(reader.result);
-        if (!parsed.channels) { alert('This file uses the old format. Load an FL-model song.'); return; }
-        const v = parsed.version ?? 1;
-        if (v > SONG_SCHEMA_VERSION) {
-          alert('This song was saved by a newer version of FLOW (schema v' + v + '). Update FLOW before opening it.');
-          return;
-        }
-        song = ensureShape(parsed);
-        currentPatternId = song.patterns[0]?.id || null;
-        resetAiContext();
-        // Wipe the engine's current graph before rebuilding — otherwise the
-        // previously-loaded channels/effects stay on top of what we hydrate
-        // next, and old drum channels keep playing while the loaded song's
-        // effects silently miss the audio graph.
-        if (window.nasty && window.nasty.engine) {
-          window.nasty.engine.send({ cmd: 'reset_graph' });
-        }
-        hydratePluginChannels();
-        render();
-      } catch (e) { alert('Bad file: ' + e.message); }
+      try { adoptLoadedSong(JSON.parse(reader.result), ''); }
+      catch (e) { alert('Bad file: ' + e.message); }
     };
     reader.readAsText(f);
   };
@@ -11840,16 +12027,22 @@ function resetAiContext() {
 }
 
 document.getElementById('clear-btn').addEventListener('click', () => {
-  if (!confirm('Clear the song? (channels, patterns, and playlist all reset)')) return;
-  song = { version: SONG_SCHEMA_VERSION, bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] }, sections: [], transportMode: 'pat' };
+  if (songDirty && !confirm('You have unsaved changes. Start a new song anyway?')) return;
+  else if (!songDirty && !confirm('Clear the song? (channels, patterns, and playlist all reset)')) return;
+  song = { version: SONG_SCHEMA_VERSION, bpm: 120, bars: MIN_BARS, channels: [], patterns: [], tracks: [], mixer: { inserts: [] }, sections: [], transportMode: 'pat', savedPath: '' };
   resetAiContext();
   currentPatternId = null;
   ensureDefaults();
   // Load the freshly-created default channels into the engine so audio flows.
   // Without this, drum channels exist in song data but have no engine-side
   // synth attached, so note_on messages are dropped and the DAW is silent.
+  if (window.nasty && window.nasty.engine) {
+    window.nasty.engine.send({ cmd: 'reset_graph' });
+  }
   hydratePluginChannels();
   stopSong();
+  markClean();
+  updateTitleBar();
   render();
 });
 document.getElementById('bpm-input').addEventListener('change', (e) => {
@@ -12380,8 +12573,10 @@ function toggleWindow(name) {
 // Command router — used by menu items, title-bar close buttons, and F-keys
 function runCmd(cmd) {
   switch (cmd) {
-    case 'save':               return document.getElementById('save-btn').click();
-    case 'load':               return document.getElementById('load-btn').click();
+    case 'save':               return saveToFile();
+    case 'save-as':            return saveAsFile();
+    case 'load':               return loadFromFile();
+    case 'noop':               return;
     case 'export':             return document.getElementById('export-btn').click();
     case 'clear':              return document.getElementById('clear-btn').click();
     case 'add-channel':        return document.getElementById('add-channel-btn').click();
@@ -12478,6 +12673,9 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'F8') { e.preventDefault(); return runCmd('toggle-browser'); }
   if (e.key === 'F9') { e.preventDefault(); return runCmd('toggle-mixer'); }
   if (e.key === 'F10'){ e.preventDefault(); return runCmd('toggle-chat'); }
+  if ((e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey) {
+    if (e.key === 'S' || e.key === 's') { e.preventDefault(); return runCmd('save-as'); }
+  }
   if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
     if (e.key === 's') { e.preventDefault(); return runCmd('save'); }
     if (e.key === 'o') { e.preventDefault(); return runCmd('load'); }
@@ -14863,6 +15061,11 @@ initChannelRackDrop();
 document.querySelectorAll('#picker-mode-tabs .pmt-btn').forEach(b => {
   b.addEventListener('click', () => setPickerMode(b.dataset.mode));
 });
+renderRecentsMenu();
+updateTitleBar();
+// Let the initial render-triggered persist() debounce (200 ms) run before
+// user input can mark the song dirty — otherwise fresh boot shows "•".
+setTimeout(() => { suppressDirty = false; }, 300);
 updateTimeLcd(0);
 </script>
 </body>

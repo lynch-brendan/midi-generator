@@ -1312,6 +1312,70 @@ ipcMain.handle('nasty-probe-wav', async (_evt, filePath) => {
   }
 });
 
+// FLOW Songs — the user-facing library folder. Lives under the OS-specific
+// Music directory so it's visible in Finder next to Nasty Recordings / Bounces.
+// Resolves per-platform (~/Music on Mac, Music\ on Windows, ~/Music on most
+// Linux distros via XDG). Created lazily on first dialog open.
+function flowSongsDir() {
+  const base = app.getPath('music');
+  const dir = path.join(base, 'FLOW Songs');
+  try { fs.mkdirSync(dir, { recursive: true }); } catch (_) { /* ignore */ }
+  return dir;
+}
+
+// Native "Save As…" dialog defaulting to FLOW Songs. Returns absolute path
+// or empty string on cancel. Appends .flow if the user didn't type an
+// extension so saved files land with the native extension consistently.
+ipcMain.handle('nasty-pick-save-song', async (_evt, suggestedName) => {
+  const defaultPath = path.join(flowSongsDir(), (suggestedName || 'Untitled') + '.flow');
+  const res = await dialog.showSaveDialog(mainWindow, {
+    title: 'Save FLOW song',
+    defaultPath,
+    filters: [{ name: 'FLOW song', extensions: ['flow'] }],
+  });
+  if (res.canceled || !res.filePath) return '';
+  let p = res.filePath;
+  if (!/\.flow$/i.test(p)) p += '.flow';
+  return p;
+});
+
+// Native "Open…" dialog defaulting to FLOW Songs. Returns absolute path or
+// empty string on cancel. Accepts .flow and legacy .json so users with
+// existing nasty-song.json downloads can still open them.
+ipcMain.handle('nasty-pick-open-song', async () => {
+  const res = await dialog.showOpenDialog(mainWindow, {
+    title: 'Open FLOW song',
+    defaultPath: flowSongsDir(),
+    properties: ['openFile'],
+    filters: [
+      { name: 'FLOW song', extensions: ['flow', 'json'] },
+      { name: 'All files', extensions: ['*'] },
+    ],
+  });
+  if (res.canceled || !res.filePaths.length) return '';
+  return res.filePaths[0];
+});
+
+ipcMain.handle('nasty-write-song', async (_evt, { path: p, content }) => {
+  if (!p) return { ok: false, error: 'no path' };
+  try {
+    fs.writeFileSync(p, content, 'utf8');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('nasty-read-song', async (_evt, p) => {
+  if (!p) return { ok: false, error: 'no path' };
+  try {
+    const content = fs.readFileSync(p, 'utf8');
+    return { ok: true, content };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
 // Open a native file picker filtered to audio formats. Returns the absolute
 // path (or empty string on cancel). Used by the "Load sample…" branch in the
 // channel instrument picker.

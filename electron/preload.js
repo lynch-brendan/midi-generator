@@ -95,6 +95,16 @@ contextBridge.exposeInMainWorld('nasty', {
   // channel instrument picker.
   pickAudioFile: () => ipcRenderer.invoke('nasty-pick-audio-file'),
 
+  // FLOW song file I/O — opens native dialogs defaulting to ~/Music/FLOW Songs/
+  // (or the OS equivalent). Dialogs return absolute paths; write/read take
+  // paths and content strings. Keeps the renderer out of fs entirely.
+  songs: {
+    pickSave: (suggestedName) => ipcRenderer.invoke('nasty-pick-save-song', suggestedName || ''),
+    pickOpen: () => ipcRenderer.invoke('nasty-pick-open-song'),
+    write: (filePath, content) => ipcRenderer.invoke('nasty-write-song', { path: filePath, content }),
+    read: (filePath) => ipcRenderer.invoke('nasty-read-song', filePath),
+  },
+
   // File-system reach for plugin-knowledge preset loading. Renderer asks
   // main for a directory of preset files (recursive) or the raw bytes of
   // a specific file. Both go through IPC — renderer has no direct fs.
