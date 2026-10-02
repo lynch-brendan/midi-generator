@@ -19,11 +19,11 @@ Metering, spectrum analysis, tuning, volume adjustment, gain staging. Reach for 
 
 ### AUSampler
 
-- **Character:** Neutral and transparent — the sonic character is entirely determined by the samples loaded; the engine itself adds no coloration.
-- **Best for:** Programmatic/developer use cases: embedding playable sample-based instruments in macOS/iOS apps, prototyping EXS24-derived instruments outside Logic, loading DLS/SF2 general MIDI banks for sketch playback, or bridging sample content to Core Audio pipelines.
-- **Emotional tags:** Functional, transparent, utility-grade
-- **Comparison:** Comparable in role to AVAudioUnitSampler (its Swift/ObjC wrapper); less capable and far less documented than Logic's Sampler (formerly EXS24) or third-party samplers like Native Instruments Kontakt; more embedded/developer-oriented than any consumer-facing sampler.
-- **How to use:** `load_instrument(channel_id=..., plugin_id="AUSampler", preset_name="<name>.aupreset")` — note that a valid `.aupreset` or instrument file **must** be loaded before any audio is produced; the plugin is silent by default.
+- **Character:** Neutral and transparent — the sound is entirely defined by the loaded sample content; the engine itself adds no coloration.
+- **Best for:** Programmatic sample playback in macOS/iOS apps and DAWs; loading custom `.aupreset` instruments, SoundFont/DLS2 banks, EXS24 files, or raw audio samples via MIDI; prototyping multi-sample instruments without a third-party sampler.
+- **Emotional tags:** N/A — character is content-dependent.
+- **Comparison:** Functionally similar to a stripped-down EXS24/Sampler (Logic Pro) engine without a GUI; far less user-friendly than Kontakt or Battery but zero cost on any Apple platform.
+- **How to use:** `load_instrument(channel_id=..., plugin_id="AUSampler", preset_name="<name of .aupreset file without extension>")` — preset files must exist at `~/Library/Audio/Presets/Apple/AUSampler/<name>.aupreset`. Alternatively, load programmatically via `kAUSamplerProperty_LoadInstrument` with a file URL.
 
 ### Airwindows Consolidated
 
