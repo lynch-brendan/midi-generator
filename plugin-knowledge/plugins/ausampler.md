@@ -1,7 +1,7 @@
 ---
 name: AUSampler
 verified: false
-last_updated: 2026-10-02
+last_updated: 2026-10-06
 preset_paths:
   - "~/Library/Audio/Presets/Apple/AUSampler:.aupreset"
   - "/Library/Audio/Presets/Apple/AUSampler:.aupreset"
@@ -9,39 +9,38 @@ preset_paths:
 
 # AUSampler
 
-Apple's built-in AudioUnit sampler instrument (AUv2), available on macOS and iOS, that plays back audio samples loaded from `.aupreset`, SoundFont/DLS2, EXS24, or raw audio files in response to MIDI.
+Apple's built-in Core Audio sampler instrument (AudioUnit), capable of loading `.aupreset`, EXS, DLS2, and SoundFont2 (.sf2) files into a playable, MIDI-driven multi-sample instrument available on macOS and iOS.
 
 ## Presets on disk
+Presets are stored as `.aupreset` files (plist/XML format) at:
+- User: `~/Library/Audio/Presets/Apple/AUSampler/`
+- System: `/Library/Audio/Presets/Apple/AUSampler/`
 
-User-saved presets are stored as `.aupreset` files (standard property list format) at:
-- `~/Library/Audio/Presets/Apple/AUSampler/` (user domain)
-- `/Library/Audio/Presets/Apple/AUSampler/` (system domain)
-
-AUSampler ships with **no factory preset library** of its own — the plugin exposes the factory-presets property as unsupported (`-10879`). All presets are user-created via AU Lab or programmatically. Instrument content (sample files) must reside under a path containing `/Sounds/`, `/Sampler Files/`, or `/Apple Loops/` for the sampler's path-resolution fallback logic to work.
+The plugin ships with no factory preset library of its own — presets must be created via AU Lab or programmatically. It can also load EXS24 instruments from Logic/MainStage's sampler instrument directories.
 
 ## Notable parameters
 
-| Parameter ID | Name | Range | Default | Notes |
-|---|---|---|---|---|
-| 900 (`kAUSamplerParam_Gain`) | Gain | −90 → +12 dB | 0 dB | Global output level |
-| 901 (`kAUSamplerParam_CoarseTuning`) | Coarse Tuning | −24 → +24 semitones | 0 | Global pitch shift in semitones |
-| 902 (`kAUSamplerParam_FineTuning`) | Fine Tuning | −99 → +99 cents | 0 | Global pitch trim in cents |
-| 903 (`kAUSamplerParam_Pan`) | Pan | −1.0 → +1.0 | 0 | Stereo pan |
-| 1000–1007 | Performance Parameter 01–08 | −1.0 → +1.0 (or 0–1) | unmapped | User-assignable; can target envelope attack, filter cutoff, LFO rate, etc. per preset design |
+| ID | Name | Range | Default | Notes |
+|----|------|-------|---------|-------|
+| 900 | Gain | −90 → +12 dB | 0 dB | Global output level |
+| 901 | CoarseTuning | −24 → +24 semitones | 0 | Global pitch in semitones |
+| 902 | FineTuning | −99 → +99 cents | 0 | Global fine-pitch adjustment |
+| 903 | Pan | −1.0 → +1.0 | 0 | Global stereo pan |
+| 1000–1007 | Performance Parameter 01–08 | −1.0 → +1.0 or 0.0 → 1.0 | unmapped | User-assignable per-preset modulators; can target envelope attack, filter cutoff, LFO rate, etc. Default state controls nothing until mapped in AU Lab. |
 
-Internal subcomponent parameters (filter resonance/cutoff, envelope stages, LFO) are only accessible via `AudioUnitSetProperty` with undocumented property IDs or by mutating the `fullState` plist in memory — they are **not** exposed in the standard AU parameter list.
+Internal (non-discoverable) per-layer parameters accessible only via `AudioUnitSetProperty`:
+- Filter cutoff and resonance (per layer)
+- DAHDSR envelope stages (per layer, for both amp and filter)
+- Oscillator pitch, LFO rate, loop start/end points
 
 ## Quirks
 
-- **Silent until a sample/instrument is loaded.** The default state produces no sound; a `.aupreset`, SoundFont, DLS2, or EXS24 file must be loaded before any MIDI note triggers audio.
-- **No factory presets via standard API.** Querying `kAudioUnitProperty_FactoryPresets` returns error `−10879` (property unsupported). Preset browsing must be done via file-system scanning of `.aupreset` files.
-- **Performance Parameters are unmapped by default.** Parameters 1000–1007 control nothing until explicitly mapped inside a preset using AU Lab's Performance Parameter Editor.
-- **Loop-point clicks.** Audio files longer than ~2.5 seconds used with loop points can produce audible clicks on playback; loop points must be carefully hand-aligned.
-- **Consolidated/monolith sample files bug.** When multiple zones reference different regions within a single concatenated audio file, all zones except the last may output silence at the start of playback (known AVAudioUnitSampler bug).
-- **Crash if deallocated before detach.** In AVAudioEngine usage, deallocating the sampler before detaching it from the engine causes an assertion failure (`unbalanced reference count`).
-- **Largely undocumented internals.** Apple's official documentation covers only the four top-level parameters; subcomponent control (resonance, envelopes, LFO) requires reverse-engineered property IDs or in-memory plist manipulation.
-- **AU Lab dependency for preset authoring.** Due to the complexity of the `.aupreset` plist format, AU Lab (distributed as part of Additional Tools for Xcode) is the practical tool for creating and editing instruments.
-
-## Common recipes
-
-Not applicable — AUSampler is a general-purpose sampler; sound character is entirely determined by the loaded sample content and `.aupreset` design.
+- **Silent until a sample/preset is loaded.** The plugin produces no sound and defaults to a built-in sine tone placeholder (`Sine 110 Built-in`) if no valid preset or instrument file is assigned.
+- **Performance Parameters 1–8 are unmapped by default** — they control nothing until configured in AU Lab's Performance Parameter Editor and baked into a saved preset.
+- **Largely undocumented.** Apple has almost no public documentation for its internal property IDs; most real-time parameter control (filter cutoff, resonance, envelope) requires calling private `AudioUnitSetProperty` IDs reverse-engineered by the community.
+- **EXS import is hit-or-miss.** Some Logic/GarageBand EXS24 instruments import successfully; others silently fall back to the default sine tone.
+- **No drag-and-drop support.** Audio files cannot be dragged from a DAW's file browser into the AUSampler GUI.
+- **Loop-point clicks.** Audio files longer than ~2.5 seconds used with loop points may produce audible clicks on playback; loop points must be set carefully.
+- **Sample path resolution is strict.** The `.aupreset` XML references audio files by absolute path; if files are missing at the original path, AUSampler searches only within `Bundle`, `NSLibraryDirectory` (macOS only), `NSDocumentDirectory`, and `NSDownloadsDirectory` — in that order. Broken paths silently fail.
+- **AU Lab required for preset editing.** AU Lab (from Apple's "Additional Tools for Xcode" package) is the only native GUI editor for building and saving AUSampler presets.
+- **Supports SF2/DLS2.** The plugin can load SoundFont 2 and DLS2 bank files directly in addition to its native `.aupreset` format.

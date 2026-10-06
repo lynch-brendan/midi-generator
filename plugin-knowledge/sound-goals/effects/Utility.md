@@ -19,11 +19,11 @@ Metering, spectrum analysis, tuning, volume adjustment, gain staging. Reach for 
 
 ### AUSampler
 
-- **Character:** Neutral and transparent — the sound is entirely defined by the loaded sample content; the engine itself adds no coloration.
-- **Best for:** Programmatic sample playback in macOS/iOS apps and DAWs; loading custom `.aupreset` instruments, SoundFont/DLS2 banks, EXS24 files, or raw audio samples via MIDI; prototyping multi-sample instruments without a third-party sampler.
-- **Emotional tags:** N/A — character is content-dependent.
-- **Comparison:** Functionally similar to a stripped-down EXS24/Sampler (Logic Pro) engine without a GUI; far less user-friendly than Kontakt or Battery but zero cost on any Apple platform.
-- **How to use:** `load_instrument(channel_id=..., plugin_id="AUSampler", preset_name="<name of .aupreset file without extension>")` — preset files must exist at `~/Library/Audio/Presets/Apple/AUSampler/<name>.aupreset`. Alternatively, load programmatically via `kAUSamplerProperty_LoadInstrument` with a file URL.
+- **Character:** Neutral and transparent — AUSampler imposes no inherent colour of its own; its sonic character is entirely determined by the samples and presets loaded into it.
+- **Best for:** Hosting custom multi-sample instruments, soundfonts (SF2/DLS2), or EXS24 presets in any AU-compatible host on macOS/iOS without a third-party sampler; useful for developers building music apps on Apple platforms.
+- **Emotional tags:** Depends entirely on loaded content; the engine itself is characterless and functional.
+- **Comparison:** Far more limited in workflow ergonomics than Logic's own Sampler (formerly EXS24) or Ableton Sampler, with minimal GUI and sparse documentation; analogous to a bare-bones CoreAudio-level sampler engine rather than a production instrument.
+- **How to use:** `load_instrument(channel_id=..., plugin_id="AUSampler", preset_name="<name of .aupreset file>")` — note the plugin produces silence until a valid `.aupreset`, EXS, SF2, or DLS2 file is loaded.
 
 ### Airwindows Consolidated
 
