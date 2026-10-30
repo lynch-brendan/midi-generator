@@ -9,6 +9,14 @@ Bowed and plucked string family. Reach for these when the user asks for violin, 
 
 ## Options
 
+### AUSampler
+
+- **Character:** Transparent playback engine; string character is entirely derived from loaded content (e.g., GarageBand's bundled orchestral string EXS24 patches).
+- **Best for:** Lightweight playback of orchestral string sample libraries in EXS24 or SF2 format; prototyping string arrangements without a heavier third-party sampler.
+- **Emotional tags:** Neutral engine — cinematic, lush, or sparse depending on samples loaded.
+- **Comparison:** Far simpler than Spitfire LABS or East West Composer Cloud; no round-robin, mic position, or articulation switching. Best thought of as a bare-bones playback engine for pre-built patches.
+- **How to use:** `load_instrument(channel_id=..., plugin_id="AUSampler", preset_name="<path-to.aupreset>")` — load a GarageBand/Logic string EXS24 preset or custom .aupreset; plugin is silent by default.
+
 ### GM Violin (via load_gm_instrument, program 40)
 
 - **Character:** natural, singing, agile top-line strings

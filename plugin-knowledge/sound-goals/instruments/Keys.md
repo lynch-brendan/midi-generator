@@ -11,11 +11,11 @@ Piano, electric piano, organ, harpsichord — anything with a keyboard voice. Re
 
 ### AUSampler
 
-- **Character:** Neutral, transparent sample playback — sound depends entirely on the loaded content (SoundFont/DLS/aupreset). Clean, uncolored digital tone with basic subtractive shaping (filter + envelopes + LFO).
-- **Best for:** Loading General MIDI SoundFonts, DLS banks, and custom multisampled instruments for pianos, EPs, organs and other keyed sounds when a lightweight, free, built-in sampler is needed.
-- **Emotional tags:** utilitarian, clean, workmanlike, unobtrusive
-- **Comparison:** Far less capable and less polished than Kontakt, HALion, or Logic's full Sampler/EXS24; roughly comparable in scope to TX16Wx or the free DecentSampler but with a clunkier workflow and no factory library. A "lite" version of Apple's pro Sampler.
-- **How to use:** `load_instrument(channel_id=..., plugin_id="AUSampler", preset_name="<path to .aupreset or .sf2>")` — note the plugin is silent until a preset/soundfont is loaded.
+- **Character:** Transparent and faithful to source — can reproduce anything from bright, articulate piano to warm, muted electric piano depending solely on the loaded sample set.
+- **Best for:** Playback of EXS24 keyboard instruments from GarageBand/Logic's library; loading SoundFont or DLS2 GM melodic patches (piano, organ, vibraphone, etc.); custom sampled keyboard instruments.
+- **Emotional tags:** Context-dependent; the engine is colorless — warmth, brightness, and character come from the loaded samples.
+- **Comparison:** Functionally similar to Logic's EXS24/Sampler (shares sample content paths), but with a far more limited UI. Does not rival dedicated instruments like Keyscape or Noire, but is free and always available on macOS/iOS.
+- **How to use:** `load_instrument(channel_id=..., plugin_id="AUSampler", preset_name="<path-to.aupreset>")` — must load an EXS24, SoundFont, or .aupreset file containing keyboard samples before use.
 
 ### Vital
 

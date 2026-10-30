@@ -9,6 +9,14 @@ Kicks, snares, hats, claps, percussion, full drum kits. Nasty starts every song 
 
 ## Options
 
+### AUSampler
+
+- **Character:** Neutral and transparent — character is entirely determined by the samples loaded; no coloration or saturation is added by the engine itself.
+- **Best for:** Custom drum kits built from WAV/AIFF one-shots; mapping individual drum samples chromatically across a MIDI keyboard; playback of EXS24 or SoundFont GM percussion banks.
+- **Emotional tags:** Depends on loaded content; the engine itself is utility-grade and adds no inherent vibe.
+- **Comparison:** Less featured than Native Instruments Kontakt or Battery (no built-in FX chain, no preset library), but free and zero-latency, deeply embedded in the Apple ecosystem. Simpler than Logic's own EXS24/Sampler but shares the same underlying sample engine.
+- **How to use:** `load_instrument(channel_id=..., plugin_id="AUSampler", preset_name="<path-to.aupreset>")` — note: plugin will be silent until a preset containing drum samples is explicitly loaded.
+
 ### Nasty built-in drum channels (default)
 
 Every fresh Nasty song already has these channels loaded and ready to play:
