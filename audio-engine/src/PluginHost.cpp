@@ -247,6 +247,21 @@ private:
                         (int) (offPos + offsetAfterWrap));
                 }
             }
+            // Flush note-offs for any note whose off-position is at or beyond
+            // loopLen. These fall outside both the first-segment range (capped
+            // at loopLen) and the post-wrap range (uses unwrapped offPos), so
+            // they would never fire — causing the plugin to hold the note
+            // forever. Fire them at the wrap boundary so the plugin hears a
+            // clean release before the pattern repeats.
+            for (const auto& [_, note] : patternNotes) {
+                if (note.atSample >= loopLen) continue;
+                const std::int64_t offPos = note.atSample + note.durationSamples;
+                if (offPos >= loopLen) {
+                    midi.addEvent(juce::MidiMessage::noteOff(
+                        patternMidiChannel, note.pitch),
+                        (int) offsetAfterWrap);
+                }
+            }
         }
     }
 
